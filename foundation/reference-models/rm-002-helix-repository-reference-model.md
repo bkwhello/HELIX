@@ -221,7 +221,27 @@ HELIX/
 ├── standards/
 ├── governance/
 ├── engineering-cases/
-├── implementation/
 ├── tools/
 ├── workspace/
 └── archive/
+```
+
+---
+
+## Note on Implementation Placement
+
+`implementation/` is not a root domain.
+
+Implementation is not an independent engineering responsibility. It is always the execution of either:
+
+- HELIX itself, or
+- an engineering case.
+
+Case-specific implementation work is contained within its engineering case under `engineering-cases/` (RP-005).
+
+Reusable implementation infrastructure — schemas, generators, validators, templates — is placed under:
+
+- `/tools/`, when it is executable infrastructure, or
+- `/standards/`, when it defines engineering rules rather than code.
+
+This keeps the canonical root at eight domains instead of carrying a root folder that may never justify independent existence (RP-004, RP-010).
