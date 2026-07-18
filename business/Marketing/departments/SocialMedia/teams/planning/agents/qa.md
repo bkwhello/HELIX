@@ -1,0 +1,1 @@
+Check if the post fits Konnichiwa’s premium brand and is ready to publish.

@@ -1,0 +1,89 @@
+## Evidence
+
+### E-001 – Multiple Reservation Entry Pathways
+
+Source Observations
+
+- O-001 – Reservation Entry Channels
+- O-002 – Website Reservation Handling
+- O-003 – Reservation Access and Floor-Level Handling
+- O-004 – Deferred Manual Reservation Entry
+- O-006 – Weekend Reservation Reconciliation
+
+Evidence Status
+
+Established through direct organizational account.
+
+Evidence Type
+
+Direct Organizational Account
+
+Observed Conditions
+
+- The Engineering Lead is a direct organizational actor.
+- The Engineering Lead has very high familiarity with Konnichiwa's reservation operations.
+- Investigation independence is limited.
+- Documentary corroboration has not yet been formally inspected for every pathway.
+
+----
+
+#### Evidence Statement
+
+Konnichiwa receives reservation-related information and guest-arrival commitments through multiple distinct entry pathways.
+
+The currently established pathways are:
+
+1. Konnichiwa website reservation widget
+2. TheFork
+3. Google reservation integration
+4. Telephone
+5. Direct interaction on the restaurant floor, including future reservation requests and same-day walk-ins
+
+Immediate walk-ins and future reservation requests are operationally distinct and shall not be treated as identical without further evidence.
+
+
+#### Supporting Basis
+
+The existence of these pathways has been reported by the Engineering Lead, who is a direct organizational actor with extensive operational familiarity.
+
+The reported pathways are also referenced across multiple observations within EC-001.
+
+O-006 reports that reservation entries are reviewed during weekend reconciliation, further supporting the existence of multiple reservation sources.
+
+
+#### Limitations
+
+- Documentary evidence has not yet been formally inspected for every pathway.
+- The exact technical behavior of the Google integration has not yet been established.
+- The relationship between TheFork and Guestplan has not yet been established.
+- Telephone reservation handling has not yet been fully observed.
+- Same-day walk-ins and future floor reservation requests remain operationally distinct.
+- The evidence source is not independent from the organization being investigated.
+
+
+#### Contradictory Evidence
+
+None currently recorded.
+
+
+#### Challenge Evidence Relationship
+
+Related to:
+
+- CE-001 – Deferred Manual Entry Without Closed-Loop Confirmation
+
+CE-001 demonstrates that at least one reservation-related pathway may involve a manual transfer before Guestplan entry.
+
+
+#### Evidence Conclusion
+
+The existence of multiple reservation entry pathways is sufficiently supported for use in subsequent engineering reasoning within the observed conditions of EC-001.
+
+This evidence does not yet establish:
+
+- that the pathways are fragmented,
+- that all pathways are equally reliable,
+- that Guestplan contains every reservation,
+- that the current reservation process is ineffective,
+- or that any particular system design is required.
+

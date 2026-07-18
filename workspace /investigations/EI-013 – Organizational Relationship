@@ -1,0 +1,86 @@
+# EI-013 – Organizational Relationship
+
+Status
+
+Validated
+
+Result
+
+Architectural Discovery Earned
+
+Next
+
+AD-002 – Organizational Relationship
+
+## Validation Summary
+
+The candidate explanation was challenged through:
+
+- Removal testing
+- Object reduction testing
+- Property reduction testing
+- Interaction comparison
+- Language independence testing
+- AI organization testing
+- Dependency testing
+- Falsification attempts
+
+No stronger competing explanation survived.
+
+Validation Result
+
+Passed
+
+## Final Discovery
+
+An Organizational Relationship is a persistent structural connection between organizational concepts that carries information not contained within the connected concepts themselves.
+
+Relationships provide the structural meaning required for organizational concepts to form a coherent organizational model.
+
+Without Organizational Relationships, the Organizational Reference Model cannot exist.
+
+## Outcome
+
+The investigation successfully completed Observation, Evidence Collection, and Validation.
+
+The evidence supports the conclusion that Organizational Relationship is a fundamental organizational concept.
+
+The investigation demonstrated that Organizational Relationships:
+
+- cannot be reduced to Organizational Objects,
+- cannot be reduced to object properties,
+- cannot be reduced to language,
+- cannot be reduced to interactions,
+- provide structural information not contained within the connected concepts.
+
+Without Organizational Relationships, the Organizational Ontology becomes an inventory of concepts rather than a coherent organizational model.
+
+This investigation is closed and transitions to Architectural Discovery.
+
+Status
+
+Closed
+
+## References
+
+Architectural Discovery
+
+AD-002 – Organizational Relationship
+
+Updated Reference Artifacts
+
+AO-001 – Organizational Ontology
+
+RM-001 – Organizational Reference Model
+
+Relationship Catalogue
+
+Engineering Method
+
+EM-001
+
+Architectural Decisions
+
+ADR-001
+
+ADR-002
