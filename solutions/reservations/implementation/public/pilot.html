@@ -444,11 +444,11 @@
           : "—";
 
         const tableCell = document.createElement("td");
-        if (r.preferredArea === "Teppanyaki") {
+        if (r.preferredArea === "Teppanyaki" || r.preferredArea === "Sushi") {
           const input = document.createElement("input");
           input.type = "text";
           input.className = "table-input";
-          input.placeholder = "bijv. C1";
+          input.placeholder = r.preferredArea === "Teppanyaki" ? "bijv. C1" : "tafel";
           input.value = r.tableAssignment || "";
           input.addEventListener("change", () => saveReservationField(r.id, { tableAssignment: input.value.trim() }, input, "tafel"));
           tableCell.appendChild(input);
