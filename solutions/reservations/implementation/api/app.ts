@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { Express, NextFunction, Request, Response } from "express";
 import { ReservationRepository } from "../domain/repositories/ReservationRepository.js";
 import { ReservationId } from "../domain/value-objects/ReservationId.js";
@@ -30,9 +32,14 @@ export interface AppDependencies {
  * knows about HTTP. It translates requests into commands and Results
  * into status codes — it does not contain business rules itself.
  */
+const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
+
 export function createApp(deps: AppDependencies): Express {
   const app = express();
   app.use(express.json());
+  // Pilot-only staff interface (see PILOT.md) — plain static HTML/JS, no
+  // build step. Talks to the JSON endpoints below via fetch().
+  app.use(express.static(publicDir));
 
   const createHandler = new CreateReservationHandler(
     deps.repository,
@@ -53,13 +60,30 @@ export function createApp(deps: AppDependencies): Express {
     return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
   }
 
-  function actorFromHeader(req: Request): Actor {
-    // Placeholder actor resolution. A real deployment resolves this from
-    // an authenticated session (see capability.md, Security) — not
-    // implemented here, since authentication is a separate capability.
+  const KNOWN_ACTOR_KINDS: readonly string[] = Object.values(ActorKind);
+
+  /**
+   * Placeholder actor resolution. A real deployment resolves this from an
+   * authenticated session (see capability.md, Security) — not implemented
+   * here, since authentication is a separate capability.
+   *
+   * Validates x-actor-kind against the known ActorKind values and fails
+   * fast with a clear 400 if it's unrecognized, rather than letting a
+   * typo (e.g. "Human" instead of "AuthorizedUser") silently fall through
+   * to a confusing CAP-D01.01-R32/R33/... "unauthorized" rejection deep in
+   * the domain layer. Returns null after already writing the response.
+   */
+  function resolveActor(req: Request, res: Response): Actor | null {
+    const kindHeader = req.header("x-actor-kind");
+    if (kindHeader !== undefined && !KNOWN_ACTOR_KINDS.includes(kindHeader)) {
+      res.status(400).json({
+        message: `Unknown x-actor-kind header: "${kindHeader}". Expected one of: ${KNOWN_ACTOR_KINDS.join(", ")}.`,
+      });
+      return null;
+    }
     return {
-      id: (req.header("x-actor-id") as string) ?? "unknown",
-      kind: (req.header("x-actor-kind") as ActorKind) ?? ActorKind.AuthorizedUser,
+      id: req.header("x-actor-id") ?? "unknown",
+      kind: (kindHeader as ActorKind) ?? ActorKind.AuthorizedUser,
       role: req.header("x-actor-role") as ActorRole | undefined,
     };
   }
@@ -82,6 +106,9 @@ export function createApp(deps: AppDependencies): Express {
       historicalCorrectionReason?: string;
     };
 
+    const actor = resolveActor(req, res);
+    if (!actor) return;
+
     const result = await createHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
@@ -91,7 +118,7 @@ export function createApp(deps: AppDependencies): Express {
       reservationDate: new Date(body.reservationDate),
       partySize: body.partySize,
       source: body.source as never,
-      actor: actorFromHeader(req),
+      actor,
       isHistoricalCorrection: body.isHistoricalCorrection,
       historicalCorrectionReason: body.historicalCorrectionReason,
     });
@@ -146,12 +173,15 @@ export function createApp(deps: AppDependencies): Express {
       correctionReason?: string;
     };
 
+    const actor = resolveActor(req, res);
+    if (!actor) return;
+
     const result = await modifyHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
       reservationId: paramId(req),
-      actor: actorFromHeader(req),
+      actor,
       changes: {
         reservationDate: body.changes?.reservationDate ? new Date(body.changes.reservationDate) : undefined,
         partySize: body.changes?.partySize,
@@ -172,12 +202,15 @@ export function createApp(deps: AppDependencies): Express {
 
   app.post("/reservations/:id/confirm", async (req: Request, res: Response) => {
     const body = req.body as { commandId: string; correlationId?: string; causationId?: string; isReservationDataValid?: boolean };
+    const actor = resolveActor(req, res);
+    if (!actor) return;
+
     const result = await confirmHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
       reservationId: paramId(req),
-      actor: actorFromHeader(req),
+      actor,
       isReservationDataValid: body.isReservationDataValid ?? true,
     });
     if (!result.ok) {
@@ -195,12 +228,15 @@ export function createApp(deps: AppDependencies): Express {
       reason?: string;
       reasonRequiredByPolicy?: boolean;
     };
+    const actor = resolveActor(req, res);
+    if (!actor) return;
+
     const result = await cancelHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
       reservationId: paramId(req),
-      actor: actorFromHeader(req),
+      actor,
       reason: body.reason,
       reasonRequiredByPolicy: body.reasonRequiredByPolicy,
     });
@@ -220,12 +256,15 @@ export function createApp(deps: AppDependencies): Express {
       isManualCompletion?: boolean;
       manualCompletionReason?: string;
     };
+    const actor = resolveActor(req, res);
+    if (!actor) return;
+
     const result = await completeHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
       reservationId: paramId(req),
-      actor: actorFromHeader(req),
+      actor,
       evidence: body.evidence ? { ...body.evidence, recordedAt: new Date(body.evidence.recordedAt) } : undefined,
       isManualCompletion: body.isManualCompletion,
       manualCompletionReason: body.manualCompletionReason,
@@ -259,6 +298,7 @@ function serializeReservation(aggregate: {
   getContactId(): string;
   getPartySize(): number;
   getReservationDateTime(): Date;
+  getSource(): { category: string };
 }) {
   return {
     id: aggregate.getId().toString(),
@@ -267,5 +307,6 @@ function serializeReservation(aggregate: {
     contactId: aggregate.getContactId(),
     partySize: aggregate.getPartySize(),
     reservationDate: aggregate.getReservationDateTime().toISOString(),
+    sourceCategory: aggregate.getSource().category,
   };
 }

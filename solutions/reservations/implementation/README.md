@@ -80,3 +80,17 @@ npm run typecheck
 npm test
 npm run dev                 # http://localhost:3001, see api/server.ts
 ```
+
+## CI
+
+`.github/workflows/reservations-ci.yml` runs `prisma generate`, `prisma
+migrate deploy` (against a throwaway SQLite file), typecheck, and the
+full test suite on every push/PR touching this directory.
+
+## Controlled pilot
+
+`public/pilot.html` (served at `/pilot.html` once the server is running)
+is a minimal staff-facing page for Create Reservation + the daily list —
+the only two operations covered by the pilot-readiness work above. See
+`PILOT.md` for scope, known limitations, and success criteria before
+using it with real bookings.

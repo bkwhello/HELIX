@@ -89,15 +89,24 @@ describe("POST /reservations", () => {
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R08")).toBe(true);
   });
 
-  it("rejects an unauthorized actor with 422 (CAP-D01.01-R32)", async () => {
+  // Every real ActorKind is currently trusted for creation (CAP-D01.01-R32
+  // only rejects an *unrecognized* kind), so an unauthorized-creation
+  // rejection can only ever originate from a malformed x-actor-kind header.
+  // resolveActor() catches that at the boundary with a clear 400 instead
+  // of letting it fall through to a confusing domain-level 422 — this test
+  // used to send "Unknown" as x-actor-kind and expect a 422/R32 response;
+  // that exact request now (correctly) gets a 400 here instead. R32 itself
+  // is still covered at the domain level — see tests/acceptance/creation.test.ts, AC39.
+  it("rejects an unrecognized x-actor-kind with a clear 400, not a domain violation", async () => {
     const { app } = buildApp();
     const res = await request(app)
       .post("/reservations")
-      .set({ "x-actor-id": "nobody", "x-actor-kind": "Unknown" })
+      .set({ "x-actor-id": "nobody", "x-actor-kind": "Human" })
       .send(validBody());
 
-    expect(res.status).toBe(422);
-    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R32")).toBe(true);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("Human");
+    expect(res.body.message).toContain("AuthorizedUser");
   });
 
   it("rejects a structurally invalid date with 422 (CAP-D01.01-R10)", async () => {

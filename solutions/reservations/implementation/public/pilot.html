@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Konnichi Wa — Reserveringen (pilot)</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --border: #d7d2c9;
+    --accent: #8a3324;
+    --bg-panel: #ffffff;
+    --bg-page: #f6f3ee;
+    --text: #1f1a17;
+    --muted: #6b6258;
+    --danger-bg: #fbe9e7;
+    --danger-text: #8a2f1f;
+    --warn-bg: #fff6e0;
+    --warn-text: #7a5a00;
+    --ok-bg: #e9f3e8;
+    --ok-text: #2c5c2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --border: #45403a;
+      --bg-panel: #211d1a;
+      --bg-page: #17140f;
+      --text: #f1ece3;
+      --muted: #a89c8c;
+      --danger-bg: #3a1c17;
+      --danger-text: #f0a898;
+      --warn-bg: #362b0c;
+      --warn-text: #f0d27a;
+      --ok-bg: #16311a;
+      --ok-text: #a9dba6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg-page);
+    color: var(--text);
+  }
+  header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  header p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.9rem; }
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: grid;
+    gap: 1.5rem;
+  }
+  @media (min-width: 800px) {
+    main { grid-template-columns: 1fr 1fr; align-items: start; }
+  }
+  section {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  section h2 { margin: 0 0 1rem; font-size: 1.05rem; }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
+  label:first-of-type { margin-top: 0; }
+  input, select {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  .row { display: flex; gap: 0.75rem; }
+  .row > div { flex: 1; }
+  button {
+    margin-top: 1rem;
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: white;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .message { margin-top: 0.85rem; padding: 0.6rem 0.75rem; border-radius: 6px; font-size: 0.9rem; white-space: pre-wrap; }
+  .message.error { background: var(--danger-bg); color: var(--danger-text); }
+  .message.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .message.ok { background: var(--ok-bg); color: var(--ok-text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  .status { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
+  .status-Proposed { background: var(--warn-bg); color: var(--warn-text); }
+  .status-Confirmed { background: var(--ok-bg); color: var(--ok-text); }
+  .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
+  .status-Completed { background: var(--bg-page); color: var(--muted); }
+  .empty { color: var(--muted); font-size: 0.9rem; padding: 0.5rem 0; }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Konnichi Wa — Reserveringen (pilot)</h1>
+  <p>Alleen voor gecontroleerd testgebruik: reservering aanmaken en dagoverzicht bekijken.</p>
+</header>
+
+<main>
+  <section>
+    <h2>Nieuwe reservering</h2>
+    <form id="create-form">
+      <label for="staff-name">Jouw naam (voor de administratie)</label>
+      <input id="staff-name" type="text" required placeholder="bijv. Kelvin" />
+
+      <label for="contact">Naam of telefoonnummer gast</label>
+      <input id="contact" type="text" required placeholder="bijv. 06-12345678" />
+
+      <div class="row">
+        <div>
+          <label for="datetime">Datum en tijd</label>
+          <input id="datetime" type="datetime-local" required />
+        </div>
+        <div>
+          <label for="party-size">Aantal personen</label>
+          <input id="party-size" type="number" min="1" value="2" required />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="service-period">Dienst</label>
+          <select id="service-period">
+            <option value="lunch">Lunch</option>
+            <option value="dinner" selected>Diner</option>
+          </select>
+        </div>
+        <div>
+          <label for="source">Bron</label>
+          <select id="source">
+            <option value="Telephone" selected>Telefoon</option>
+            <option value="Walk-in">Walk-in</option>
+            <option value="Website">Website</option>
+            <option value="Google">Google</option>
+            <option value="TheFork">TheFork</option>
+            <option value="Staff">Personeel</option>
+            <option value="Other Approved Source">Overig</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="submit">Reservering aanmaken</button>
+      <div id="create-message"></div>
+    </form>
+  </section>
+
+  <section>
+    <h2>Dagoverzicht</h2>
+    <div class="row">
+      <div>
+        <label for="list-date">Datum</label>
+        <input id="list-date" type="date" />
+      </div>
+      <div style="flex: 0; align-self: flex-end;">
+        <button type="button" class="secondary" id="reload-list" style="margin-top: 0;">Vernieuwen</button>
+      </div>
+    </div>
+    <div id="list-message"></div>
+    <table id="list-table" style="margin-top: 0.75rem;">
+      <thead>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Bron</th><th>Status</th></tr>
+      </thead>
+      <tbody id="list-body"></tbody>
+    </table>
+    <div id="list-empty" class="empty" style="display:none;">Geen reserveringen voor deze datum.</div>
+  </section>
+</main>
+
+<footer>CAP-D01.01 Reservation Management — pilot-interface, geen productie-UI. Zie PILOT.md.</footer>
+
+<script>
+  const STAFF_NAME_KEY = "konnichiwa-pilot-staff-name";
+  const staffNameInput = document.getElementById("staff-name");
+  staffNameInput.value = localStorage.getItem(STAFF_NAME_KEY) || "";
+
+  function actorHeaders() {
+    return {
+      "x-actor-id": staffNameInput.value.trim() || "onbekend",
+      "x-actor-kind": "AuthorizedUser",
+    };
+  }
+
+  function ruleMessages(violations) {
+    return (violations || []).map((v) => `${v.ruleId}: ${v.message}`).join("\n");
+  }
+
+  function showMessage(el, text, kind) {
+    el.textContent = text;
+    el.className = "message " + kind;
+  }
+  function clearMessage(el) {
+    el.textContent = "";
+    el.className = "";
+  }
+
+  const createForm = document.getElementById("create-form");
+  const createMessage = document.getElementById("create-message");
+
+  createForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    localStorage.setItem(STAFF_NAME_KEY, staffNameInput.value.trim());
+    clearMessage(createMessage);
+
+    const datetimeValue = document.getElementById("datetime").value;
+    if (!datetimeValue) {
+      showMessage(createMessage, "Kies een datum en tijd.", "error");
+      return;
+    }
+
+    const body = {
+      commandId: `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      servicePeriodId: document.getElementById("service-period").value,
+      contactId: document.getElementById("contact").value.trim(),
+      reservationDate: new Date(datetimeValue).toISOString(),
+      partySize: Number(document.getElementById("party-size").value),
+      source: { category: document.getElementById("source").value },
+    };
+
+    const submitButton = createForm.querySelector("button[type=submit]");
+    submitButton.disabled = true;
+    try {
+      const res = await fetch("/reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showMessage(createMessage, "Kon reservering niet aanmaken:\n" + ruleMessages(data.violations), "error");
+        return;
+      }
+      if (data.warnings && data.warnings.length > 0) {
+        showMessage(createMessage, "Reservering aangemaakt (let op):\n" + ruleMessages(data.warnings), "warn");
+      } else {
+        showMessage(createMessage, `Reservering aangemaakt (${data.reservationId.slice(0, 8)}…).`, "ok");
+      }
+      document.getElementById("contact").value = "";
+      await loadList();
+    } catch (err) {
+      showMessage(createMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  const listDateInput = document.getElementById("list-date");
+  const listBody = document.getElementById("list-body");
+  const listEmpty = document.getElementById("list-empty");
+  const listMessage = document.getElementById("list-message");
+
+  function todayLocalISODate() {
+    const now = new Date();
+    const offset = now.getTimezoneOffset();
+    return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10);
+  }
+  listDateInput.value = todayLocalISODate();
+
+  const STATUS_LABELS = { Proposed: "Voorgesteld", Confirmed: "Bevestigd", Cancelled: "Geannuleerd", Completed: "Afgerond" };
+  const SOURCE_LABELS = {
+    Telephone: "Telefoon",
+    "Walk-in": "Walk-in",
+    Website: "Website",
+    Google: "Google",
+    TheFork: "TheFork",
+    Staff: "Personeel",
+    "External Import": "Import",
+    "Other Approved Source": "Overig",
+  };
+
+  async function loadList() {
+    clearMessage(listMessage);
+    try {
+      const res = await fetch(`/reservations?date=${listDateInput.value}`);
+      const data = await res.json();
+      if (!res.ok) {
+        showMessage(listMessage, data.message || "Kon dagoverzicht niet laden.", "error");
+        return;
+      }
+      listBody.innerHTML = "";
+      listEmpty.style.display = data.reservations.length === 0 ? "block" : "none";
+      for (const r of data.reservations) {
+        const tr = document.createElement("tr");
+        const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+        tr.innerHTML = `
+          <td>${time}</td>
+          <td>${r.contactId}</td>
+          <td>${r.partySize}</td>
+          <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
+          <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
+        `;
+        listBody.appendChild(tr);
+      }
+    } catch (err) {
+      showMessage(listMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  }
+
+  document.getElementById("reload-list").addEventListener("click", loadList);
+  listDateInput.addEventListener("change", loadList);
+  loadList();
+</script>
+</body>
+</html>

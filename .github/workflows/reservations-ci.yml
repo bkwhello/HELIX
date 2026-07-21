@@ -1,0 +1,48 @@
+name: Reservations CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "solutions/reservations/implementation/**"
+      - ".github/workflows/reservations-ci.yml"
+  pull_request:
+    paths:
+      - "solutions/reservations/implementation/**"
+      - ".github/workflows/reservations-ci.yml"
+
+defaults:
+  run:
+    working-directory: solutions/reservations/implementation
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      # SQLite, same as local dev — no external service needed for CI.
+      DATABASE_URL: "file:./dev.db"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the version this project targets locally (see README —
+          # Prisma 5.x is pinned for compatibility with it).
+          node-version: "21.6.2"
+          cache: "npm"
+          cache-dependency-path: solutions/reservations/implementation/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations to a throwaway database
+        run: npx prisma migrate deploy
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
