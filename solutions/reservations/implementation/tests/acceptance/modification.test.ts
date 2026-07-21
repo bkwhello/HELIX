@@ -102,6 +102,33 @@ describe("Manual table assignment", () => {
   });
 });
 
+// CAP-D01.01-R36/R37 — notes can be added or corrected after creation
+describe("Editing notes after creation", () => {
+  it("adds a note to a reservation that had none", () => {
+    const aggregate = createProposedReservation();
+    expect(aggregate.getNotes()).toBeUndefined();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { notes: "Op de rekening zetten" } }, NOW);
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getNotes()).toBe("Op de rekening zetten");
+  });
+
+  it("corrects an existing note", () => {
+    const aggregate = createProposedReservation();
+    aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { notes: "Notenallergie" } }, NOW);
+    aggregate.pullEvents();
+
+    const result = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { notes: "Notenallergie + graag venstertafel" } },
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getNotes()).toBe("Notenallergie + graag venstertafel");
+  });
+});
+
 // CAP-D01.01-AC11 — Prevent Internal Identity Modification
 describe("AC11 — Prevent Internal Identity Modification", () => {
   it("rejects an attempt to modify the internal Reservation Identity", () => {

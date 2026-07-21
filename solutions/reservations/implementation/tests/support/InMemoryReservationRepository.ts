@@ -115,10 +115,11 @@ export class InMemoryReservationRepository implements ReservationRepository {
       partySize: aggregate.getPartySize(),
       source: existing?.source ?? aggregate.getSource(),
       preferredArea: existing?.preferredArea ?? aggregate.getPreferredArea(),
-      notes: existing?.notes ?? aggregate.getNotes(),
-      // Unlike the fields above (set once at creation), tableAssignment is
-      // meant to change via modify() after creation — always take the
-      // aggregate's current value, never fall back to the stored one.
+      // Unlike the fields above (set once at creation), notes and
+      // tableAssignment are meant to change via modify() after creation —
+      // always take the aggregate's current value, never fall back to the
+      // stored one.
+      notes: aggregate.getNotes(),
       tableAssignment: aggregate.getTableAssignment(),
       createdBy: existing?.createdBy ?? aggregate.getCreatedBy(),
       createdAt: existing?.createdAt ?? aggregate.getCreatedAt(),

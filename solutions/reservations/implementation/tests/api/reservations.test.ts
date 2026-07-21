@@ -236,6 +236,32 @@ describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)",
   });
 });
 
+describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R36/R37)", () => {
+  it("adds a note to a reservation created without one, then corrects it", async () => {
+    const { app } = buildApp();
+    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-notes-edit" }));
+    expect(created.body.notes).toBeUndefined();
+
+    const addNote = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-notes-edit-1", changes: { notes: "Op de rekening zetten" } });
+    expect(addNote.status).toBe(204);
+
+    const afterAdd = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(afterAdd.body.notes).toBe("Op de rekening zetten");
+
+    const correctNote = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-notes-edit-2", changes: { notes: "Op de rekening zetten + glutenvrij" } });
+    expect(correctNote.status).toBe(204);
+
+    const afterCorrect = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(afterCorrect.body.notes).toBe("Op de rekening zetten + glutenvrij");
+  });
+});
+
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
   it("lists reservations for the requested date, including guest name and preferred area", async () => {
     const { app } = buildApp();

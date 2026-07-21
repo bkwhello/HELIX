@@ -46,6 +46,8 @@ export interface ModifyReservationCommand extends CommandEnvelope {
     readonly servicePeriodId?: string;
     /** CAP-D01.01-R48: a manual, staff-entered table note (e.g. "C1") — not a Seating Assignment guarantee, which stays owned elsewhere once that capability exists. */
     readonly tableAssignment?: string;
+    /** CAP-D01.01-R36/R37: added or corrected after creation, e.g. "put it on the bill" or a wish mentioned in a follow-up call. */
+    readonly notes?: string;
   };
   /** CAP-D01.01-R20: supplied by the caller after confirming the existing Service Period still holds for the new date/time. */
   readonly isServicePeriodStillValid?: boolean;

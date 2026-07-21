@@ -46,7 +46,8 @@ export class ReservationAggregate {
     private partySize: PartySize,
     private readonly source: ReservationSource,
     private readonly preferredArea: PreferredArea | undefined,
-    private readonly notes: string | undefined,
+    /** CAP-D01.01-R36/R37: operational context (allergies, special requests). Mutable — staff routinely add or correct this after creation (e.g. "put it on the bill", a wish mentioned in a follow-up call). */
+    private notes: string | undefined,
     /** CAP-D01.01-R48: a manual, staff-entered table note — not an owned Seating Assignment guarantee. Mutable, unlike the other creation-time fields, since it is normally set after creation. */
     private tableAssignment: string | undefined,
     private readonly createdBy: string,
@@ -289,6 +290,11 @@ export class ReservationAggregate {
       resultingValues["tableAssignment"] = cmd.changes.tableAssignment;
     }
 
+    if (cmd.changes.notes !== undefined) {
+      previousValues["notes"] = this.notes;
+      resultingValues["notes"] = cmd.changes.notes;
+    }
+
     if (violations.length > 0) {
       return fail(violations);
     }
@@ -310,6 +316,9 @@ export class ReservationAggregate {
     }
     if (cmd.changes.tableAssignment !== undefined) {
       this.tableAssignment = cmd.changes.tableAssignment;
+    }
+    if (cmd.changes.notes !== undefined) {
+      this.notes = cmd.changes.notes;
     }
 
     this.pendingEvents.push({

@@ -204,7 +204,7 @@ export function createApp(deps: AppDependencies): Express {
       commandId: string;
       correlationId?: string;
       causationId?: string;
-      changes: { reservationDate?: string; partySize?: number; contactId?: string; servicePeriodId?: string; tableAssignment?: string };
+      changes: { reservationDate?: string; partySize?: number; contactId?: string; servicePeriodId?: string; tableAssignment?: string; notes?: string };
       isServicePeriodStillValid?: boolean;
       isAuthorizedCorrection?: boolean;
       correctionReason?: string;
@@ -225,6 +225,7 @@ export function createApp(deps: AppDependencies): Express {
         contactId: body.changes?.contactId,
         servicePeriodId: body.changes?.servicePeriodId,
         tableAssignment: body.changes?.tableAssignment,
+        notes: body.changes?.notes,
       },
       isServicePeriodStillValid: body.isServicePeriodStillValid,
       isAuthorizedCorrection: body.isAuthorizedCorrection,

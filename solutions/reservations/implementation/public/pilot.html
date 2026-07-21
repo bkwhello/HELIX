@@ -118,6 +118,7 @@
   .preference { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
   .preference-Sushi { background: var(--sushi-bg); color: var(--sushi-text); }
   .table-input { width: 5rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
+  .notes-input { width: 100%; min-width: 9rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
   .list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
   .list-item:last-child { border-bottom: none; }
   .list-item .remove { background: transparent; border: none; color: var(--danger-text); cursor: pointer; font-size: 0.85rem; margin: 0; padding: 0.2rem 0.4rem; }
@@ -155,14 +156,19 @@
 
       <div class="row">
         <div>
-          <label for="datetime">Datum en tijd</label>
-          <input id="datetime" type="datetime-local" step="900" required />
+          <label for="date">Datum</label>
+          <input id="date" type="date" required />
         </div>
         <div>
-          <label for="party-size">Aantal personen</label>
-          <input id="party-size" type="number" min="1" value="2" required />
+          <label for="time">Tijd</label>
+          <select id="time" required>
+            <option value="" disabled selected>Kies tijd…</option>
+          </select>
         </div>
       </div>
+
+      <label for="party-size">Aantal personen</label>
+      <input id="party-size" type="number" min="1" value="2" required />
 
       <label for="source">Bron</label>
       <select id="source">
@@ -279,25 +285,24 @@
     el.className = "";
   }
 
-  // step="900" on the datetime field makes the browser's own picker snap
-  // to :00/:15/:30/:45, but some browsers still allow typing an arbitrary
-  // minute by hand — this rounds it back onto the grid as a safety net.
-  const datetimeInput = document.getElementById("datetime");
-  function roundToQuarterHour(value) {
-    if (!value) return value;
-    const [datePart, timePart] = value.split("T");
-    if (!timePart) return value;
-    let [hour, minute] = timePart.split(":").map(Number);
-    minute = Math.round(minute / 15) * 15;
-    if (minute === 60) {
-      minute = 0;
-      hour = (hour + 1) % 24;
+  // A native datetime-local picker's minute wheel shows every value
+  // (0-59) in most browsers regardless of the step attribute — the only
+  // reliable way to offer *only* :00/:15/:30/:45 is to not use that
+  // picker at all. Date and time are separate fields; time is a plain
+  // select populated with quarter-hour slots covering the restaurant's
+  // opening hours, so there is nothing else to pick from.
+  const dateInput = document.getElementById("date");
+  const timeSelect = document.getElementById("time");
+  for (let hour = 11; hour <= 23; hour += 1) {
+    for (const minute of [0, 15, 30, 45]) {
+      if (hour === 23 && minute > 0) continue;
+      const label = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      const option = document.createElement("option");
+      option.value = label;
+      option.textContent = label;
+      timeSelect.appendChild(option);
     }
-    return `${datePart}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   }
-  datetimeInput.addEventListener("change", () => {
-    datetimeInput.value = roundToQuarterHour(datetimeInput.value);
-  });
 
   const createForm = document.getElementById("create-form");
   const createMessage = document.getElementById("create-message");
@@ -307,17 +312,17 @@
     localStorage.setItem(STAFF_NAME_KEY, staffNameInput.value.trim());
     clearMessage(createMessage);
 
-    const datetimeValue = roundToQuarterHour(datetimeInput.value);
-    if (!datetimeValue) {
+    if (!dateInput.value || !timeSelect.value) {
       showMessage(createMessage, "Kies een datum en tijd.", "error");
       return;
     }
+    const datetimeValue = `${dateInput.value}T${timeSelect.value}`;
 
     // Dienst is derived from the chosen time, not picked manually: lunch
     // only runs 12:00-16:00 (Fri/Sat/Sun in practice, but the time alone
     // already makes lunch vs. dinner unambiguous, so there is nothing left
     // for a separate field to disambiguate).
-    const hour = Number(datetimeValue.slice(11, 13));
+    const hour = Number(timeSelect.value.slice(0, 2));
     const servicePeriodId = hour >= 12 && hour < 16 ? "lunch" : "dinner";
 
     const body = {
@@ -388,23 +393,23 @@
     "Other Approved Source": "Overig",
   };
 
-  async function saveTableAssignment(reservationId, value, inputEl) {
+  async function saveReservationField(reservationId, changes, inputEl, what) {
     inputEl.disabled = true;
     try {
       const res = await fetch(`/reservations/${reservationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...actorHeaders() },
         body: JSON.stringify({
-          commandId: `pilot-table-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          changes: { tableAssignment: value },
+          commandId: `pilot-edit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          changes,
         }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        showMessage(listMessage, data.message || ruleMessages(data.violations) || "Kon tafel niet opslaan.", "error");
+        showMessage(listMessage, data.message || ruleMessages(data.violations) || `Kon ${what} niet opslaan.`, "error");
       }
     } catch (err) {
-      showMessage(listMessage, "Netwerkfout: kon tafel niet opslaan.", "error");
+      showMessage(listMessage, `Netwerkfout: kon ${what} niet opslaan.`, "error");
     } finally {
       inputEl.disabled = false;
     }
@@ -434,7 +439,6 @@
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
         const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
-        const notes = escapeHtml(r.notes || "");
         const preference = r.preferredArea
           ? `<span class="preference preference-${r.preferredArea}">${r.preferredArea}</span>`
           : "—";
@@ -446,11 +450,24 @@
           input.className = "table-input";
           input.placeholder = "bijv. C1";
           input.value = r.tableAssignment || "";
-          input.addEventListener("change", () => saveTableAssignment(r.id, input.value.trim(), input));
+          input.addEventListener("change", () => saveReservationField(r.id, { tableAssignment: input.value.trim() }, input, "tafel"));
           tableCell.appendChild(input);
         } else {
           tableCell.textContent = "—";
         }
+
+        // Always editable, on every reservation — staff routinely need to
+        // add or correct this after the fact (put it on the bill, a wish
+        // mentioned in a follow-up call), not only at creation time.
+        const notesCell = document.createElement("td");
+        notesCell.className = "notes-cell";
+        const notesInput = document.createElement("input");
+        notesInput.type = "text";
+        notesInput.className = "notes-input";
+        notesInput.placeholder = "opmerking toevoegen…";
+        notesInput.value = r.notes || "";
+        notesInput.addEventListener("change", () => saveReservationField(r.id, { notes: notesInput.value.trim() }, notesInput, "opmerking"));
+        notesCell.appendChild(notesInput);
 
         tr.innerHTML = `
           <td>${time}</td>
@@ -460,9 +477,10 @@
           <td></td>
           <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
-          <td class="notes-cell" title="${notes}">${notes || "—"}</td>
+          <td></td>
         `;
         tr.children[4].replaceWith(tableCell);
+        tr.children[7].replaceWith(notesCell);
         listBody.appendChild(tr);
       }
     } catch (err) {
