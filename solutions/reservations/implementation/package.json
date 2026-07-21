@@ -1,0 +1,29 @@
+{
+  "name": "@reservations/implementation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Implementation of CAP-D01.01 Reservation Management. See ../capabilities/active/CAP-D01.01-reservation-management/ for the governing engineering artifacts.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx watch api/server.ts",
+    "start": "tsx api/server.ts",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.2.2",
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "express": "^5.2.1",
+    "prisma": "^5.22.0"
+  }
+}

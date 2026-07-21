@@ -1,0 +1,65 @@
+// CAP-D01.01 Reservation Management — persistence schema.
+//
+// Local verification uses SQLite (see .env) so this can run without any
+// external service. Production target is PostgreSQL, per the technology
+// choice for this solution — switch `provider` below and DATABASE_URL to
+// move; no application code depends on which one is active.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Current authoritative reservation state. CAP-D01.01-R01/R02: id is the
+// stable, immutable internal Reservation Identity.
+model Reservation {
+  id                 String   @id
+  servicePeriodId    String
+  contactId          String
+  status             String
+  reservationDate    DateTime
+  partySize          Int
+  sourceCategory     String
+  externalReference  String?
+  importedBy         String?
+  createdBy          String
+  createdAt          DateTime
+  updatedAt          DateTime @updatedAt
+
+  events             ReservationEvent[]
+
+  @@map("reservations")
+}
+
+// Append-only event history. CAP-D01.01-R04 (history preserved) and
+// EV-02 (events are immutable): rows are only ever inserted, never
+// updated or deleted by application code.
+model ReservationEvent {
+  id            String   @id @default(cuid())
+  reservationId String
+  type          String
+  occurredAt    DateTime
+  payload       String
+
+  reservation   Reservation @relation(fields: [reservationId], references: [id])
+
+  @@map("reservation_events")
+  @@index([reservationId])
+}
+
+// CAP-D01.01-R44 — Duplicate Command Processing Must Be Safe. A command
+// is applied at most once; save() checks this table before writing.
+// reservationId is recorded so a repeated *creation* command can return
+// the reservation that was actually persisted the first time, instead
+// of silently discarding a freshly (and pointlessly) generated identity.
+model AppliedCommand {
+  commandId     String   @id
+  reservationId String
+  appliedAt     DateTime @default(now())
+
+  @@map("applied_commands")
+}
