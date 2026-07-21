@@ -118,7 +118,7 @@ describe("CreateReservationHandler", () => {
 
   // CAP-D01.01-R51 — closing days block creation
   it("rejects creation for a date marked closed", async () => {
-    await closingDayStore.add({ date: FUTURE_DATE, reason: "Staff outing" });
+    await closingDayStore.add({ fromDate: FUTURE_DATE, toDate: FUTURE_DATE, reason: "Staff outing" });
 
     const result = await handler.handle(validRequest({ commandId: "cmd-closed-day" }));
 

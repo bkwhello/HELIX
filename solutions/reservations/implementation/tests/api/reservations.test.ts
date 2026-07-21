@@ -168,7 +168,7 @@ describe("POST /reservations", () => {
 
   it("rejects creation for a date marked closed (CAP-D01.01-R51)", async () => {
     const { app, closingDayStore } = buildApp();
-    await closingDayStore.add({ date: FUTURE_DATE, reason: "Personeelsuitje" });
+    await closingDayStore.add({ fromDate: FUTURE_DATE, toDate: FUTURE_DATE, reason: "Personeelsuitje" });
 
     const res = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-closed" }));
 
@@ -205,6 +205,34 @@ describe("GET /reservations/:id", () => {
     const { app } = buildApp();
     const res = await request(app).get("/reservations/does-not-exist");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)", () => {
+  it("sets and later changes the table assignment, reflected in GET", async () => {
+    const { app } = buildApp();
+    const created = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-table", preferredArea: "Teppanyaki" }));
+
+    const setTable = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-table-1", changes: { tableAssignment: "C1" } });
+    expect(setTable.status).toBe(204);
+
+    const afterSet = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(afterSet.body.tableAssignment).toBe("C1");
+
+    const changeTable = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-table-2", changes: { tableAssignment: "D3" } });
+    expect(changeTable.status).toBe(204);
+
+    const afterChange = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(afterChange.body.tableAssignment).toBe("D3");
   });
 });
 
@@ -245,31 +273,58 @@ describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are
   });
 });
 
-describe("Sluitingsdagen (closing days)", () => {
-  it("adds, lists, and removes a closing day", async () => {
+describe("Sluitingsdagen (closing days, van/tot)", () => {
+  it("adds a single closed day when toDate is omitted — same day means 1 day", async () => {
     const { app } = buildApp();
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
 
-    const add = await request(app)
-      .post("/closing-days")
-      .set(staffHeaders)
-      .send({ date: dateKey, reason: "Personeelsuitje" });
+    const add = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: dateKey, reason: "Personeelsuitje" });
     expect(add.status).toBe(201);
+    expect(add.body).toMatchObject({ fromDate: dateKey, toDate: dateKey, reason: "Personeelsuitje" });
 
     const list = await request(app).get("/closing-days");
     expect(list.status).toBe(200);
-    expect(list.body.closingDays).toContainEqual({ date: dateKey, reason: "Personeelsuitje" });
+    expect(list.body.closingDays).toContainEqual(expect.objectContaining({ fromDate: dateKey, toDate: dateKey }));
+  });
 
-    const remove = await request(app).delete(`/closing-days/${dateKey}`);
+  it("adds, lists, and removes a multi-day range, blocking every day within it", async () => {
+    const { app } = buildApp();
+    const from = "2026-08-10";
+    const to = "2026-08-12";
+
+    const add = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: from, toDate: to, reason: "Verbouwing" });
+    expect(add.status).toBe(201);
+    expect(add.body).toMatchObject({ fromDate: from, toDate: to });
+
+    const list = await request(app).get("/closing-days");
+    const range = list.body.closingDays.find((r: { fromDate: string }) => r.fromDate === from);
+    expect(range).toMatchObject({ fromDate: from, toDate: to, reason: "Verbouwing" });
+
+    for (const day of ["2026-08-10", "2026-08-11", "2026-08-12"]) {
+      const res = await request(app)
+        .post("/reservations")
+        .set(staffHeaders)
+        .send(validBody({ commandId: `range-check-${day}`, reservationDate: `${day}T19:00:00.000Z` }));
+      expect(res.status).toBe(422);
+    }
+
+    const remove = await request(app).delete(`/closing-days/${range.id}`);
     expect(remove.status).toBe(204);
 
     const listAfter = await request(app).get("/closing-days");
     expect(listAfter.body.closingDays).toEqual([]);
   });
 
+  it("swaps a reversed range instead of rejecting it", async () => {
+    const { app } = buildApp();
+    const add = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: "2026-08-12", toDate: "2026-08-10" });
+    expect(add.status).toBe(201);
+    expect(add.body).toMatchObject({ fromDate: "2026-08-10", toDate: "2026-08-12" });
+  });
+
   it("rejects an invalid date with 400", async () => {
     const { app } = buildApp();
-    const res = await request(app).post("/closing-days").set(staffHeaders).send({ date: "not-a-date" });
+    const res = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: "not-a-date" });
     expect(res.status).toBe(400);
   });
 });

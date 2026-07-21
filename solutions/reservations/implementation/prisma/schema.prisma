@@ -35,6 +35,9 @@ model Reservation {
   // CAP-D01.01-R36/R37: operational context (allergies, special requests).
   // Not the authoritative allergy record — see the rule comments.
   notes              String?
+  // CAP-D01.01-R48: manual, staff-entered table note (e.g. "C1"). Not an
+  // owned Seating Assignment guarantee — see the rule comments.
+  tableAssignment    String?
   createdBy          String
   createdAt          DateTime
   updatedAt          DateTime @updatedAt
@@ -78,9 +81,12 @@ model AppliedCommand {
 
 // CAP-D01.01-R51 — a stopgap operational calendar until Availability
 // Management exists as its own capability (see R47/R51 in rule-model.md).
-// One row per calendar day that is fully closed for booking.
+// One row per closed date range (inclusive); a single closed day is a
+// range where fromDate equals toDate.
 model ClosingDay {
-  date      DateTime @id
+  id        String   @id @default(cuid())
+  fromDate  DateTime
+  toDate    DateTime
   reason    String?
   createdBy String
   createdAt DateTime @default(now())

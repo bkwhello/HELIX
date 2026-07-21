@@ -44,6 +44,8 @@ export interface ModifyReservationCommand extends CommandEnvelope {
     readonly contactId?: string;
     /** CAP-D01.01-R20: a revalidated Service Period for a date/time change, or a standalone correction. */
     readonly servicePeriodId?: string;
+    /** CAP-D01.01-R48: a manual, staff-entered table note (e.g. "C1") — not a Seating Assignment guarantee, which stays owned elsewhere once that capability exists. */
+    readonly tableAssignment?: string;
   };
   /** CAP-D01.01-R20: supplied by the caller after confirming the existing Service Period still holds for the new date/time. */
   readonly isServicePeriodStillValid?: boolean;

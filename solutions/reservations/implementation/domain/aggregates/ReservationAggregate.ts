@@ -47,6 +47,8 @@ export class ReservationAggregate {
     private readonly source: ReservationSource,
     private readonly preferredArea: PreferredArea | undefined,
     private readonly notes: string | undefined,
+    /** CAP-D01.01-R48: a manual, staff-entered table note — not an owned Seating Assignment guarantee. Mutable, unlike the other creation-time fields, since it is normally set after creation. */
+    private tableAssignment: string | undefined,
     private readonly createdBy: string,
     private readonly createdAt: Date,
     /**
@@ -73,6 +75,7 @@ export class ReservationAggregate {
     source: import("../value-objects/ReservationSource.js").ReservationSourceProps;
     preferredArea?: PreferredArea;
     notes?: string;
+    tableAssignment?: string;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -97,6 +100,7 @@ export class ReservationAggregate {
       source.value,
       props.preferredArea,
       props.notes,
+      props.tableAssignment,
       props.createdBy,
       props.createdAt,
       props.version
@@ -174,6 +178,7 @@ export class ReservationAggregate {
       source,
       cmd.preferredArea,
       cmd.notes,
+      undefined,
       cmd.actor.id,
       cmd.now,
       0
@@ -279,6 +284,11 @@ export class ReservationAggregate {
       resultingValues["contactId"] = cmd.changes.contactId;
     }
 
+    if (cmd.changes.tableAssignment !== undefined) {
+      previousValues["tableAssignment"] = this.tableAssignment;
+      resultingValues["tableAssignment"] = cmd.changes.tableAssignment;
+    }
+
     if (violations.length > 0) {
       return fail(violations);
     }
@@ -297,6 +307,9 @@ export class ReservationAggregate {
     }
     if (cmd.changes.servicePeriodId !== undefined) {
       this.servicePeriodId = cmd.changes.servicePeriodId;
+    }
+    if (cmd.changes.tableAssignment !== undefined) {
+      this.tableAssignment = cmd.changes.tableAssignment;
     }
 
     this.pendingEvents.push({
@@ -424,6 +437,10 @@ export class ReservationAggregate {
 
   getNotes(): string | undefined {
     return this.notes;
+  }
+
+  getTableAssignment(): string | undefined {
+    return this.tableAssignment;
   }
 
   getPartySize(): number {

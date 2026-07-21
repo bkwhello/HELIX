@@ -204,7 +204,7 @@ export function createApp(deps: AppDependencies): Express {
       commandId: string;
       correlationId?: string;
       causationId?: string;
-      changes: { reservationDate?: string; partySize?: number; contactId?: string; servicePeriodId?: string };
+      changes: { reservationDate?: string; partySize?: number; contactId?: string; servicePeriodId?: string; tableAssignment?: string };
       isServicePeriodStillValid?: boolean;
       isAuthorizedCorrection?: boolean;
       correctionReason?: string;
@@ -224,6 +224,7 @@ export function createApp(deps: AppDependencies): Express {
         partySize: body.changes?.partySize,
         contactId: body.changes?.contactId,
         servicePeriodId: body.changes?.servicePeriodId,
+        tableAssignment: body.changes?.tableAssignment,
       },
       isServicePeriodStillValid: body.isServicePeriodStillValid,
       isAuthorizedCorrection: body.isAuthorizedCorrection,
@@ -316,20 +317,23 @@ export function createApp(deps: AppDependencies): Express {
   // CAP-D01.01-R51 — closing-days management. Not part of the Reservation
   // aggregate; this is the "line where we can add special closing days"
   // requested for the pilot. See rule-model.md §16b for why this lives
-  // here as a stopgap instead of in Availability Management.
+  // here as a stopgap instead of in Availability Management. A closure is
+  // a fromDate..toDate range (inclusive); a single closed day is a range
+  // where toDate is omitted or equals fromDate.
   app.post("/closing-days", async (req: Request, res: Response) => {
-    const body = req.body as { date: string; reason?: string };
+    const body = req.body as { fromDate: string; toDate?: string; reason?: string };
     const actor = resolveActor(req, res);
     if (!actor) return;
 
-    const date = new Date(body.date);
-    if (Number.isNaN(date.getTime())) {
-      res.status(400).json({ message: "date must be a valid ISO date (e.g. 2026-12-25)." });
+    const fromDate = new Date(body.fromDate);
+    const toDate = body.toDate ? new Date(body.toDate) : fromDate;
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      res.status(400).json({ message: "fromDate and toDate must be valid ISO dates (e.g. 2026-12-25)." });
       return;
     }
 
-    await deps.closingDayStore.add({ date, reason: body.reason, createdBy: actor.id });
-    res.status(201).json({ date: date.toISOString().slice(0, 10), reason: body.reason });
+    const saved = await deps.closingDayStore.add({ fromDate, toDate, reason: body.reason, createdBy: actor.id });
+    res.status(201).json(saved);
   });
 
   app.get("/closing-days", async (_req: Request, res: Response) => {
@@ -337,13 +341,8 @@ export function createApp(deps: AppDependencies): Express {
     res.status(200).json({ closingDays });
   });
 
-  app.delete("/closing-days/:date", async (req: Request, res: Response) => {
-    const date = new Date(routeParam(req, "date"));
-    if (Number.isNaN(date.getTime())) {
-      res.status(400).json({ message: "date must be a valid ISO date (e.g. 2026-12-25)." });
-      return;
-    }
-    await deps.closingDayStore.remove(date);
+  app.delete("/closing-days/:id", async (req: Request, res: Response) => {
+    await deps.closingDayStore.remove(routeParam(req, "id"));
     res.status(204).send();
   });
 
@@ -417,6 +416,7 @@ function serializeReservation(aggregate: {
   getSource(): { category: string };
   getPreferredArea(): string | undefined;
   getNotes(): string | undefined;
+  getTableAssignment(): string | undefined;
 }) {
   return {
     id: aggregate.getId().toString(),
@@ -429,5 +429,6 @@ function serializeReservation(aggregate: {
     sourceCategory: aggregate.getSource().category,
     preferredArea: aggregate.getPreferredArea(),
     notes: aggregate.getNotes(),
+    tableAssignment: aggregate.getTableAssignment(),
   };
 }

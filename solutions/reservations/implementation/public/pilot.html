@@ -19,6 +19,8 @@
     --warn-text: #7a5a00;
     --ok-bg: #e9f3e8;
     --ok-text: #2c5c2a;
+    --sushi-bg: #e3edfa;
+    --sushi-text: #1c4e8a;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -33,6 +35,8 @@
       --warn-text: #f0d27a;
       --ok-bg: #16311a;
       --ok-text: #a9dba6;
+      --sushi-bg: #16233a;
+      --sushi-text: #8fb8ef;
     }
   }
   * { box-sizing: border-box; }
@@ -111,6 +115,9 @@
   .status-Completed { background: var(--bg-page); color: var(--muted); }
   .empty { color: var(--muted); font-size: 0.9rem; padding: 0.5rem 0; }
   .notes-cell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preference { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
+  .preference-Sushi { background: var(--sushi-bg); color: var(--sushi-text); }
+  .table-input { width: 5rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
   .list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
   .list-item:last-child { border-bottom: none; }
   .list-item .remove { background: transparent; border: none; color: var(--danger-text); cursor: pointer; font-size: 0.85rem; margin: 0; padding: 0.2rem 0.4rem; }
@@ -149,7 +156,7 @@
       <div class="row">
         <div>
           <label for="datetime">Datum en tijd</label>
-          <input id="datetime" type="datetime-local" required />
+          <input id="datetime" type="datetime-local" step="900" required />
         </div>
         <div>
           <label for="party-size">Aantal personen</label>
@@ -157,27 +164,16 @@
         </div>
       </div>
 
-      <div class="row">
-        <div>
-          <label for="service-period">Dienst</label>
-          <select id="service-period">
-            <option value="lunch">Lunch</option>
-            <option value="dinner" selected>Diner</option>
-          </select>
-        </div>
-        <div>
-          <label for="source">Bron</label>
-          <select id="source">
-            <option value="Telephone" selected>Telefoon</option>
-            <option value="Walk-in">Walk-in</option>
-            <option value="Website">Website</option>
-            <option value="Google">Google</option>
-            <option value="TheFork">TheFork</option>
-            <option value="Staff">Personeel</option>
-            <option value="Other Approved Source">Overig</option>
-          </select>
-        </div>
-      </div>
+      <label for="source">Bron</label>
+      <select id="source">
+        <option value="Telephone" selected>Telefoon</option>
+        <option value="Walk-in">Walk-in</option>
+        <option value="Website">Website</option>
+        <option value="Google">Google</option>
+        <option value="TheFork">TheFork</option>
+        <option value="Staff">Personeel</option>
+        <option value="Other Approved Source">Overig</option>
+      </select>
 
       <label for="preferred-area">Voorkeur</label>
       <select id="preferred-area" required>
@@ -208,7 +204,7 @@
     <div id="list-message"></div>
     <table id="list-table" style="margin-top: 0.75rem;">
       <thead>
-        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Bron</th><th>Status</th><th>Opmerkingen</th></tr>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Opmerkingen</th></tr>
       </thead>
       <tbody id="list-body"></tbody>
     </table>
@@ -220,15 +216,17 @@
     <form id="closing-day-form">
       <div class="row">
         <div>
-          <label for="closing-date">Datum</label>
-          <input id="closing-date" type="date" required />
+          <label for="closing-from">Van</label>
+          <input id="closing-from" type="date" required />
         </div>
         <div>
-          <label for="closing-reason">Reden (optioneel)</label>
-          <input id="closing-reason" type="text" placeholder="bijv. personeelsuitje" />
+          <label for="closing-to">Tot (leeg = zelfde dag)</label>
+          <input id="closing-to" type="date" />
         </div>
       </div>
-      <button type="submit">Sluitingsdag toevoegen</button>
+      <label for="closing-reason">Reden (optioneel)</label>
+      <input id="closing-reason" type="text" placeholder="bijv. personeelsuitje" />
+      <button type="submit">Sluitingsdag(en) toevoegen</button>
       <div id="closing-day-message"></div>
     </form>
     <div id="closing-day-list" style="margin-top: 1rem;"></div>
@@ -281,6 +279,26 @@
     el.className = "";
   }
 
+  // step="900" on the datetime field makes the browser's own picker snap
+  // to :00/:15/:30/:45, but some browsers still allow typing an arbitrary
+  // minute by hand — this rounds it back onto the grid as a safety net.
+  const datetimeInput = document.getElementById("datetime");
+  function roundToQuarterHour(value) {
+    if (!value) return value;
+    const [datePart, timePart] = value.split("T");
+    if (!timePart) return value;
+    let [hour, minute] = timePart.split(":").map(Number);
+    minute = Math.round(minute / 15) * 15;
+    if (minute === 60) {
+      minute = 0;
+      hour = (hour + 1) % 24;
+    }
+    return `${datePart}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  datetimeInput.addEventListener("change", () => {
+    datetimeInput.value = roundToQuarterHour(datetimeInput.value);
+  });
+
   const createForm = document.getElementById("create-form");
   const createMessage = document.getElementById("create-message");
 
@@ -289,15 +307,22 @@
     localStorage.setItem(STAFF_NAME_KEY, staffNameInput.value.trim());
     clearMessage(createMessage);
 
-    const datetimeValue = document.getElementById("datetime").value;
+    const datetimeValue = roundToQuarterHour(datetimeInput.value);
     if (!datetimeValue) {
       showMessage(createMessage, "Kies een datum en tijd.", "error");
       return;
     }
 
+    // Dienst is derived from the chosen time, not picked manually: lunch
+    // only runs 12:00-16:00 (Fri/Sat/Sun in practice, but the time alone
+    // already makes lunch vs. dinner unambiguous, so there is nothing left
+    // for a separate field to disambiguate).
+    const hour = Number(datetimeValue.slice(11, 13));
+    const servicePeriodId = hour >= 12 && hour < 16 ? "lunch" : "dinner";
+
     const body = {
       commandId: `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      servicePeriodId: document.getElementById("service-period").value,
+      servicePeriodId,
       contactId: document.getElementById("guest-phone").value.trim(),
       contactName: document.getElementById("guest-name").value.trim(),
       reservationDate: new Date(datetimeValue).toISOString(),
@@ -363,6 +388,28 @@
     "Other Approved Source": "Overig",
   };
 
+  async function saveTableAssignment(reservationId, value, inputEl) {
+    inputEl.disabled = true;
+    try {
+      const res = await fetch(`/reservations/${reservationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify({
+          commandId: `pilot-table-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          changes: { tableAssignment: value },
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showMessage(listMessage, data.message || ruleMessages(data.violations) || "Kon tafel niet opslaan.", "error");
+      }
+    } catch (err) {
+      showMessage(listMessage, "Netwerkfout: kon tafel niet opslaan.", "error");
+    } finally {
+      inputEl.disabled = false;
+    }
+  }
+
   async function loadList() {
     clearMessage(listMessage);
     try {
@@ -374,20 +421,48 @@
       }
       listBody.innerHTML = "";
       listEmpty.style.display = data.reservations.length === 0 ? "block" : "none";
-      for (const r of data.reservations) {
+
+      // Teppanyaki first (tables need assigning), each group by time.
+      const sorted = [...data.reservations].sort((a, b) => {
+        const aTeppan = a.preferredArea === "Teppanyaki" ? 0 : 1;
+        const bTeppan = b.preferredArea === "Teppanyaki" ? 0 : 1;
+        if (aTeppan !== bTeppan) return aTeppan - bTeppan;
+        return new Date(a.reservationDate) - new Date(b.reservationDate);
+      });
+
+      for (const r of sorted) {
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
         const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
         const notes = escapeHtml(r.notes || "");
+        const preference = r.preferredArea
+          ? `<span class="preference preference-${r.preferredArea}">${r.preferredArea}</span>`
+          : "—";
+
+        const tableCell = document.createElement("td");
+        if (r.preferredArea === "Teppanyaki") {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "table-input";
+          input.placeholder = "bijv. C1";
+          input.value = r.tableAssignment || "";
+          input.addEventListener("change", () => saveTableAssignment(r.id, input.value.trim(), input));
+          tableCell.appendChild(input);
+        } else {
+          tableCell.textContent = "—";
+        }
+
         tr.innerHTML = `
           <td>${time}</td>
           <td>${guest}</td>
           <td>${r.partySize}</td>
-          <td>${r.preferredArea || "—"}</td>
+          <td>${preference}</td>
+          <td></td>
           <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
           <td class="notes-cell" title="${notes}">${notes || "—"}</td>
         `;
+        tr.children[4].replaceWith(tableCell);
         listBody.appendChild(tr);
       }
     } catch (err) {
@@ -420,18 +495,22 @@
       }
       closingDayList.innerHTML = "";
       closingDayEmpty.style.display = data.closingDays.length === 0 ? "block" : "none";
-      for (const day of data.closingDays) {
+      for (const range of data.closingDays) {
         const row = document.createElement("div");
         row.className = "list-item";
+        const label =
+          range.fromDate === range.toDate
+            ? formatDateNL(range.fromDate)
+            : `${formatDateNL(range.fromDate)} – ${formatDateNL(range.toDate)}`;
         row.innerHTML = `
-          <span>${formatDateNL(day.date)}${day.reason ? " — " + escapeHtml(day.reason) : ""}</span>
-          <button type="button" class="remove" data-date="${day.date}">Verwijderen</button>
+          <span>${label}${range.reason ? " — " + escapeHtml(range.reason) : ""}</span>
+          <button type="button" class="remove" data-id="${range.id}">Verwijderen</button>
         `;
         closingDayList.appendChild(row);
       }
       closingDayList.querySelectorAll(".remove").forEach((btn) => {
         btn.addEventListener("click", async () => {
-          await fetch(`/closing-days/${btn.dataset.date}`, { method: "DELETE", headers: actorHeaders() });
+          await fetch(`/closing-days/${btn.dataset.id}`, { method: "DELETE", headers: actorHeaders() });
           await loadClosingDays();
         });
       });
@@ -443,24 +522,27 @@
   closingDayForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     clearMessage(closingDayMessage);
-    const date = document.getElementById("closing-date").value;
+    const fromDate = document.getElementById("closing-from").value;
+    // Empty "tot" means the same day as "van" — a single closed day.
+    const toDate = document.getElementById("closing-to").value || fromDate;
     const reason = document.getElementById("closing-reason").value.trim() || undefined;
-    if (!date) {
-      showMessage(closingDayMessage, "Kies een datum.", "error");
+    if (!fromDate) {
+      showMessage(closingDayMessage, "Kies minimaal een datum (van).", "error");
       return;
     }
     try {
       const res = await fetch("/closing-days", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...actorHeaders() },
-        body: JSON.stringify({ date, reason }),
+        body: JSON.stringify({ fromDate, toDate, reason }),
       });
       const data = await res.json();
       if (!res.ok) {
-        showMessage(closingDayMessage, data.message || "Kon sluitingsdag niet toevoegen.", "error");
+        showMessage(closingDayMessage, data.message || "Kon sluitingsdag(en) niet toevoegen.", "error");
         return;
       }
-      document.getElementById("closing-date").value = "";
+      document.getElementById("closing-from").value = "";
+      document.getElementById("closing-to").value = "";
       document.getElementById("closing-reason").value = "";
       await loadClosingDays();
     } catch (err) {

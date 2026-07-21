@@ -79,6 +79,29 @@ describe("AC09 — Revalidate Service Period After Date or Time Change", () => {
   });
 });
 
+// CAP-D01.01-R48 — manual table assignment (staff-entered, not a Seating Assignment guarantee)
+describe("Manual table assignment", () => {
+  it("sets the table assignment and does not require Service Period revalidation", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { tableAssignment: "C1" } }, NOW);
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getTableAssignment()).toBe("C1");
+  });
+
+  it("can be changed to a different table later", () => {
+    const aggregate = createProposedReservation();
+    aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { tableAssignment: "C1" } }, NOW);
+    aggregate.pullEvents();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { tableAssignment: "D3" } }, NOW);
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getTableAssignment()).toBe("D3");
+  });
+});
+
 // CAP-D01.01-AC11 — Prevent Internal Identity Modification
 describe("AC11 — Prevent Internal Identity Modification", () => {
   it("rejects an attempt to modify the internal Reservation Identity", () => {

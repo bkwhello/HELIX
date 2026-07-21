@@ -16,6 +16,7 @@ export interface ModifyReservationRequest {
     readonly partySize?: number;
     readonly contactId?: string;
     readonly servicePeriodId?: string;
+    readonly tableAssignment?: string;
   };
   readonly isServicePeriodStillValid?: boolean;
   readonly isAuthorizedCorrection?: boolean;
