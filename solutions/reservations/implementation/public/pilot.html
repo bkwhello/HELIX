@@ -115,8 +115,8 @@
   .status-Completed { background: var(--bg-page); color: var(--muted); }
   .empty { color: var(--muted); font-size: 0.9rem; padding: 0.5rem 0; }
   .notes-cell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .preference { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
-  .preference-Sushi { background: var(--sushi-bg); color: var(--sushi-text); }
+  .preference-select { width: auto; padding: 0.2rem 0.4rem; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border); }
+  .preference-select-Sushi { background: var(--sushi-bg); color: var(--sushi-text); border-color: transparent; }
   .table-input { width: 5rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
   .notes-input { width: 100%; min-width: 9rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
   .list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
@@ -439,9 +439,35 @@
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
         const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
-        const preference = r.preferredArea
-          ? `<span class="preference preference-${r.preferredArea}">${r.preferredArea}</span>`
-          : "—";
+
+        // Editable — a guest can change their mind, or staff learn the
+        // real preference after the fact. Changing it also affects
+        // whether the Tafel field applies and the Teppanyaki-bezetting
+        // count, so both reload afterward.
+        const preferenceCell = document.createElement("td");
+        const preferenceSelect = document.createElement("select");
+        preferenceSelect.className = "preference-select preference-select-" + (r.preferredArea || "none");
+        if (!r.preferredArea) {
+          const placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = "— kies —";
+          placeholder.disabled = true;
+          preferenceSelect.appendChild(placeholder);
+        }
+        for (const area of ["Sushi", "Teppanyaki"]) {
+          const opt = document.createElement("option");
+          opt.value = area;
+          opt.textContent = area;
+          preferenceSelect.appendChild(opt);
+        }
+        preferenceSelect.value = r.preferredArea || "";
+        preferenceSelect.addEventListener("change", async () => {
+          preferenceSelect.className = "preference-select preference-select-" + preferenceSelect.value;
+          await saveReservationField(r.id, { preferredArea: preferenceSelect.value }, preferenceSelect, "voorkeur");
+          await loadList();
+          await loadOccupancy();
+        });
+        preferenceCell.appendChild(preferenceSelect);
 
         const tableCell = document.createElement("td");
         if (r.preferredArea === "Teppanyaki" || r.preferredArea === "Sushi") {
@@ -473,12 +499,13 @@
           <td>${time}</td>
           <td>${guest}</td>
           <td>${r.partySize}</td>
-          <td>${preference}</td>
+          <td></td>
           <td></td>
           <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
           <td></td>
         `;
+        tr.children[3].replaceWith(preferenceCell);
         tr.children[4].replaceWith(tableCell);
         tr.children[7].replaceWith(notesCell);
         listBody.appendChild(tr);

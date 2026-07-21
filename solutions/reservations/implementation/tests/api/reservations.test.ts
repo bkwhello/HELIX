@@ -262,6 +262,39 @@ describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R
   });
 });
 
+describe("PATCH /reservations/:id — changing the preferred area after creation (CAP-D01.01-R48)", () => {
+  it("switches Sushi to Teppanyaki", async () => {
+    const { app } = buildApp();
+    const created = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-area-edit", preferredArea: "Sushi" }));
+    expect(created.body.preferredArea).toBe("Sushi");
+
+    const switched = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-area-edit-1", changes: { preferredArea: "Teppanyaki" } });
+    expect(switched.status).toBe(204);
+
+    const after = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.preferredArea).toBe("Teppanyaki");
+  });
+
+  it("rejects an unrecognized preferredArea in changes with a clear 400", async () => {
+    const { app } = buildApp();
+    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-area-bad-edit" }));
+
+    const res = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-area-bad-edit-1", changes: { preferredArea: "Steakhouse" } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("Steakhouse");
+  });
+});
+
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
   it("lists reservations for the requested date, including guest name and preferred area", async () => {
     const { app } = buildApp();

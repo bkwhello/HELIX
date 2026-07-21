@@ -144,6 +144,7 @@ export class PrismaReservationRepository implements ReservationRepository {
               servicePeriodId: aggregate.getServicePeriodId(),
               tableAssignment: aggregate.getTableAssignment(),
               notes: aggregate.getNotes(),
+              preferredArea: aggregate.getPreferredArea(),
               version: { increment: 1 },
             },
           });

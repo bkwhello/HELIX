@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ReservationAggregate } from "../../domain/aggregates/ReservationAggregate.js";
+import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 import { validCreateCommand, testEnvelope, staffActor, unauthorizedActor, NOW, FUTURE_DATE } from "../support/factories.js";
 
 function createProposedReservation(): ReservationAggregate {
@@ -126,6 +127,28 @@ describe("Editing notes after creation", () => {
 
     expect(result.ok).toBe(true);
     expect(aggregate.getNotes()).toBe("Notenallergie + graag venstertafel");
+  });
+});
+
+// CAP-D01.01-R48 — preference can change after creation (guest changes their mind, or staff learn the real preference later)
+describe("Changing the preferred area after creation", () => {
+  it("switches from Sushi to Teppanyaki", () => {
+    const aggregate = createProposedReservation();
+    expect(aggregate.getPreferredArea()).toBeUndefined();
+
+    const result = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { preferredArea: PreferredArea.Sushi } },
+      NOW
+    );
+    expect(result.ok).toBe(true);
+    expect(aggregate.getPreferredArea()).toBe(PreferredArea.Sushi);
+
+    const secondResult = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { preferredArea: PreferredArea.Teppanyaki } },
+      NOW
+    );
+    expect(secondResult.ok).toBe(true);
+    expect(aggregate.getPreferredArea()).toBe(PreferredArea.Teppanyaki);
   });
 });
 

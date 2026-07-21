@@ -45,7 +45,8 @@ export class ReservationAggregate {
     private dateTime: ReservationDateTime,
     private partySize: PartySize,
     private readonly source: ReservationSource,
-    private readonly preferredArea: PreferredArea | undefined,
+    /** CAP-D01.01-R48: a guest preference, never a seating guarantee. Mutable — a guest can change their mind, or staff learn the real preference after creation. */
+    private preferredArea: PreferredArea | undefined,
     /** CAP-D01.01-R36/R37: operational context (allergies, special requests). Mutable — staff routinely add or correct this after creation (e.g. "put it on the bill", a wish mentioned in a follow-up call). */
     private notes: string | undefined,
     /** CAP-D01.01-R48: a manual, staff-entered table note — not an owned Seating Assignment guarantee. Mutable, unlike the other creation-time fields, since it is normally set after creation. */
@@ -295,6 +296,11 @@ export class ReservationAggregate {
       resultingValues["notes"] = cmd.changes.notes;
     }
 
+    if (cmd.changes.preferredArea !== undefined) {
+      previousValues["preferredArea"] = this.preferredArea;
+      resultingValues["preferredArea"] = cmd.changes.preferredArea;
+    }
+
     if (violations.length > 0) {
       return fail(violations);
     }
@@ -319,6 +325,9 @@ export class ReservationAggregate {
     }
     if (cmd.changes.notes !== undefined) {
       this.notes = cmd.changes.notes;
+    }
+    if (cmd.changes.preferredArea !== undefined) {
+      this.preferredArea = cmd.changes.preferredArea;
     }
 
     this.pendingEvents.push({

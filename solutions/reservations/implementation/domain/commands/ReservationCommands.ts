@@ -48,6 +48,8 @@ export interface ModifyReservationCommand extends CommandEnvelope {
     readonly tableAssignment?: string;
     /** CAP-D01.01-R36/R37: added or corrected after creation, e.g. "put it on the bill" or a wish mentioned in a follow-up call. */
     readonly notes?: string;
+    /** CAP-D01.01-R48: a guest can change their mind, or staff learn the real preference after creation. */
+    readonly preferredArea?: PreferredArea;
   };
   /** CAP-D01.01-R20: supplied by the caller after confirming the existing Service Period still holds for the new date/time. */
   readonly isServicePeriodStillValid?: boolean;

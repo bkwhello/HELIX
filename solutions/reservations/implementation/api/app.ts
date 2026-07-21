@@ -204,7 +204,15 @@ export function createApp(deps: AppDependencies): Express {
       commandId: string;
       correlationId?: string;
       causationId?: string;
-      changes: { reservationDate?: string; partySize?: number; contactId?: string; servicePeriodId?: string; tableAssignment?: string; notes?: string };
+      changes: {
+        reservationDate?: string;
+        partySize?: number;
+        contactId?: string;
+        servicePeriodId?: string;
+        tableAssignment?: string;
+        notes?: string;
+        preferredArea?: string;
+      };
       isServicePeriodStillValid?: boolean;
       isAuthorizedCorrection?: boolean;
       correctionReason?: string;
@@ -212,6 +220,9 @@ export function createApp(deps: AppDependencies): Express {
 
     const actor = resolveActor(req, res);
     if (!actor) return;
+
+    const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
+    if (!preferredArea) return;
 
     const result = await modifyHandler.handle({
       commandId: body.commandId,
@@ -226,6 +237,7 @@ export function createApp(deps: AppDependencies): Express {
         servicePeriodId: body.changes?.servicePeriodId,
         tableAssignment: body.changes?.tableAssignment,
         notes: body.changes?.notes,
+        preferredArea: preferredArea.present ? preferredArea.value : undefined,
       },
       isServicePeriodStillValid: body.isServicePeriodStillValid,
       isAuthorizedCorrection: body.isAuthorizedCorrection,
