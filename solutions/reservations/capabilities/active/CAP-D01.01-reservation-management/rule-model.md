@@ -8,11 +8,13 @@ artifact_id: CAP-D01.01-RULE
 artifact_type: Capability Rule Model
 capability_id: CAP-D01.01
 capability_name: Reservation Management
-version: 1.0.0
+version: 1.1.0
 status: Approved
 owner: Reservation Management
 authority: CAP-D01.01 capability.md
 ```
+
+Version 1.1.0 adds CAP-D01.01-R50, closing a gap found during implementation review: R32–R35 give creation, modification, cancellation, and completion each an authorization rule, but confirmation had none.
 
 ---
 
@@ -946,6 +948,24 @@ Actual service completion belongs to operational capabilities.
 
 ---
 
+# 16a. Confirmation Authorization
+
+## CAP-D01.01-R50 — Confirmation Requires Authority
+
+```yaml
+type: Authorization
+severity: Blocking
+override_allowed: false
+```
+
+Reservation confirmation shall be restricted to authorized users, trusted guest actions, or approved integration capabilities.
+
+The confirming actor shall be attributable.
+
+Added in version 1.1.0. Sections 9 (Confirmation Rules) and 12 (Authorization Rules) originally covered creation, modification, cancellation, and completion but left confirmation without an authorization rule of its own; R50 closes that gap.
+
+---
+
 # 17. Rule-to-State Traceability
 
 | Rule | State or Transition Affected |
@@ -956,7 +976,7 @@ Actual service completion belongs to operational capabilities.
 | R22–R24 | Proposed → Confirmed |
 | R25–R28 | Proposed or Confirmed → Cancelled |
 | R29–R31 | Confirmed → Completed |
-| R32–R35 | All commands |
+| R32–R35, R50 | All commands |
 | R39–R42 | Authorized overrides |
 | R43–R46 | Failure handling |
 | R47–R49 | Operational interpretation |

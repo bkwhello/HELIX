@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ReservationAggregate } from "../../domain/aggregates/ReservationAggregate.js";
-import { validCreateCommand, staffActor, unauthorizedActor, NOW, FUTURE_DATE } from "../support/factories.js";
+import { validCreateCommand, testEnvelope, staffActor, unauthorizedActor, NOW, FUTURE_DATE } from "../support/factories.js";
 
 function createProposedReservation(): ReservationAggregate {
   const result = ReservationAggregate.create(validCreateCommand());
@@ -15,7 +15,7 @@ describe("AC08 — Modify Valid Reservation Information", () => {
     const aggregate = createProposedReservation();
     const originalId = aggregate.getId().toString();
 
-    const result = aggregate.modify({ actor: staffActor, changes: { partySize: 6 } }, NOW);
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { partySize: 6 } }, NOW);
 
     expect(result.ok).toBe(true);
     expect(aggregate.getId().toString()).toBe(originalId);
@@ -29,19 +29,53 @@ describe("AC08 — Modify Valid Reservation Information", () => {
 
 // CAP-D01.01-AC09 — Revalidate Service Period After Date or Time Change
 describe("AC09 — Revalidate Service Period After Date or Time Change", () => {
-  it("signals that a date change requires Service Period revalidation", () => {
-    const aggregate = createProposedReservation();
-    const newDate = new Date(FUTURE_DATE.getTime() + 86_400_000);
+  const newDate = new Date(FUTURE_DATE.getTime() + 86_400_000);
 
-    const result = aggregate.modify({ actor: staffActor, changes: { reservationDate: newDate } }, NOW);
+  it("rejects a date change that carries neither a revalidated Service Period nor a validity confirmation (CAP-D01.01-R20)", () => {
+    const aggregate = createProposedReservation();
+    const originalServicePeriodId = aggregate.getServicePeriodId();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { reservationDate: newDate } }, NOW);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R20")).toBe(true);
+    }
+    expect(aggregate.getServicePeriodId()).toBe(originalServicePeriodId);
+    expect(aggregate.pullEvents()).toHaveLength(0);
+  });
+
+  it("accepts a date change when a revalidated Service Period is supplied", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { reservationDate: newDate, servicePeriodId: "sp-2" } },
+      NOW
+    );
 
     expect(result.ok).toBe(true);
-    expect(aggregate.needsServicePeriodRevalidation(["reservationDate"])).toBe(true);
+    expect(aggregate.getServicePeriodId()).toBe("sp-2");
+  });
+
+  it("accepts a date change when the caller confirms the existing Service Period still holds", () => {
+    const aggregate = createProposedReservation();
+    const originalServicePeriodId = aggregate.getServicePeriodId();
+
+    const result = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { reservationDate: newDate }, isServicePeriodStillValid: true },
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getServicePeriodId()).toBe(originalServicePeriodId);
   });
 
   it("does not require Service Period revalidation when date/time is unchanged", () => {
     const aggregate = createProposedReservation();
     expect(aggregate.needsServicePeriodRevalidation(["contactId"])).toBe(false);
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { contactId: "contact-2" } }, NOW);
+    expect(result.ok).toBe(true);
   });
 });
 
@@ -52,7 +86,7 @@ describe("AC11 — Prevent Internal Identity Modification", () => {
     const originalId = aggregate.getId().toString();
 
     const result = aggregate.modify(
-      { actor: staffActor, changes: {}, isAuthorizedCorrection: false },
+      { ...testEnvelope(), actor: staffActor, changes: {}, isAuthorizedCorrection: false },
       NOW
     );
     // Simulate an attempted identity change via the immutable-fields guard directly,
@@ -69,7 +103,7 @@ describe("AC17 — Reject Unauthorized Modification", () => {
     const aggregate = createProposedReservation();
     const originalPartySize = aggregate.getPartySize();
 
-    const result = aggregate.modify({ actor: unauthorizedActor, changes: { partySize: 8 } }, NOW);
+    const result = aggregate.modify({ ...testEnvelope(), actor: unauthorizedActor, changes: { partySize: 8 } }, NOW);
 
     expect(result.ok).toBe(false);
     expect(aggregate.getPartySize()).toBe(originalPartySize);

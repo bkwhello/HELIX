@@ -29,6 +29,9 @@ model Reservation {
   createdBy          String
   createdAt          DateTime
   updatedAt          DateTime @updatedAt
+  // Optimistic-concurrency token. Incremented on every write; save()
+  // rejects a write whose expected version no longer matches this column.
+  version            Int      @default(1)
 
   events             ReservationEvent[]
 

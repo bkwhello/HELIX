@@ -20,6 +20,14 @@ export function checkModificationAuthorization(actor: Actor): RuleViolation[] {
   return [];
 }
 
+/** CAP-D01.01-R50 — Confirmation Requires Authority */
+export function checkConfirmationAuthorization(actor: Actor): RuleViolation[] {
+  if (!isTrustedActor(actor)) {
+    return [violation("CAP-D01.01-R50", "Reservation confirmation requires an authorized user, trusted guest action, or approved integration.")];
+  }
+  return [];
+}
+
 /** CAP-D01.01-R34 — Cancellation Requires Authority */
 export function checkCancellationAuthorization(actor: Actor): RuleViolation[] {
   if (!isTrustedActor(actor)) {

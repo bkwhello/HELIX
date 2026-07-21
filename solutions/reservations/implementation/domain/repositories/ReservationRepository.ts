@@ -2,12 +2,26 @@ import { ReservationAggregate } from "../aggregates/ReservationAggregate.js";
 import { ReservationId } from "../value-objects/ReservationId.js";
 
 /**
+ * Outcome of a save() attempt. Concurrency conflicts and a lost
+ * idempotency race are expected, first-class outcomes here — not thrown
+ * exceptions — so the application layer handles them explicitly instead
+ * of relying on an infrastructure-level try/catch.
+ */
+export type SaveResult =
+  | { readonly type: "SAVED"; readonly newVersion: number }
+  /** Nothing was written: `commandId` was already applied — by this call arriving twice, or by a concurrent call that won the race. The caller should look the result up via findByCommandId(). */
+  | { readonly type: "IDEMPOTENT_REPLAY" }
+  /** Nothing was written: `expectedVersion` no longer matches what is persisted. The caller should reload and retry. */
+  | { readonly type: "CONCURRENCY_CONFLICT" };
+
+/**
  * Port (interface). No implementation lives in domain/ — infrastructure/
  * provides the adapter (e.g. a Postgres-backed implementation).
  *
- * CAP-D01.01-R44 — Duplicate Command Processing Must Be Safe — is a
- * responsibility of the concrete implementation of this port: it must
- * make save() idempotent for a repeated commandId.
+ * Aggregate persistence only. Duplicate detection, contact existence, and
+ * Service Period validation are separate ports (DuplicateReservationChecker,
+ * ContactReader, ServicePeriodReader) — they are cross-capability queries,
+ * not concerns of the Reservation aggregate's own repository.
  */
 export interface ReservationRepository {
   findById(id: ReservationId): Promise<ReservationAggregate | null>;
@@ -20,22 +34,24 @@ export interface ReservationRepository {
   findByCommandId(commandId: string): Promise<ReservationAggregate | null>;
 
   /**
-   * Finds reservations that could be duplicates of the given candidate,
-   * per CAP-D01.01-R14. Returns true if a plausible duplicate exists.
-   * Matching strategy (contact, date, time, party size, source, external
-   * reference) is an infrastructure concern, not a domain one.
+   * Persists the aggregate. Must be atomic (CAP-D01.01-R05): the state
+   * write, its events, and the applied-command marker either all commit
+   * or none does.
+   *
+   * `expectedVersion` is the version the caller believes is currently
+   * persisted (normally `aggregate.getVersion()`) — passed explicitly
+   * rather than read off the aggregate internally, so the contract is
+   * self-documenting. A mismatch against what is actually persisted
+   * yields CONCURRENCY_CONFLICT rather than a blind overwrite.
+   *
+   * On IDEMPOTENT_REPLAY or CONCURRENCY_CONFLICT, nothing is written —
+   * in particular, the aggregate's pending events are left untouched
+   * (use `peekEvents()`, not `pullEvents()`, until SAVED is returned) so
+   * a caller can safely inspect or retry.
    */
-  hasPotentialDuplicate(candidate: {
-    contactId: string;
-    reservationDate: Date;
-    partySize: number;
-  }): Promise<boolean>;
-
-  /**
-   * Persists the aggregate. Implementations must be idempotent for a
-   * repeated commandId (CAP-D01.01-R44) and atomic (CAP-D01.01-R05):
-   * either the whole state change and its events are committed, or
-   * neither is.
-   */
-  save(aggregate: ReservationAggregate, commandId: string): Promise<void>;
+  save(input: {
+    readonly aggregate: ReservationAggregate;
+    readonly expectedVersion: number;
+    readonly commandId: string;
+  }): Promise<SaveResult>;
 }

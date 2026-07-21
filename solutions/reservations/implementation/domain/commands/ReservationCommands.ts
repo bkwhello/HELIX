@@ -1,7 +1,21 @@
 import { Actor } from "../value-objects/Actor.js";
 import { ReservationSourceProps } from "../value-objects/ReservationSource.js";
+import { CompletionEvidence } from "../value-objects/CompletionEvidence.js";
 
-export interface CreateReservationCommand {
+/**
+ * Fields every domain command carries so the resulting event can be
+ * stamped with a stable envelope (event-model.md §4, §15 Event
+ * Correlation). `eventId` is minted once per command by the application
+ * layer (EventIdGenerator) — a command produces at most one event in
+ * this lifecycle model, so command and event identity are 1:1 here.
+ */
+interface CommandEnvelope {
+  readonly eventId: string;
+  readonly correlationId: string;
+  readonly causationId?: string;
+}
+
+export interface CreateReservationCommand extends CommandEnvelope {
   readonly reservationId: string;
   readonly servicePeriodId: string;
   readonly contactId: string;
@@ -15,30 +29,35 @@ export interface CreateReservationCommand {
   readonly potentialDuplicateDetected?: boolean;
 }
 
-export interface ModifyReservationCommand {
+export interface ModifyReservationCommand extends CommandEnvelope {
   readonly actor: Actor;
   readonly changes: {
     readonly reservationDate?: Date;
     readonly partySize?: number;
     readonly contactId?: string;
+    /** CAP-D01.01-R20: a revalidated Service Period for a date/time change, or a standalone correction. */
+    readonly servicePeriodId?: string;
   };
+  /** CAP-D01.01-R20: supplied by the caller after confirming the existing Service Period still holds for the new date/time. */
+  readonly isServicePeriodStillValid?: boolean;
   readonly isAuthorizedCorrection?: boolean;
   readonly correctionReason?: string;
 }
 
-export interface ConfirmReservationCommand {
+export interface ConfirmReservationCommand extends CommandEnvelope {
   readonly actor: Actor;
 }
 
-export interface CancelReservationCommand {
+export interface CancelReservationCommand extends CommandEnvelope {
   readonly actor: Actor;
   readonly reason?: string;
   readonly reasonRequiredByPolicy?: boolean;
 }
 
-export interface CompleteReservationCommand {
+export interface CompleteReservationCommand extends CommandEnvelope {
   readonly actor: Actor;
-  readonly hasOperationalEvidence: boolean;
+  /** CAP-D01.01-R30: evidence the visit concluded. Absent only for a manual completion (see manualCompletionReason). */
+  readonly evidence?: CompletionEvidence;
   readonly isManualCompletion?: boolean;
   readonly manualCompletionReason?: string;
 }

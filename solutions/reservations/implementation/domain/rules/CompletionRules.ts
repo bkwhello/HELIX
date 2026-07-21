@@ -1,10 +1,11 @@
 import { RuleViolation, violation } from "../shared/Result.js";
 import { ReservationStatus, canTransition } from "../value-objects/ReservationStatus.js";
+import { CompletionEvidence } from "../value-objects/CompletionEvidence.js";
 
 export interface CompletionRuleContext {
   readonly currentStatus: ReservationStatus;
-  /** CAP-D01.01-R30: evidence the visit has concluded (Live Service, Guest Arrival, Table Turn, or manual). */
-  readonly hasOperationalEvidence: boolean;
+  /** CAP-D01.01-R30: evidence the visit has concluded (Live Service, Guest Arrival, Table Turn). Absent for a manual completion. */
+  readonly evidence?: CompletionEvidence;
   readonly manualCompletionReason?: string;
   readonly isManualCompletion?: boolean;
 }
@@ -24,7 +25,7 @@ export function checkCompletionRules(ctx: CompletionRuleContext): RuleViolation[
   }
 
   // CAP-D01.01-R30 — Completion Requires Operational Evidence
-  if (!ctx.hasOperationalEvidence) {
+  if (ctx.evidence === undefined && !ctx.isManualCompletion) {
     violations.push(violation("CAP-D01.01-R30", "Completion requires evidence that the reservation visit has concluded."));
   }
   if (ctx.isManualCompletion && (!ctx.manualCompletionReason || ctx.manualCompletionReason.trim().length === 0)) {

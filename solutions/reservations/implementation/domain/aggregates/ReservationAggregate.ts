@@ -1,9 +1,10 @@
-import { Result, RuleViolation, ok, fail } from "../shared/Result.js";
+import { Result, RuleViolation, ok, fail, violation } from "../shared/Result.js";
 import { ReservationId } from "../value-objects/ReservationId.js";
 import { ReservationStatus } from "../value-objects/ReservationStatus.js";
 import { PartySize } from "../value-objects/PartySize.js";
 import { ReservationDateTime } from "../value-objects/ReservationDateTime.js";
 import { ReservationSource } from "../value-objects/ReservationSource.js";
+import { Actor } from "../value-objects/Actor.js";
 import {
   CreateReservationCommand,
   ModifyReservationCommand,
@@ -19,6 +20,7 @@ import { checkCancellationRules } from "../rules/CancellationRules.js";
 import { checkCompletionRules } from "../rules/CompletionRules.js";
 import {
   checkModificationAuthorization,
+  checkConfirmationAuthorization,
   checkCancellationAuthorization,
   checkCompletionAuthorization,
 } from "../rules/AuthorizationRules.js";
@@ -42,7 +44,13 @@ export class ReservationAggregate {
     private partySize: PartySize,
     private readonly source: ReservationSource,
     private readonly createdBy: string,
-    private readonly createdAt: Date
+    private readonly createdAt: Date,
+    /**
+     * Optimistic-concurrency token: the version this aggregate was loaded
+     * at. 0 means "not yet persisted". Read only by repository adapters —
+     * the domain has no other use for it. See ReservationRepository.save().
+     */
+    private readonly version: number
   ) {}
 
   /**
@@ -60,6 +68,7 @@ export class ReservationAggregate {
     source: import("../value-objects/ReservationSource.js").ReservationSourceProps;
     createdBy: string;
     createdAt: Date;
+    version: number;
   }): ReservationAggregate {
     const id = ReservationId.create(props.id);
     const dateTime = ReservationDateTime.create(props.reservationDate);
@@ -79,8 +88,33 @@ export class ReservationAggregate {
       partySize.value,
       source.value,
       props.createdBy,
-      props.createdAt
+      props.createdAt,
+      props.version
     );
+  }
+
+  /**
+   * Common event-envelope fields (event-model.md §4) for the event about
+   * to be pushed. `aggregateVersion` is this.version + 1 — the version
+   * this write will produce once persisted — which is always correct
+   * because the repository's optimistic-concurrency check (see
+   * ReservationRepository.save()) guarantees at most one write succeeds
+   * against a given this.version.
+   */
+  private nextEnvelope(
+    cmd: { readonly eventId: string; readonly correlationId: string; readonly causationId?: string; readonly actor: Actor },
+    occurredAt: Date
+  ) {
+    return {
+      eventId: cmd.eventId,
+      eventVersion: 1,
+      reservationId: this.id.toString(),
+      aggregateVersion: this.version + 1,
+      occurredAt,
+      correlationId: cmd.correlationId,
+      causationId: cmd.causationId,
+      actor: { id: cmd.actor.id, type: cmd.actor.kind },
+    };
   }
 
   // ---------------------------------------------------------------------
@@ -128,11 +162,14 @@ export class ReservationAggregate {
       partySize,
       source,
       cmd.actor.id,
-      cmd.now
+      cmd.now,
+      0
     );
 
-    // CAP-D01.01-R14 is a Warning, not a blocking violation — surfaced
-    // as an event annotation rather than a rejection.
+    // CAP-D01.01-R14 is a Warning, not a blocking violation — recorded on
+    // the event itself so it is never silently discarded: the persisted
+    // history (and anything reading the event stream) can always see
+    // whether a potential duplicate was flagged at creation time.
     const duplicateWarning = checkDuplicateWarning({
       dateTime,
       now: cmd.now,
@@ -141,24 +178,19 @@ export class ReservationAggregate {
     });
 
     aggregate.pendingEvents.push({
+      ...aggregate.nextEnvelope(cmd, cmd.now),
       type: "ReservationCreated",
-      reservationId: id.toString(),
-      occurredAt: cmd.now,
       servicePeriodId: cmd.servicePeriodId,
       contactId: cmd.contactId,
       reservationDate: dateTime.toDate(),
       partySize: partySize.toNumber(),
       reservationSource: source.category,
-      createdBy: cmd.actor.id,
       externalReference: source.externalReference,
       importedBy: source.importedBy,
+      potentialDuplicateWarning: duplicateWarning !== null,
     });
 
     return ok(aggregate);
-    // duplicateWarning is intentionally not thrown away silently by callers:
-    // application-layer command handlers should log/surface it (see
-    // application/command-handlers/CreateReservationHandler.ts).
-    void duplicateWarning;
   }
 
   // ---------------------------------------------------------------------
@@ -194,6 +226,28 @@ export class ReservationAggregate {
       }
     }
 
+    // CAP-D01.01-R20 — a date/time change must carry either a revalidated
+    // Service Period or an explicit confirmation that the existing one
+    // still holds. Without one of those, the reservation would end up
+    // referencing a Service Period that no longer matches its own date/time.
+    if (requiresServicePeriodRevalidation(changedFields)) {
+      if (cmd.changes.servicePeriodId !== undefined) {
+        previousValues["servicePeriodId"] = this.servicePeriodId;
+        resultingValues["servicePeriodId"] = cmd.changes.servicePeriodId;
+      } else if (cmd.isServicePeriodStillValid !== true) {
+        violations.push(
+          violation(
+            "CAP-D01.01-R20",
+            "A reservation date or time change requires the Service Period to be revalidated: supply a revalidated Service Period or confirm the existing one remains valid."
+          )
+        );
+      }
+    } else if (cmd.changes.servicePeriodId !== undefined) {
+      // A direct Service Period correction, independent of any date/time change.
+      previousValues["servicePeriodId"] = this.servicePeriodId;
+      resultingValues["servicePeriodId"] = cmd.changes.servicePeriodId;
+    }
+
     if (cmd.changes.partySize !== undefined) {
       const partySizeResult = PartySize.create(cmd.changes.partySize);
       if (!partySizeResult.ok) {
@@ -225,15 +279,16 @@ export class ReservationAggregate {
     if (cmd.changes.contactId !== undefined) {
       this.contactId = cmd.changes.contactId;
     }
+    if (cmd.changes.servicePeriodId !== undefined) {
+      this.servicePeriodId = cmd.changes.servicePeriodId;
+    }
 
     this.pendingEvents.push({
+      ...this.nextEnvelope(cmd, now),
       type: "ReservationModified",
-      reservationId: this.id.toString(),
-      occurredAt: now,
       changedFields,
       previousValues,
       resultingValues,
-      actor: cmd.actor.id,
       reason: cmd.correctionReason,
     });
 
@@ -251,17 +306,18 @@ export class ReservationAggregate {
 
   /** CAP-D01.01-E03 */
   confirm(cmd: ConfirmReservationCommand, now: Date, isReservationDataValid: boolean): Result<void> {
-    const violations = checkConfirmationRules({ currentStatus: this.status, isReservationDataValid });
+    const violations: RuleViolation[] = [
+      ...checkConfirmationAuthorization(cmd.actor),
+      ...checkConfirmationRules({ currentStatus: this.status, isReservationDataValid }),
+    ];
     if (violations.length > 0) {
       return fail(violations);
     }
 
     this.status = ReservationStatus.Confirmed;
     this.pendingEvents.push({
+      ...this.nextEnvelope(cmd, now),
       type: "ReservationConfirmed",
-      reservationId: this.id.toString(),
-      occurredAt: now,
-      actor: cmd.actor.id,
     });
     return ok(undefined);
   }
@@ -286,11 +342,9 @@ export class ReservationAggregate {
 
     this.status = ReservationStatus.Cancelled;
     this.pendingEvents.push({
+      ...this.nextEnvelope(cmd, now),
       type: "ReservationCancelled",
-      reservationId: this.id.toString(),
-      occurredAt: now,
       cancelReason: cmd.reason,
-      cancelledBy: cmd.actor.id,
     });
     return ok(undefined);
   }
@@ -305,7 +359,7 @@ export class ReservationAggregate {
       ...checkCompletionAuthorization(cmd.actor),
       ...checkCompletionRules({
         currentStatus: this.status,
-        hasOperationalEvidence: cmd.hasOperationalEvidence,
+        evidence: cmd.evidence,
         isManualCompletion: cmd.isManualCompletion,
         manualCompletionReason: cmd.manualCompletionReason,
       }),
@@ -316,11 +370,10 @@ export class ReservationAggregate {
 
     this.status = ReservationStatus.Completed;
     this.pendingEvents.push({
+      ...this.nextEnvelope(cmd, now),
       type: "ReservationCompleted",
-      reservationId: this.id.toString(),
-      occurredAt: now,
-      actor: cmd.actor.id,
-      evidence: cmd.isManualCompletion ? cmd.manualCompletionReason : undefined,
+      evidence: cmd.evidence,
+      manualCompletionReason: cmd.manualCompletionReason,
     });
     return ok(undefined);
   }
@@ -353,7 +406,39 @@ export class ReservationAggregate {
     return this.dateTime.toDate();
   }
 
-  /** Drains and returns events recorded since the aggregate was loaded. The repository calls this after a successful save. */
+  getSource(): import("../value-objects/ReservationSource.js").ReservationSourceProps {
+    return { category: this.source.category, externalReference: this.source.externalReference, importedBy: this.source.importedBy };
+  }
+
+  getCreatedBy(): string {
+    return this.createdBy;
+  }
+
+  getCreatedAt(): Date {
+    return this.createdAt;
+  }
+
+  /**
+   * Optimistic-concurrency token this aggregate was loaded at. Repository
+   * adapters use this to detect a concurrent write between load and save
+   * (see ReservationRepository.save()); the domain has no other use for it.
+   */
+  getVersion(): number {
+    return this.version;
+  }
+
+  /**
+   * Non-destructive read of events recorded since the aggregate was loaded
+   * or created. Repository adapters must use this — not pullEvents() —
+   * while persistence is still in flight, so that a failed write leaves
+   * the events intact on the aggregate for a safe retry. pullEvents()
+   * should only be called once persistence has actually succeeded.
+   */
+  peekEvents(): readonly ReservationDomainEvent[] {
+    return this.pendingEvents;
+  }
+
+  /** Drains and returns events recorded since the aggregate was loaded. Call only after a successful save — see peekEvents(). */
   pullEvents(): ReservationDomainEvent[] {
     const events = this.pendingEvents;
     this.pendingEvents = [];

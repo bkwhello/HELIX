@@ -56,6 +56,34 @@ describe("AC04 — Preserve Internal Identity for External Reservations", () => 
   });
 });
 
+// CAP-D01.01-AC05 — Detect a Potential Duplicate
+describe("AC05 — Detect a Potential Duplicate", () => {
+  it("still creates the reservation but marks the event with a duplicate warning (CAP-D01.01-R14)", () => {
+    const result = ReservationAggregate.create(validCreateCommand({ potentialDuplicateDetected: true }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const events = result.value.pullEvents();
+    const created = events[0];
+    expect(created?.type).toBe("ReservationCreated");
+    if (created?.type === "ReservationCreated") {
+      expect(created.potentialDuplicateWarning).toBe(true);
+    }
+  });
+
+  it("does not mark the event when no duplicate was detected", () => {
+    const result = ReservationAggregate.create(validCreateCommand({ potentialDuplicateDetected: false }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const created = result.value.pullEvents()[0];
+    if (created?.type === "ReservationCreated") {
+      expect(created.potentialDuplicateWarning).toBe(false);
+    }
+  });
+});
+
 // CAP-D01.01-R11 — Past Reservation Creation Requires Explicit Policy
 describe("CAP-D01.01-R11 — Past reservation creation", () => {
   it("rejects a past reservation without an explicit historical-correction policy", () => {

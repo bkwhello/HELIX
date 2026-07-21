@@ -10,12 +10,14 @@ artifact_type: Capability Acceptance Model
 capability_id: CAP-D01.01
 capability_name: Reservation Management
 
-version: 1.0.0
+version: 1.1.0
 status: Approved
 
 owner: Reservation Management
 authority: capability.md
 ```
+
+Version 1.1.0 adds CAP-D01.01-AC38, alongside CAP-D01.01-R50 in `rule-model.md`.
 
 ---
 
@@ -1170,6 +1172,34 @@ the responsible actor or trusted source can be identified.
 
 ---
 
+## CAP-D01.01-AC38 — Reject Unauthorized Confirmation
+
+```yaml
+acceptance_level: A2
+priority: Critical
+related_rules:
+  - CAP-D01.01-R50
+  - CAP-D01.01-R43
+```
+
+**Given**
+
+an actor lacks permission to confirm reservations.
+
+**When**
+
+the actor submits Confirm Reservation.
+
+**Then**
+
+- the request is rejected;
+- the reservation remains Proposed;
+- the unauthorized attempt is attributable.
+
+Added in version 1.1.0, alongside CAP-D01.01-R50 (see `rule-model.md`).
+
+---
+
 # 16. Acceptance Traceability Matrix
 
 | Acceptance Scenario | Capability Concern | Primary Rules | Primary Event |
@@ -1185,6 +1215,7 @@ the responsible actor or trusted source can be identified.
 | AC29–AC31 | Ownership boundaries | R24, R37, R47–R49 | Context-dependent |
 | AC32–AC35 | Operational use | Multiple | Multiple |
 | AC36–AC37 | Security and accountability | R18, R32–R35, R41 | Multiple |
+| AC38 | Confirmation authorization | R50 | E03 |
 
 ---
 
