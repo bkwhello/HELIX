@@ -52,6 +52,8 @@ export interface ReservationCreated extends BaseEvent {
   readonly potentialDuplicateWarning: boolean;
   /** CAP-D01.01-R48 — a guest preference, never a seating guarantee. */
   readonly preferredArea?: PreferredArea;
+  /** CAP-D01.01-R36/R37 — operational context, not the authoritative allergy record. */
+  readonly notes?: string;
 }
 
 /** CAP-D01.01-E02 — ReservationModified */

@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { createApp } from "./app.js";
 import { PrismaReservationRepository } from "../infrastructure/persistence/PrismaReservationRepository.js";
 import { PrismaDuplicateReservationChecker } from "../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
+import { PrismaClosingDayStore } from "../infrastructure/persistence/PrismaClosingDayStore.js";
 import { UnvalidatedContactReader } from "../infrastructure/UnvalidatedContactReader.js";
 import { UnvalidatedServicePeriodReader } from "../infrastructure/UnvalidatedServicePeriodReader.js";
 import { SystemClock } from "../infrastructure/SystemClock.js";
@@ -16,6 +17,7 @@ const app = createApp({
   // Contact Management and Service Period Management exist as capabilities.
   contactReader: new UnvalidatedContactReader(),
   servicePeriodReader: new UnvalidatedServicePeriodReader(),
+  closingDayStore: new PrismaClosingDayStore(prisma),
   idGenerator: new RandomIdGenerator(),
   eventIdGenerator: new RandomEventIdGenerator(),
   clock: new SystemClock(),

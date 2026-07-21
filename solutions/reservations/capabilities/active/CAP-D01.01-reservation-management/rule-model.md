@@ -8,13 +8,15 @@ artifact_id: CAP-D01.01-RULE
 artifact_type: Capability Rule Model
 capability_id: CAP-D01.01
 capability_name: Reservation Management
-version: 1.1.0
+version: 1.2.0
 status: Approved
 owner: Reservation Management
 authority: CAP-D01.01 capability.md
 ```
 
 Version 1.1.0 adds CAP-D01.01-R50, closing a gap found during implementation review: R32–R35 give creation, modification, cancellation, and completion each an authorization rule, but confirmation had none.
+
+Version 1.2.0 adds CAP-D01.01-R51, an explicit stopgap closing-day check requested for the Konnichi Wa pilot — see §16b for why this is a narrow, temporary exception to R47 rather than a reversal of it. The reservation notes field added in the same pilot round needed no new rule: R36-R38 already covered it.
 
 ---
 
@@ -963,6 +965,26 @@ Reservation confirmation shall be restricted to authorized users, trusted guest 
 The confirming actor shall be attributable.
 
 Added in version 1.1.0. Sections 9 (Confirmation Rules) and 12 (Authorization Rules) originally covered creation, modification, cancellation, and completion but left confirmation without an authorization rule of its own; R50 closes that gap.
+
+---
+
+# 16b. Operational Calendar (Stopgap)
+
+## CAP-D01.01-R51 — Reservation Creation Is Blocked On a Marked Closing Day
+
+```yaml
+type: Decision
+severity: Blocking
+override_allowed: false
+```
+
+A reservation shall not be created for a calendar date explicitly marked closed (e.g. a holiday, staff outing, or unplanned closure).
+
+This is a deliberate, narrow exception to R47: R47 correctly assigns the general operational-availability decision to Availability Management, a capability that does not exist yet. A closed-calendar check is a much smaller thing — "is the restaurant open at all on this date" — and Konnichi Wa needs it during the pilot. Reservation Management enforces it directly for now, as an explicit stopgap, not as a claim that it owns availability. When Availability Management is built, this check should move there and R51 should be retired or reduced to a reference.
+
+There is no override: staff manage this by adding or removing the closing-day entry itself (see interaction-model.md / the pilot's closing-days management), not by bypassing the check on a single reservation.
+
+Added in version 1.2.0.
 
 ---
 

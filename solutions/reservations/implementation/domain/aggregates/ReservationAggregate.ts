@@ -46,6 +46,7 @@ export class ReservationAggregate {
     private partySize: PartySize,
     private readonly source: ReservationSource,
     private readonly preferredArea: PreferredArea | undefined,
+    private readonly notes: string | undefined,
     private readonly createdBy: string,
     private readonly createdAt: Date,
     /**
@@ -71,6 +72,7 @@ export class ReservationAggregate {
     partySize: number;
     source: import("../value-objects/ReservationSource.js").ReservationSourceProps;
     preferredArea?: PreferredArea;
+    notes?: string;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -94,6 +96,7 @@ export class ReservationAggregate {
       partySize.value,
       source.value,
       props.preferredArea,
+      props.notes,
       props.createdBy,
       props.createdAt,
       props.version
@@ -170,6 +173,7 @@ export class ReservationAggregate {
       partySize,
       source,
       cmd.preferredArea,
+      cmd.notes,
       cmd.actor.id,
       cmd.now,
       0
@@ -199,6 +203,7 @@ export class ReservationAggregate {
       importedBy: source.importedBy,
       potentialDuplicateWarning: duplicateWarning !== null,
       preferredArea: cmd.preferredArea,
+      notes: cmd.notes,
     });
 
     return ok(aggregate);
@@ -415,6 +420,10 @@ export class ReservationAggregate {
 
   getPreferredArea(): PreferredArea | undefined {
     return this.preferredArea;
+  }
+
+  getNotes(): string | undefined {
+    return this.notes;
   }
 
   getPartySize(): number {

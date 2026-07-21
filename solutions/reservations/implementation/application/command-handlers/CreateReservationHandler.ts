@@ -8,6 +8,7 @@ import { ReservationRepository } from "../../domain/repositories/ReservationRepo
 import { ContactReader } from "../ports/ContactReader.js";
 import { ServicePeriodReader } from "../ports/ServicePeriodReader.js";
 import { DuplicateReservationChecker } from "../ports/DuplicateReservationChecker.js";
+import { ClosingDayStore } from "../ports/ClosingDayStore.js";
 import { IdGenerator } from "../ports/IdGenerator.js";
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
@@ -23,6 +24,8 @@ export interface CreateReservationRequest {
   readonly partySize: number;
   readonly source: ReservationSourceProps;
   readonly preferredArea?: PreferredArea;
+  /** CAP-D01.01-R36/R37: operational context (allergies, special requests). */
+  readonly notes?: string;
   readonly actor: Actor;
   readonly isHistoricalCorrection?: boolean;
   readonly historicalCorrectionReason?: string;
@@ -38,6 +41,7 @@ export interface CreateReservationOutcome {
   readonly status: ReservationStatus;
   readonly contactName?: string;
   readonly preferredArea?: PreferredArea;
+  readonly notes?: string;
   readonly warnings: readonly RuleViolation[];
 }
 
@@ -47,6 +51,7 @@ export class CreateReservationHandler {
     private readonly duplicateChecker: DuplicateReservationChecker,
     private readonly contactReader: ContactReader,
     private readonly servicePeriodReader: ServicePeriodReader,
+    private readonly closingDayStore: ClosingDayStore,
     private readonly idGenerator: IdGenerator,
     private readonly eventIdGenerator: EventIdGenerator,
     private readonly clock: Clock
@@ -69,14 +74,27 @@ export class CreateReservationHandler {
     ) {
       return fail([violation("CAP-D01.01-R08", "A reservation creation request must contain date, time, party size, contact, and source.")]);
     }
+    // CAP-D01.01-R10 — checked here, not left to the aggregate later:
+    // everything from this point on (including the closing-day lookup
+    // below, which turns a date into a calendar key) assumes it already
+    // has a real Date, not an Invalid Date.
+    if (Number.isNaN(request.reservationDate.getTime())) {
+      return fail([violation("CAP-D01.01-R10", "Reservation date and time must form a valid date-time value.")]);
+    }
 
-    // 3. Validate contact — CAP-D01.01-R07 (cross-capability query, not an aggregate rule).
+    // 3. Reject a marked closing day — CAP-D01.01-R51 (explicit pilot stopgap, see rule-model.md §16b).
+    const closed = await this.closingDayStore.isClosed(request.reservationDate);
+    if (closed) {
+      return fail([violation("CAP-D01.01-R51", "Reservations cannot be created for a date that is marked closed.")]);
+    }
+
+    // 4. Validate contact — CAP-D01.01-R07 (cross-capability query, not an aggregate rule).
     const contactExists = await this.contactReader.exists(request.contactId);
     if (!contactExists) {
       return fail([violation("CAP-D01.01-R07", "The referenced Reservation Contact does not exist.")]);
     }
 
-    // 4. Validate Service Period — CAP-D01.01-R06 (cross-capability query, not an aggregate rule).
+    // 5. Validate Service Period — CAP-D01.01-R06 (cross-capability query, not an aggregate rule).
     const servicePeriod = await this.servicePeriodReader.validateReservation({
       servicePeriodId: request.servicePeriodId,
       reservationDate: request.reservationDate,
@@ -88,14 +106,14 @@ export class CreateReservationHandler {
       ]);
     }
 
-    // 5. Check for a possible duplicate — CAP-D01.01-R14 (Warning, not blocking).
+    // 6. Check for a possible duplicate — CAP-D01.01-R14 (Warning, not blocking).
     const potentialDuplicateDetected = await this.duplicateChecker.check({
       contactId: request.contactId,
       reservationDate: request.reservationDate,
       partySize: request.partySize,
     });
 
-    // 6. Create the aggregate.
+    // 7. Create the aggregate.
     const created = ReservationAggregate.create({
       reservationId: this.idGenerator.generate(),
       eventId: this.eventIdGenerator.generate(),
@@ -108,6 +126,7 @@ export class CreateReservationHandler {
       partySize: request.partySize,
       source: request.source,
       preferredArea: request.preferredArea,
+      notes: request.notes,
       actor: request.actor,
       now: this.clock.now(),
       isHistoricalCorrection: request.isHistoricalCorrection,
@@ -116,7 +135,7 @@ export class CreateReservationHandler {
     });
     if (!created.ok) return created;
 
-    // 7. Persist state and events atomically.
+    // 8. Persist state and events atomically.
     const saveResult = await this.repository.save({
       aggregate: created.value,
       expectedVersion: created.value.getVersion(),
@@ -137,7 +156,7 @@ export class CreateReservationHandler {
       return fail([violation("CAP-D01.01-R05", "The reservation could not be created due to an unexpected concurrent write.")]);
     }
 
-    // 8. Return an outcome DTO — the duplicate warning is now visible to
+    // 9. Return an outcome DTO — the duplicate warning is now visible to
     // the immediate caller, not just recorded on the persisted event.
     const warnings: RuleViolation[] = potentialDuplicateDetected
       ? [violation("CAP-D01.01-R14", "A potentially duplicate reservation already exists.")]
@@ -152,6 +171,7 @@ function toOutcome(aggregate: ReservationAggregate, warnings: readonly RuleViola
     status: aggregate.getStatus(),
     contactName: aggregate.getContactName(),
     preferredArea: aggregate.getPreferredArea(),
+    notes: aggregate.getNotes(),
     warnings,
   };
 }

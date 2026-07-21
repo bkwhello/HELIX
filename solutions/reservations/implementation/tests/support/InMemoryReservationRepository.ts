@@ -11,6 +11,7 @@ interface StoredReservation {
   partySize: number;
   source: ReturnType<ReservationAggregate["getSource"]>;
   preferredArea: ReturnType<ReservationAggregate["getPreferredArea"]>;
+  notes: ReturnType<ReservationAggregate["getNotes"]>;
   createdBy: string;
   createdAt: Date;
   version: number;
@@ -67,6 +68,7 @@ export class InMemoryReservationRepository implements ReservationRepository {
       partySize: row.partySize,
       source: row.source,
       preferredArea: row.preferredArea,
+      notes: row.notes,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -111,6 +113,7 @@ export class InMemoryReservationRepository implements ReservationRepository {
       partySize: aggregate.getPartySize(),
       source: existing?.source ?? aggregate.getSource(),
       preferredArea: existing?.preferredArea ?? aggregate.getPreferredArea(),
+      notes: existing?.notes ?? aggregate.getNotes(),
       createdBy: existing?.createdBy ?? aggregate.getCreatedBy(),
       createdAt: existing?.createdAt ?? aggregate.getCreatedAt(),
       version: newVersion,

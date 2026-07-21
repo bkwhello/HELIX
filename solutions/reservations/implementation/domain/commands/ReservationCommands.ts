@@ -27,6 +27,8 @@ export interface CreateReservationCommand extends CommandEnvelope {
   readonly source: ReservationSourceProps;
   /** CAP-D01.01-R48: a guest preference (e.g. Sushi counter vs Teppanyaki), never a seating guarantee. Warning severity — optional here for the same reason. */
   readonly preferredArea?: PreferredArea;
+  /** CAP-D01.01-R36/R37: operational context (e.g. allergies, special requests) — never the authoritative allergy record, which belongs to Allergy and Critical Notes Management once that capability exists. */
+  readonly notes?: string;
   readonly actor: Actor;
   readonly now: Date;
   readonly isHistoricalCorrection?: boolean;

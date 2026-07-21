@@ -32,6 +32,9 @@ model Reservation {
   // CAP-D01.01-R48: a guest preference (Sushi / Teppanyaki), never a
   // seating guarantee — Warning severity, so it stays nullable.
   preferredArea      String?
+  // CAP-D01.01-R36/R37: operational context (allergies, special requests).
+  // Not the authoritative allergy record — see the rule comments.
+  notes              String?
   createdBy          String
   createdAt          DateTime
   updatedAt          DateTime @updatedAt
@@ -71,4 +74,16 @@ model AppliedCommand {
   appliedAt     DateTime @default(now())
 
   @@map("applied_commands")
+}
+
+// CAP-D01.01-R51 — a stopgap operational calendar until Availability
+// Management exists as its own capability (see R47/R51 in rule-model.md).
+// One row per calendar day that is fully closed for booking.
+model ClosingDay {
+  date      DateTime @id
+  reason    String?
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@map("closing_days")
 }

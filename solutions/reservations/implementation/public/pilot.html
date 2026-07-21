@@ -68,7 +68,7 @@
   section h2 { margin: 0 0 1rem; font-size: 1.05rem; }
   label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
   label:first-of-type { margin-top: 0; }
-  input, select {
+  input, select, textarea {
     width: 100%;
     padding: 0.5rem 0.6rem;
     border: 1px solid var(--border);
@@ -76,7 +76,9 @@
     background: transparent;
     color: var(--text);
     font-size: 0.95rem;
+    font-family: inherit;
   }
+  textarea { resize: vertical; min-height: 3.5rem; }
   .row { display: flex; gap: 0.75rem; }
   .row > div { flex: 1; }
   button {
@@ -108,6 +110,14 @@
   .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
   .status-Completed { background: var(--bg-page); color: var(--muted); }
   .empty { color: var(--muted); font-size: 0.9rem; padding: 0.5rem 0; }
+  .notes-cell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+  .list-item:last-child { border-bottom: none; }
+  .list-item .remove { background: transparent; border: none; color: var(--danger-text); cursor: pointer; font-size: 0.85rem; margin: 0; padding: 0.2rem 0.4rem; }
+  .occupancy-row { font-size: 0.9rem; }
+  .occupancy-row td { padding: 0.35rem 0.3rem; }
+  .occupancy-orange td { background: var(--warn-bg); color: var(--warn-text); }
+  .occupancy-red td { background: var(--danger-bg); color: var(--danger-text); font-weight: 600; }
   footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1rem; }
 </style>
 </head>
@@ -176,6 +186,9 @@
         <option value="Teppanyaki">Teppanyaki</option>
       </select>
 
+      <label for="notes">Opmerkingen (allergieën, speciale wensen)</label>
+      <textarea id="notes" placeholder="bijv. notenallergie, verjaardag, rolstoeltoegankelijke tafel"></textarea>
+
       <button type="submit">Reservering aanmaken</button>
       <div id="create-message"></div>
     </form>
@@ -195,11 +208,43 @@
     <div id="list-message"></div>
     <table id="list-table" style="margin-top: 0.75rem;">
       <thead>
-        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Bron</th><th>Status</th></tr>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Bron</th><th>Status</th><th>Opmerkingen</th></tr>
       </thead>
       <tbody id="list-body"></tbody>
     </table>
     <div id="list-empty" class="empty" style="display:none;">Geen reserveringen voor deze datum.</div>
+  </section>
+
+  <section>
+    <h2>Sluitingsdagen</h2>
+    <form id="closing-day-form">
+      <div class="row">
+        <div>
+          <label for="closing-date">Datum</label>
+          <input id="closing-date" type="date" required />
+        </div>
+        <div>
+          <label for="closing-reason">Reden (optioneel)</label>
+          <input id="closing-reason" type="text" placeholder="bijv. personeelsuitje" />
+        </div>
+      </div>
+      <button type="submit">Sluitingsdag toevoegen</button>
+      <div id="closing-day-message"></div>
+    </form>
+    <div id="closing-day-list" style="margin-top: 1rem;"></div>
+    <div id="closing-day-empty" class="empty" style="display:none;">Geen sluitingsdagen ingesteld.</div>
+  </section>
+
+  <section>
+    <h2>Teppanyaki bezetting</h2>
+    <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem;">Komende 14 dagen, per dienst, op basis van 40 plaatsen. Oranje vanaf 70%, rood vanaf 90%.</p>
+    <table id="occupancy-table">
+      <thead>
+        <tr><th>Datum</th><th>Dienst</th><th>Bezet</th><th>%</th></tr>
+      </thead>
+      <tbody id="occupancy-body"></tbody>
+    </table>
+    <div id="occupancy-empty" class="empty" style="display:none;">Nog geen Teppanyaki-reserveringen in deze periode.</div>
   </section>
 </main>
 
@@ -259,6 +304,7 @@
       partySize: Number(document.getElementById("party-size").value),
       source: { category: document.getElementById("source").value },
       preferredArea: document.getElementById("preferred-area").value,
+      notes: document.getElementById("notes").value.trim() || undefined,
     };
 
     const submitButton = createForm.querySelector("button[type=submit]");
@@ -283,7 +329,9 @@
       document.getElementById("guest-name").value = "";
       document.getElementById("guest-phone").value = "";
       document.getElementById("preferred-area").value = "";
+      document.getElementById("notes").value = "";
       await loadList();
+      await loadOccupancy();
     } catch (err) {
       showMessage(createMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     } finally {
@@ -330,6 +378,7 @@
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
         const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
+        const notes = escapeHtml(r.notes || "");
         tr.innerHTML = `
           <td>${time}</td>
           <td>${guest}</td>
@@ -337,6 +386,7 @@
           <td>${r.preferredArea || "—"}</td>
           <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
+          <td class="notes-cell" title="${notes}">${notes || "—"}</td>
         `;
         listBody.appendChild(tr);
       }
@@ -348,6 +398,108 @@
   document.getElementById("reload-list").addEventListener("click", loadList);
   listDateInput.addEventListener("change", loadList);
   loadList();
+
+  // --- Sluitingsdagen -------------------------------------------------
+  const closingDayForm = document.getElementById("closing-day-form");
+  const closingDayMessage = document.getElementById("closing-day-message");
+  const closingDayList = document.getElementById("closing-day-list");
+  const closingDayEmpty = document.getElementById("closing-day-empty");
+
+  function formatDateNL(dateKey) {
+    return new Date(dateKey + "T00:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  }
+
+  async function loadClosingDays() {
+    clearMessage(closingDayMessage);
+    try {
+      const res = await fetch("/closing-days");
+      const data = await res.json();
+      if (!res.ok) {
+        showMessage(closingDayMessage, data.message || "Kon sluitingsdagen niet laden.", "error");
+        return;
+      }
+      closingDayList.innerHTML = "";
+      closingDayEmpty.style.display = data.closingDays.length === 0 ? "block" : "none";
+      for (const day of data.closingDays) {
+        const row = document.createElement("div");
+        row.className = "list-item";
+        row.innerHTML = `
+          <span>${formatDateNL(day.date)}${day.reason ? " — " + escapeHtml(day.reason) : ""}</span>
+          <button type="button" class="remove" data-date="${day.date}">Verwijderen</button>
+        `;
+        closingDayList.appendChild(row);
+      }
+      closingDayList.querySelectorAll(".remove").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await fetch(`/closing-days/${btn.dataset.date}`, { method: "DELETE", headers: actorHeaders() });
+          await loadClosingDays();
+        });
+      });
+    } catch (err) {
+      showMessage(closingDayMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  }
+
+  closingDayForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearMessage(closingDayMessage);
+    const date = document.getElementById("closing-date").value;
+    const reason = document.getElementById("closing-reason").value.trim() || undefined;
+    if (!date) {
+      showMessage(closingDayMessage, "Kies een datum.", "error");
+      return;
+    }
+    try {
+      const res = await fetch("/closing-days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify({ date, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showMessage(closingDayMessage, data.message || "Kon sluitingsdag niet toevoegen.", "error");
+        return;
+      }
+      document.getElementById("closing-date").value = "";
+      document.getElementById("closing-reason").value = "";
+      await loadClosingDays();
+    } catch (err) {
+      showMessage(closingDayMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  });
+
+  loadClosingDays();
+
+  // --- Teppanyaki bezetting --------------------------------------------
+  const occupancyBody = document.getElementById("occupancy-body");
+  const occupancyEmpty = document.getElementById("occupancy-empty");
+  const SERVICE_LABELS = { lunch: "Lunch", dinner: "Diner" };
+
+  async function loadOccupancy() {
+    try {
+      const res = await fetch("/teppanyaki-occupancy");
+      const data = await res.json();
+      if (!res.ok) return;
+
+      occupancyBody.innerHTML = "";
+      occupancyEmpty.style.display = data.days.length === 0 ? "block" : "none";
+      for (const row of data.days) {
+        const tr = document.createElement("tr");
+        tr.className = "occupancy-row" + (row.level === "orange" ? " occupancy-orange" : row.level === "red" ? " occupancy-red" : "");
+        tr.innerHTML = `
+          <td>${formatDateNL(row.date)}</td>
+          <td>${SERVICE_LABELS[row.servicePeriodId] || row.servicePeriodId}</td>
+          <td>${row.bookedSeats} / ${row.capacity}</td>
+          <td>${row.percentage}%</td>
+        `;
+        occupancyBody.appendChild(tr);
+      }
+    } catch (err) {
+      // Non-critical widget — fail quietly rather than blocking the rest of the page.
+    }
+  }
+
+  loadOccupancy();
 </script>
 </body>
 </html>

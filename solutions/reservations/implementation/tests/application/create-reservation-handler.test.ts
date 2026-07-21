@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { CreateReservationHandler } from "../../application/command-handlers/CreateReservationHandler.js";
 import { InMemoryReservationRepository } from "../support/InMemoryReservationRepository.js";
-import { FakeContactReader, FakeServicePeriodReader, FakeDuplicateReservationChecker } from "../support/FakePorts.js";
+import { FakeContactReader, FakeServicePeriodReader, FakeDuplicateReservationChecker, FakeClosingDayStore } from "../support/FakePorts.js";
 import { staffActor, FUTURE_DATE, NOW } from "../support/factories.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 
@@ -45,6 +45,7 @@ describe("CreateReservationHandler", () => {
   let contactReader: FakeContactReader;
   let servicePeriodReader: FakeServicePeriodReader;
   let duplicateChecker: FakeDuplicateReservationChecker;
+  let closingDayStore: FakeClosingDayStore;
   let handler: CreateReservationHandler;
 
   beforeEach(() => {
@@ -52,11 +53,13 @@ describe("CreateReservationHandler", () => {
     contactReader = new FakeContactReader();
     servicePeriodReader = new FakeServicePeriodReader();
     duplicateChecker = new FakeDuplicateReservationChecker();
+    closingDayStore = new FakeClosingDayStore();
     handler = new CreateReservationHandler(
       repository,
       duplicateChecker,
       contactReader,
       servicePeriodReader,
+      closingDayStore,
       new SequentialIdGenerator(),
       new SequentialEventIdGenerator(),
       new FixedClock()
@@ -111,6 +114,19 @@ describe("CreateReservationHandler", () => {
       expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R06")).toBe(true);
     }
     expect(await repository.findByCommandId("cmd-bad-service-period")).toBeNull();
+  });
+
+  // CAP-D01.01-R51 — closing days block creation
+  it("rejects creation for a date marked closed", async () => {
+    await closingDayStore.add({ date: FUTURE_DATE, reason: "Staff outing" });
+
+    const result = await handler.handle(validRequest({ commandId: "cmd-closed-day" }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R51")).toBe(true);
+    }
+    expect(await repository.findByCommandId("cmd-closed-day")).toBeNull();
   });
 
   // CAP-D01.01-R14 / AC05 — a potential duplicate is a visible warning, not a rejection

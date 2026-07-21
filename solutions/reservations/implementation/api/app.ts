@@ -14,6 +14,7 @@ import { CompleteReservationHandler } from "../application/command-handlers/Comp
 import { ContactReader } from "../application/ports/ContactReader.js";
 import { ServicePeriodReader } from "../application/ports/ServicePeriodReader.js";
 import { DuplicateReservationChecker } from "../application/ports/DuplicateReservationChecker.js";
+import { ClosingDayStore } from "../application/ports/ClosingDayStore.js";
 import { IdGenerator } from "../application/ports/IdGenerator.js";
 import { EventIdGenerator } from "../application/ports/EventIdGenerator.js";
 import { Clock } from "../application/ports/Clock.js";
@@ -23,6 +24,7 @@ export interface AppDependencies {
   duplicateChecker: DuplicateReservationChecker;
   contactReader: ContactReader;
   servicePeriodReader: ServicePeriodReader;
+  closingDayStore: ClosingDayStore;
   idGenerator: IdGenerator;
   eventIdGenerator: EventIdGenerator;
   clock: Clock;
@@ -54,6 +56,7 @@ export function createApp(deps: AppDependencies): Express {
     deps.duplicateChecker,
     deps.contactReader,
     deps.servicePeriodReader,
+    deps.closingDayStore,
     deps.idGenerator,
     deps.eventIdGenerator,
     deps.clock
@@ -63,9 +66,13 @@ export function createApp(deps: AppDependencies): Express {
   const cancelHandler = new CancelReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const completeHandler = new CompleteReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
 
-  function paramId(req: Request): string {
-    const value = req.params["id"];
+  function routeParam(req: Request, name: string): string {
+    const value = req.params[name];
     return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+  }
+
+  function paramId(req: Request): string {
+    return routeParam(req, "id");
   }
 
   const KNOWN_ACTOR_KINDS: readonly string[] = Object.values(ActorKind);
@@ -125,6 +132,7 @@ export function createApp(deps: AppDependencies): Express {
       partySize: number;
       source: { category: string; externalReference?: string; importedBy?: string };
       preferredArea?: string;
+      notes?: string;
       isHistoricalCorrection?: boolean;
       historicalCorrectionReason?: string;
     };
@@ -146,6 +154,7 @@ export function createApp(deps: AppDependencies): Express {
       partySize: body.partySize,
       source: body.source as never,
       preferredArea: preferredArea.present ? preferredArea.value : undefined,
+      notes: body.notes,
       actor,
       isHistoricalCorrection: body.isHistoricalCorrection,
       historicalCorrectionReason: body.historicalCorrectionReason,
@@ -304,6 +313,84 @@ export function createApp(deps: AppDependencies): Express {
     res.status(204).send();
   });
 
+  // CAP-D01.01-R51 — closing-days management. Not part of the Reservation
+  // aggregate; this is the "line where we can add special closing days"
+  // requested for the pilot. See rule-model.md §16b for why this lives
+  // here as a stopgap instead of in Availability Management.
+  app.post("/closing-days", async (req: Request, res: Response) => {
+    const body = req.body as { date: string; reason?: string };
+    const actor = resolveActor(req, res);
+    if (!actor) return;
+
+    const date = new Date(body.date);
+    if (Number.isNaN(date.getTime())) {
+      res.status(400).json({ message: "date must be a valid ISO date (e.g. 2026-12-25)." });
+      return;
+    }
+
+    await deps.closingDayStore.add({ date, reason: body.reason, createdBy: actor.id });
+    res.status(201).json({ date: date.toISOString().slice(0, 10), reason: body.reason });
+  });
+
+  app.get("/closing-days", async (_req: Request, res: Response) => {
+    const closingDays = await deps.closingDayStore.list();
+    res.status(200).json({ closingDays });
+  });
+
+  app.delete("/closing-days/:date", async (req: Request, res: Response) => {
+    const date = new Date(routeParam(req, "date"));
+    if (Number.isNaN(date.getTime())) {
+      res.status(400).json({ message: "date must be a valid ISO date (e.g. 2026-12-25)." });
+      return;
+    }
+    await deps.closingDayStore.remove(date);
+    res.status(204).send();
+  });
+
+  // Teppanyaki occupancy dashboard: for each of the next `days` calendar
+  // days (default 14), the fraction of the 40-seat Teppanyaki capacity
+  // already booked, per Service Period (lunch and dinner reuse the same
+  // physical seats, so they are tracked separately, never summed
+  // together). 40 is hardcoded pending a real Capacity Management
+  // capability — there is nowhere else this number could come from yet.
+  const TEPPANYAKI_CAPACITY = 40;
+  app.get("/teppanyaki-occupancy", async (req: Request, res: Response) => {
+    const fromParam = req.query["from"];
+    const from = typeof fromParam === "string" && fromParam.length > 0 ? new Date(fromParam) : deps.clock.now();
+    if (Number.isNaN(from.getTime())) {
+      res.status(400).json({ message: "from must be a valid ISO date (e.g. 2026-08-20)." });
+      return;
+    }
+    const daysParam = req.query["days"];
+    const days = typeof daysParam === "string" && daysParam.length > 0 ? Number(daysParam) : 14;
+    if (!Number.isInteger(days) || days < 1 || days > 60) {
+      res.status(400).json({ message: "days must be an integer between 1 and 60." });
+      return;
+    }
+
+    const rows: { date: string; servicePeriodId: string; bookedSeats: number; capacity: number; percentage: number; level: "green" | "orange" | "red" }[] = [];
+    for (let i = 0; i < days; i += 1) {
+      const date = new Date(from);
+      date.setDate(date.getDate() + i);
+      const aggregates = await deps.repository.findByDate(date);
+
+      const byServicePeriod = new Map<string, number>();
+      for (const aggregate of aggregates) {
+        if (aggregate.getPreferredArea() !== "Teppanyaki") continue;
+        const key = aggregate.getServicePeriodId();
+        byServicePeriod.set(key, (byServicePeriod.get(key) ?? 0) + aggregate.getPartySize());
+      }
+
+      for (const [servicePeriodId, bookedSeats] of byServicePeriod) {
+        const percentage = Math.round((bookedSeats / TEPPANYAKI_CAPACITY) * 100);
+        const level = percentage >= 90 ? "red" : percentage >= 70 ? "orange" : "green";
+        rows.push({ date: date.toISOString().slice(0, 10), servicePeriodId, bookedSeats, capacity: TEPPANYAKI_CAPACITY, percentage, level });
+      }
+    }
+
+    res.status(200).json({ capacity: TEPPANYAKI_CAPACITY, days: rows });
+  });
+
   // Express 5 forwards a rejected promise from any async handler above to
   // this error middleware automatically. Anything reaching here is an
   // infrastructure fault, not an expected domain rejection (those already
@@ -329,6 +416,7 @@ function serializeReservation(aggregate: {
   getReservationDateTime(): Date;
   getSource(): { category: string };
   getPreferredArea(): string | undefined;
+  getNotes(): string | undefined;
 }) {
   return {
     id: aggregate.getId().toString(),
@@ -340,5 +428,6 @@ function serializeReservation(aggregate: {
     reservationDate: aggregate.getReservationDateTime().toISOString(),
     sourceCategory: aggregate.getSource().category,
     preferredArea: aggregate.getPreferredArea(),
+    notes: aggregate.getNotes(),
   };
 }

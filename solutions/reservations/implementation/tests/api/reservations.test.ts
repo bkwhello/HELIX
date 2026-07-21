@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../../api/app.js";
 import { InMemoryReservationRepository } from "../support/InMemoryReservationRepository.js";
-import { FakeContactReader, FakeServicePeriodReader, FakeDuplicateReservationChecker } from "../support/FakePorts.js";
+import { FakeContactReader, FakeServicePeriodReader, FakeDuplicateReservationChecker, FakeClosingDayStore } from "../support/FakePorts.js";
 import { NOW, FUTURE_DATE } from "../support/factories.js";
 
 /**
@@ -36,16 +36,18 @@ function buildApp() {
   const contactReader = new FakeContactReader();
   const servicePeriodReader = new FakeServicePeriodReader();
   const duplicateChecker = new FakeDuplicateReservationChecker();
+  const closingDayStore = new FakeClosingDayStore();
   const app = createApp({
     repository,
     duplicateChecker,
     contactReader,
     servicePeriodReader,
+    closingDayStore,
     idGenerator: new SequentialIdGenerator(),
     eventIdGenerator: new SequentialEventIdGenerator(),
     clock: new FixedClock(),
   });
-  return { app, repository, contactReader, servicePeriodReader, duplicateChecker };
+  return { app, repository, contactReader, servicePeriodReader, duplicateChecker, closingDayStore };
 }
 
 function validBody(overrides: Record<string, unknown> = {}) {
@@ -150,6 +152,30 @@ describe("POST /reservations", () => {
     expect(res.body.message).toContain("Sushi");
   });
 
+  it("accepts notes (allergies, special requests) and returns them in the outcome and the list", async () => {
+    const { app } = buildApp();
+    const res = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-notes", notes: "Notenallergie, graag een rustige tafel" }));
+
+    expect(res.status).toBe(201);
+    expect(res.body.notes).toBe("Notenallergie, graag een rustige tafel");
+
+    const list = await request(app).get(`/reservations?date=${FUTURE_DATE.toISOString().slice(0, 10)}`);
+    expect(list.body.reservations[0]).toMatchObject({ notes: "Notenallergie, graag een rustige tafel" });
+  });
+
+  it("rejects creation for a date marked closed (CAP-D01.01-R51)", async () => {
+    const { app, closingDayStore } = buildApp();
+    await closingDayStore.add({ date: FUTURE_DATE, reason: "Personeelsuitje" });
+
+    const res = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-closed" }));
+
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R51")).toBe(true);
+  });
+
   it("is idempotent under a retried commandId: same reservationId, no duplicate created", async () => {
     const { app, repository } = buildApp();
     const body = validBody({ commandId: "http-cmd-retry" });
@@ -216,5 +242,101 @@ describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are
     const { app } = buildApp();
     const res = await request(app).get("/reservations?date=not-a-date");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("Sluitingsdagen (closing days)", () => {
+  it("adds, lists, and removes a closing day", async () => {
+    const { app } = buildApp();
+    const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
+
+    const add = await request(app)
+      .post("/closing-days")
+      .set(staffHeaders)
+      .send({ date: dateKey, reason: "Personeelsuitje" });
+    expect(add.status).toBe(201);
+
+    const list = await request(app).get("/closing-days");
+    expect(list.status).toBe(200);
+    expect(list.body.closingDays).toContainEqual({ date: dateKey, reason: "Personeelsuitje" });
+
+    const remove = await request(app).delete(`/closing-days/${dateKey}`);
+    expect(remove.status).toBe(204);
+
+    const listAfter = await request(app).get("/closing-days");
+    expect(listAfter.body.closingDays).toEqual([]);
+  });
+
+  it("rejects an invalid date with 400", async () => {
+    const { app } = buildApp();
+    const res = await request(app).post("/closing-days").set(staffHeaders).send({ date: "not-a-date" });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /teppanyaki-occupancy", () => {
+  async function createTeppanyaki(app: import("express").Express, commandId: string, partySize: number, servicePeriodId: string) {
+    return request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(
+        validBody({
+          commandId,
+          servicePeriodId,
+          reservationDate: FUTURE_DATE.toISOString(),
+          partySize,
+          preferredArea: "Teppanyaki",
+        })
+      );
+  }
+
+  it("colors a date+service orange at 70% and red at 90% of the 40-seat capacity", async () => {
+    const { app } = buildApp();
+    await createTeppanyaki(app, "occ-orange", 28, "dinner"); // 28/40 = 70%
+
+    const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
+    const orangeRes = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    expect(orangeRes.status).toBe(200);
+    expect(orangeRes.body.capacity).toBe(40);
+    expect(orangeRes.body.days).toContainEqual({
+      date: dateKey,
+      servicePeriodId: "dinner",
+      bookedSeats: 28,
+      capacity: 40,
+      percentage: 70,
+      level: "orange",
+    });
+
+    await createTeppanyaki(app, "occ-red", 8, "dinner"); // 28 + 8 = 36/40 = 90%
+    const redRes = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    expect(redRes.body.days[0]).toMatchObject({ bookedSeats: 36, percentage: 90, level: "red" });
+  });
+
+  it("tracks lunch and dinner separately rather than summing them (same physical seats, different services)", async () => {
+    const { app } = buildApp();
+    await createTeppanyaki(app, "occ-lunch", 20, "lunch");
+    await createTeppanyaki(app, "occ-dinner", 20, "dinner");
+
+    const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
+    const res = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+
+    expect(res.body.days).toHaveLength(2);
+    for (const row of res.body.days) {
+      expect(row.bookedSeats).toBe(20);
+      expect(row.percentage).toBe(50);
+      expect(row.level).toBe("green");
+    }
+  });
+
+  it("ignores non-Teppanyaki reservations", async () => {
+    const { app } = buildApp();
+    await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "occ-sushi", reservationDate: FUTURE_DATE.toISOString(), partySize: 6, preferredArea: "Sushi" }));
+
+    const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
+    const res = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    expect(res.body.days).toHaveLength(0);
   });
 });
