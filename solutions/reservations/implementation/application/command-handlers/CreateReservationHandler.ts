@@ -3,6 +3,7 @@ import { ReservationAggregate } from "../../domain/aggregates/ReservationAggrega
 import { ReservationStatus } from "../../domain/value-objects/ReservationStatus.js";
 import { Actor } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceProps } from "../../domain/value-objects/ReservationSource.js";
+import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
 import { ContactReader } from "../ports/ContactReader.js";
 import { ServicePeriodReader } from "../ports/ServicePeriodReader.js";
@@ -17,9 +18,11 @@ export interface CreateReservationRequest {
   readonly causationId?: string;
   readonly servicePeriodId: string;
   readonly contactId: string;
+  readonly contactName?: string;
   readonly reservationDate: Date;
   readonly partySize: number;
   readonly source: ReservationSourceProps;
+  readonly preferredArea?: PreferredArea;
   readonly actor: Actor;
   readonly isHistoricalCorrection?: boolean;
   readonly historicalCorrectionReason?: string;
@@ -33,6 +36,8 @@ export interface CreateReservationRequest {
 export interface CreateReservationOutcome {
   readonly reservationId: string;
   readonly status: ReservationStatus;
+  readonly contactName?: string;
+  readonly preferredArea?: PreferredArea;
   readonly warnings: readonly RuleViolation[];
 }
 
@@ -98,9 +103,11 @@ export class CreateReservationHandler {
       causationId: request.causationId,
       servicePeriodId: request.servicePeriodId,
       contactId: request.contactId,
+      contactName: request.contactName,
       reservationDate: request.reservationDate,
       partySize: request.partySize,
       source: request.source,
+      preferredArea: request.preferredArea,
       actor: request.actor,
       now: this.clock.now(),
       isHistoricalCorrection: request.isHistoricalCorrection,
@@ -140,5 +147,11 @@ export class CreateReservationHandler {
 }
 
 function toOutcome(aggregate: ReservationAggregate, warnings: readonly RuleViolation[]): CreateReservationOutcome {
-  return { reservationId: aggregate.getId().toString(), status: aggregate.getStatus(), warnings };
+  return {
+    reservationId: aggregate.getId().toString(),
+    status: aggregate.getStatus(),
+    contactName: aggregate.getContactName(),
+    preferredArea: aggregate.getPreferredArea(),
+    warnings,
+  };
 }

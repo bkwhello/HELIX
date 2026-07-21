@@ -125,8 +125,16 @@
       <label for="staff-name">Jouw naam (voor de administratie)</label>
       <input id="staff-name" type="text" required placeholder="bijv. Kelvin" />
 
-      <label for="contact">Naam of telefoonnummer gast</label>
-      <input id="contact" type="text" required placeholder="bijv. 06-12345678" />
+      <div class="row">
+        <div>
+          <label for="guest-name">Naam gast</label>
+          <input id="guest-name" type="text" required placeholder="bijv. Jan Jansen" />
+        </div>
+        <div>
+          <label for="guest-phone">Telefoonnummer gast</label>
+          <input id="guest-phone" type="tel" required placeholder="bijv. 06-12345678" />
+        </div>
+      </div>
 
       <div class="row">
         <div>
@@ -161,6 +169,13 @@
         </div>
       </div>
 
+      <label for="preferred-area">Voorkeur</label>
+      <select id="preferred-area" required>
+        <option value="" disabled selected>Kies voorkeur…</option>
+        <option value="Sushi">Sushi</option>
+        <option value="Teppanyaki">Teppanyaki</option>
+      </select>
+
       <button type="submit">Reservering aanmaken</button>
       <div id="create-message"></div>
     </form>
@@ -180,7 +195,7 @@
     <div id="list-message"></div>
     <table id="list-table" style="margin-top: 0.75rem;">
       <thead>
-        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Bron</th><th>Status</th></tr>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Bron</th><th>Status</th></tr>
       </thead>
       <tbody id="list-body"></tbody>
     </table>
@@ -200,6 +215,12 @@
       "x-actor-id": staffNameInput.value.trim() || "onbekend",
       "x-actor-kind": "AuthorizedUser",
     };
+  }
+
+  function escapeHtml(value) {
+    const div = document.createElement("div");
+    div.textContent = value == null ? "" : String(value);
+    return div.innerHTML;
   }
 
   function ruleMessages(violations) {
@@ -232,10 +253,12 @@
     const body = {
       commandId: `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       servicePeriodId: document.getElementById("service-period").value,
-      contactId: document.getElementById("contact").value.trim(),
+      contactId: document.getElementById("guest-phone").value.trim(),
+      contactName: document.getElementById("guest-name").value.trim(),
       reservationDate: new Date(datetimeValue).toISOString(),
       partySize: Number(document.getElementById("party-size").value),
       source: { category: document.getElementById("source").value },
+      preferredArea: document.getElementById("preferred-area").value,
     };
 
     const submitButton = createForm.querySelector("button[type=submit]");
@@ -257,7 +280,9 @@
       } else {
         showMessage(createMessage, `Reservering aangemaakt (${data.reservationId.slice(0, 8)}…).`, "ok");
       }
-      document.getElementById("contact").value = "";
+      document.getElementById("guest-name").value = "";
+      document.getElementById("guest-phone").value = "";
+      document.getElementById("preferred-area").value = "";
       await loadList();
     } catch (err) {
       showMessage(createMessage, "Netwerkfout: kon de server niet bereiken.", "error");
@@ -304,10 +329,12 @@
       for (const r of data.reservations) {
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+        const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
         tr.innerHTML = `
           <td>${time}</td>
-          <td>${r.contactId}</td>
+          <td>${guest}</td>
           <td>${r.partySize}</td>
+          <td>${r.preferredArea || "—"}</td>
           <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
         `;

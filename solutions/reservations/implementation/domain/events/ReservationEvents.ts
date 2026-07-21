@@ -10,6 +10,7 @@
 import { ActorKind } from "../value-objects/Actor.js";
 import { CompletionEvidence } from "../value-objects/CompletionEvidence.js";
 import { ReservationSourceCategory } from "../value-objects/ReservationSource.js";
+import { PreferredArea } from "../value-objects/PreferredArea.js";
 
 /**
  * event-model.md §4 common structure, mapped to this implementation:
@@ -40,6 +41,7 @@ export interface ReservationCreated extends BaseEvent {
   readonly type: "ReservationCreated";
   readonly servicePeriodId: string;
   readonly contactId: string;
+  readonly contactName?: string;
   readonly reservationDate: Date;
   readonly partySize: number;
   readonly reservationSource: ReservationSourceCategory;
@@ -48,6 +50,8 @@ export interface ReservationCreated extends BaseEvent {
   readonly importedBy?: string;
   /** CAP-D01.01-R14 — true when a potential duplicate was detected at creation time. Warning, not blocking. */
   readonly potentialDuplicateWarning: boolean;
+  /** CAP-D01.01-R48 — a guest preference, never a seating guarantee. */
+  readonly preferredArea?: PreferredArea;
 }
 
 /** CAP-D01.01-E02 — ReservationModified */

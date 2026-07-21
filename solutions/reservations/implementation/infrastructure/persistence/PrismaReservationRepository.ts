@@ -4,6 +4,7 @@ import { ReservationAggregate } from "../../domain/aggregates/ReservationAggrega
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { ReservationStatus } from "../../domain/value-objects/ReservationStatus.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
+import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 
 /**
  * Infrastructure adapter for the ReservationRepository port.
@@ -46,11 +47,13 @@ export class PrismaReservationRepository implements ReservationRepository {
     status: string;
     servicePeriodId: string;
     contactId: string;
+    contactName: string | null;
     reservationDate: Date;
     partySize: number;
     sourceCategory: string;
     externalReference: string | null;
     importedBy: string | null;
+    preferredArea: string | null;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -60,6 +63,7 @@ export class PrismaReservationRepository implements ReservationRepository {
       status: row.status as ReservationStatus,
       servicePeriodId: row.servicePeriodId,
       contactId: row.contactId,
+      contactName: row.contactName ?? undefined,
       reservationDate: row.reservationDate,
       partySize: row.partySize,
       source: {
@@ -67,6 +71,7 @@ export class PrismaReservationRepository implements ReservationRepository {
         externalReference: row.externalReference ?? undefined,
         importedBy: row.importedBy ?? undefined,
       },
+      preferredArea: (row.preferredArea as PreferredArea) ?? undefined,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -105,12 +110,14 @@ export class PrismaReservationRepository implements ReservationRepository {
               id: reservationId,
               servicePeriodId: aggregate.getServicePeriodId(),
               contactId: aggregate.getContactId(),
+              contactName: aggregate.getContactName(),
               status: aggregate.getStatus(),
               reservationDate: aggregate.getReservationDateTime(),
               partySize: aggregate.getPartySize(),
               sourceCategory: eventSourceCategory(events) ?? "Staff",
               externalReference: eventExternalReference(events),
               importedBy: eventImportedBy(events),
+              preferredArea: aggregate.getPreferredArea(),
               createdBy: aggregate.getCreatedBy(),
               createdAt: aggregate.getCreatedAt(),
               version: 1,

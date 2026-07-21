@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { ReservationAggregate } from "../../domain/aggregates/ReservationAggregate.js";
 import { ReservationStatus } from "../../domain/value-objects/ReservationStatus.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
+import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 import { validCreateCommand, unauthorizedActor, PAST_DATE } from "../support/factories.js";
 
 // CAP-D01.01-AC01 — Create a Valid Reservation
@@ -81,6 +82,36 @@ describe("AC05 — Detect a Potential Duplicate", () => {
     if (created?.type === "ReservationCreated") {
       expect(created.potentialDuplicateWarning).toBe(false);
     }
+  });
+});
+
+// CAP-D01.01-R07 / R48 — guest name and preferred area (Sushi/Teppanyaki)
+describe("Guest name and preferred area", () => {
+  it("carries the guest name and preferred area onto the aggregate and the event", () => {
+    const result = ReservationAggregate.create(
+      validCreateCommand({ contactName: "Jan Jansen", preferredArea: PreferredArea.Teppanyaki })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.getContactName()).toBe("Jan Jansen");
+    expect(result.value.getPreferredArea()).toBe(PreferredArea.Teppanyaki);
+
+    const created = result.value.pullEvents()[0];
+    if (created?.type === "ReservationCreated") {
+      expect(created.contactName).toBe("Jan Jansen");
+      expect(created.preferredArea).toBe(PreferredArea.Teppanyaki);
+    }
+  });
+
+  it("leaves both undefined when not supplied — CAP-D01.01-R48 is Warning severity, not required", () => {
+    const result = ReservationAggregate.create(validCreateCommand());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.getContactName()).toBeUndefined();
+    expect(result.value.getPreferredArea()).toBeUndefined();
   });
 });
 

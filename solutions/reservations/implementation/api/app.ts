@@ -5,6 +5,7 @@ import { ReservationRepository } from "../domain/repositories/ReservationReposit
 import { ReservationId } from "../domain/value-objects/ReservationId.js";
 import { Actor, ActorKind, ActorRole } from "../domain/value-objects/Actor.js";
 import { CompletionEvidence } from "../domain/value-objects/CompletionEvidence.js";
+import { PreferredArea } from "../domain/value-objects/PreferredArea.js";
 import { CreateReservationHandler } from "../application/command-handlers/CreateReservationHandler.js";
 import { ModifyReservationHandler } from "../application/command-handlers/ModifyReservationHandler.js";
 import { ConfirmReservationHandler } from "../application/command-handlers/ConfirmReservationHandler.js";
@@ -68,6 +69,19 @@ export function createApp(deps: AppDependencies): Express {
   }
 
   const KNOWN_ACTOR_KINDS: readonly string[] = Object.values(ActorKind);
+  const KNOWN_PREFERRED_AREAS: readonly string[] = Object.values(PreferredArea);
+
+  /** CAP-D01.01-R48: reject a garbage preferredArea with a clear 400 rather than silently persisting a typo. Absent/undefined is fine — it's a Warning-severity preference, not a required field. */
+  function parsePreferredArea(value: unknown, res: Response): { present: true; value: PreferredArea } | { present: false } | null {
+    if (value === undefined || value === null || value === "") return { present: false };
+    if (typeof value !== "string" || !KNOWN_PREFERRED_AREAS.includes(value)) {
+      res.status(400).json({
+        message: `Unknown preferredArea: "${String(value)}". Expected one of: ${KNOWN_PREFERRED_AREAS.join(", ")}.`,
+      });
+      return null;
+    }
+    return { present: true, value: value as PreferredArea };
+  }
 
   /**
    * Placeholder actor resolution. A real deployment resolves this from an
@@ -106,9 +120,11 @@ export function createApp(deps: AppDependencies): Express {
       causationId?: string;
       servicePeriodId: string;
       contactId: string;
+      contactName?: string;
       reservationDate: string;
       partySize: number;
       source: { category: string; externalReference?: string; importedBy?: string };
+      preferredArea?: string;
       isHistoricalCorrection?: boolean;
       historicalCorrectionReason?: string;
     };
@@ -116,15 +132,20 @@ export function createApp(deps: AppDependencies): Express {
     const actor = resolveActor(req, res);
     if (!actor) return;
 
+    const preferredArea = parsePreferredArea(body.preferredArea, res);
+    if (!preferredArea) return;
+
     const result = await createHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
       servicePeriodId: body.servicePeriodId,
       contactId: body.contactId,
+      contactName: body.contactName,
       reservationDate: new Date(body.reservationDate),
       partySize: body.partySize,
       source: body.source as never,
+      preferredArea: preferredArea.present ? preferredArea.value : undefined,
       actor,
       isHistoricalCorrection: body.isHistoricalCorrection,
       historicalCorrectionReason: body.historicalCorrectionReason,
@@ -303,17 +324,21 @@ function serializeReservation(aggregate: {
   getStatus(): string;
   getServicePeriodId(): string;
   getContactId(): string;
+  getContactName(): string | undefined;
   getPartySize(): number;
   getReservationDateTime(): Date;
   getSource(): { category: string };
+  getPreferredArea(): string | undefined;
 }) {
   return {
     id: aggregate.getId().toString(),
     status: aggregate.getStatus(),
     servicePeriodId: aggregate.getServicePeriodId(),
     contactId: aggregate.getContactId(),
+    contactName: aggregate.getContactName(),
     partySize: aggregate.getPartySize(),
     reservationDate: aggregate.getReservationDateTime().toISOString(),
     sourceCategory: aggregate.getSource().category,
+    preferredArea: aggregate.getPreferredArea(),
   };
 }

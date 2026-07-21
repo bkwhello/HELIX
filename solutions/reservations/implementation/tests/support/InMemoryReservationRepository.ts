@@ -6,9 +6,11 @@ interface StoredReservation {
   status: ReturnType<ReservationAggregate["getStatus"]>;
   servicePeriodId: string;
   contactId: string;
+  contactName: ReturnType<ReservationAggregate["getContactName"]>;
   reservationDate: Date;
   partySize: number;
   source: ReturnType<ReservationAggregate["getSource"]>;
+  preferredArea: ReturnType<ReservationAggregate["getPreferredArea"]>;
   createdBy: string;
   createdAt: Date;
   version: number;
@@ -60,9 +62,11 @@ export class InMemoryReservationRepository implements ReservationRepository {
       status: row.status,
       servicePeriodId: row.servicePeriodId,
       contactId: row.contactId,
+      contactName: row.contactName,
       reservationDate: row.reservationDate,
       partySize: row.partySize,
       source: row.source,
+      preferredArea: row.preferredArea,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -102,9 +106,11 @@ export class InMemoryReservationRepository implements ReservationRepository {
       status: aggregate.getStatus(),
       servicePeriodId: aggregate.getServicePeriodId(),
       contactId: aggregate.getContactId(),
+      contactName: existing?.contactName ?? aggregate.getContactName(),
       reservationDate: aggregate.getReservationDateTime(),
       partySize: aggregate.getPartySize(),
       source: existing?.source ?? aggregate.getSource(),
+      preferredArea: existing?.preferredArea ?? aggregate.getPreferredArea(),
       createdBy: existing?.createdBy ?? aggregate.getCreatedBy(),
       createdAt: existing?.createdAt ?? aggregate.getCreatedAt(),
       version: newVersion,

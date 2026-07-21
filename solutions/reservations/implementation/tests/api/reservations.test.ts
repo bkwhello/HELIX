@@ -127,6 +127,29 @@ describe("POST /reservations", () => {
     expect(res.body.warnings.some((w: { ruleId: string }) => w.ruleId === "CAP-D01.01-R14")).toBe(true);
   });
 
+  it("accepts a guest name and a preferred area, returning both in the outcome", async () => {
+    const { app } = buildApp();
+    const res = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-area", contactName: "Jan Jansen", preferredArea: "Sushi" }));
+
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ contactName: "Jan Jansen", preferredArea: "Sushi" });
+  });
+
+  it("rejects an unrecognized preferredArea with a clear 400 (CAP-D01.01-R48)", async () => {
+    const { app } = buildApp();
+    const res = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-bad-area", preferredArea: "Steakhouse" }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("Steakhouse");
+    expect(res.body.message).toContain("Sushi");
+  });
+
   it("is idempotent under a retried commandId: same reservationId, no duplicate created", async () => {
     const { app, repository } = buildApp();
     const body = validBody({ commandId: "http-cmd-retry" });
@@ -160,9 +183,12 @@ describe("GET /reservations/:id", () => {
 });
 
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
-  it("lists reservations for the requested date", async () => {
+  it("lists reservations for the requested date, including guest name and preferred area", async () => {
     const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-list" }));
+    const created = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-list", contactName: "Jan Jansen", preferredArea: "Teppanyaki" }));
     expect(created.status).toBe(201);
 
     const dateParam = FUTURE_DATE.toISOString().slice(0, 10);
@@ -171,7 +197,12 @@ describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are
     expect(res.status).toBe(200);
     expect(res.body.date).toBe(dateParam);
     expect(res.body.reservations).toHaveLength(1);
-    expect(res.body.reservations[0]).toMatchObject({ id: created.body.reservationId, status: "Proposed" });
+    expect(res.body.reservations[0]).toMatchObject({
+      id: created.body.reservationId,
+      status: "Proposed",
+      contactName: "Jan Jansen",
+      preferredArea: "Teppanyaki",
+    });
   });
 
   it("returns an empty list for a date with no reservations", async () => {

@@ -5,6 +5,7 @@ import { PartySize } from "../value-objects/PartySize.js";
 import { ReservationDateTime } from "../value-objects/ReservationDateTime.js";
 import { ReservationSource } from "../value-objects/ReservationSource.js";
 import { Actor } from "../value-objects/Actor.js";
+import { PreferredArea } from "../value-objects/PreferredArea.js";
 import {
   CreateReservationCommand,
   ModifyReservationCommand,
@@ -40,9 +41,11 @@ export class ReservationAggregate {
     private status: ReservationStatus,
     private servicePeriodId: string,
     private contactId: string,
+    private readonly contactName: string | undefined,
     private dateTime: ReservationDateTime,
     private partySize: PartySize,
     private readonly source: ReservationSource,
+    private readonly preferredArea: PreferredArea | undefined,
     private readonly createdBy: string,
     private readonly createdAt: Date,
     /**
@@ -63,9 +66,11 @@ export class ReservationAggregate {
     status: ReservationStatus;
     servicePeriodId: string;
     contactId: string;
+    contactName?: string;
     reservationDate: Date;
     partySize: number;
     source: import("../value-objects/ReservationSource.js").ReservationSourceProps;
+    preferredArea?: PreferredArea;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -84,9 +89,11 @@ export class ReservationAggregate {
       props.status,
       props.servicePeriodId,
       props.contactId,
+      props.contactName,
       dateTime.value,
       partySize.value,
       source.value,
+      props.preferredArea,
       props.createdBy,
       props.createdAt,
       props.version
@@ -158,9 +165,11 @@ export class ReservationAggregate {
       ReservationStatus.Proposed,
       cmd.servicePeriodId,
       cmd.contactId,
+      cmd.contactName,
       dateTime,
       partySize,
       source,
+      cmd.preferredArea,
       cmd.actor.id,
       cmd.now,
       0
@@ -182,12 +191,14 @@ export class ReservationAggregate {
       type: "ReservationCreated",
       servicePeriodId: cmd.servicePeriodId,
       contactId: cmd.contactId,
+      contactName: cmd.contactName,
       reservationDate: dateTime.toDate(),
       partySize: partySize.toNumber(),
       reservationSource: source.category,
       externalReference: source.externalReference,
       importedBy: source.importedBy,
       potentialDuplicateWarning: duplicateWarning !== null,
+      preferredArea: cmd.preferredArea,
     });
 
     return ok(aggregate);
@@ -396,6 +407,14 @@ export class ReservationAggregate {
 
   getContactId(): string {
     return this.contactId;
+  }
+
+  getContactName(): string | undefined {
+    return this.contactName;
+  }
+
+  getPreferredArea(): PreferredArea | undefined {
+    return this.preferredArea;
   }
 
   getPartySize(): number {

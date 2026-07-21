@@ -1,6 +1,7 @@
 import { Actor } from "../value-objects/Actor.js";
 import { ReservationSourceProps } from "../value-objects/ReservationSource.js";
 import { CompletionEvidence } from "../value-objects/CompletionEvidence.js";
+import { PreferredArea } from "../value-objects/PreferredArea.js";
 
 /**
  * Fields every domain command carries so the resulting event can be
@@ -19,9 +20,13 @@ export interface CreateReservationCommand extends CommandEnvelope {
   readonly reservationId: string;
   readonly servicePeriodId: string;
   readonly contactId: string;
+  /** CAP-D01.01-R07: "Additional guest or contact information may exist" alongside the primary contact identity. Not required by R08 — the pilot UI enforces it operationally, not the domain. */
+  readonly contactName?: string;
   readonly reservationDate: Date;
   readonly partySize: number;
   readonly source: ReservationSourceProps;
+  /** CAP-D01.01-R48: a guest preference (e.g. Sushi counter vs Teppanyaki), never a seating guarantee. Warning severity — optional here for the same reason. */
+  readonly preferredArea?: PreferredArea;
   readonly actor: Actor;
   readonly now: Date;
   readonly isHistoricalCorrection?: boolean;

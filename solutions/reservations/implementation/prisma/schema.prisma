@@ -20,12 +20,18 @@ model Reservation {
   id                 String   @id
   servicePeriodId    String
   contactId          String
+  // CAP-D01.01-R07: "Additional guest or contact information may exist"
+  // alongside the primary contact identity (contactId).
+  contactName        String?
   status             String
   reservationDate    DateTime
   partySize          Int
   sourceCategory     String
   externalReference  String?
   importedBy         String?
+  // CAP-D01.01-R48: a guest preference (Sushi / Teppanyaki), never a
+  // seating guarantee — Warning severity, so it stays nullable.
+  preferredArea      String?
   createdBy          String
   createdAt          DateTime
   updatedAt          DateTime @updatedAt
