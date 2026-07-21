@@ -1,4 +1,4 @@
-import express, { Express, Request, Response } from "express";
+import express, { Express, NextFunction, Request, Response } from "express";
 import { ReservationRepository } from "../domain/repositories/ReservationRepository.js";
 import { ReservationId } from "../domain/value-objects/ReservationId.js";
 import { Actor, ActorKind, ActorRole } from "../domain/value-objects/Actor.js";
@@ -64,6 +64,10 @@ export function createApp(deps: AppDependencies): Express {
     };
   }
 
+  app.get("/health", (_req: Request, res: Response) => {
+    res.status(200).json({ status: "ok" });
+  });
+
   app.post("/reservations", async (req: Request, res: Response) => {
     const body = req.body as {
       commandId: string;
@@ -99,6 +103,24 @@ export function createApp(deps: AppDependencies): Express {
     res.status(201).json(result.value);
   });
 
+  // CAP-D01.01-AC34 — Today's Active Reservations Are Operationally
+  // Discoverable. Defaults to today (deps.clock.now()) so "what's on the
+  // books today" is a bare GET with no query string required.
+  app.get("/reservations", async (req: Request, res: Response) => {
+    const dateParam = req.query["date"];
+    const date = typeof dateParam === "string" && dateParam.length > 0 ? new Date(dateParam) : deps.clock.now();
+    if (Number.isNaN(date.getTime())) {
+      res.status(400).json({ message: "date must be a valid ISO date (e.g. 2026-08-20)." });
+      return;
+    }
+
+    const aggregates = await deps.repository.findByDate(date);
+    res.status(200).json({
+      date: date.toISOString().slice(0, 10),
+      reservations: aggregates.map(serializeReservation),
+    });
+  });
+
   app.get("/reservations/:id", async (req: Request, res: Response) => {
     const idResult = ReservationId.create(paramId(req));
     if (!idResult.ok) {
@@ -110,14 +132,7 @@ export function createApp(deps: AppDependencies): Express {
       res.status(404).json({ message: "Reservation not found." });
       return;
     }
-    res.status(200).json({
-      id: aggregate.getId().toString(),
-      status: aggregate.getStatus(),
-      servicePeriodId: aggregate.getServicePeriodId(),
-      contactId: aggregate.getContactId(),
-      partySize: aggregate.getPartySize(),
-      reservationDate: aggregate.getReservationDateTime().toISOString(),
-    });
+    res.status(200).json(serializeReservation(aggregate));
   });
 
   app.patch("/reservations/:id", async (req: Request, res: Response) => {
@@ -222,5 +237,35 @@ export function createApp(deps: AppDependencies): Express {
     res.status(204).send();
   });
 
+  // Express 5 forwards a rejected promise from any async handler above to
+  // this error middleware automatically. Anything reaching here is an
+  // infrastructure fault, not an expected domain rejection (those already
+  // returned a 422 above) — a real client (POS, staff app) still needs
+  // JSON back, not Express's default HTML error page.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    // eslint-disable-next-line no-console
+    console.error("Unhandled error in CAP-D01.01 API:", err);
+    res.status(500).json({ message: "An unexpected error occurred. The reservation was not affected unless you receive a success response." });
+  });
+
   return app;
+}
+
+function serializeReservation(aggregate: {
+  getId(): { toString(): string };
+  getStatus(): string;
+  getServicePeriodId(): string;
+  getContactId(): string;
+  getPartySize(): number;
+  getReservationDateTime(): Date;
+}) {
+  return {
+    id: aggregate.getId().toString(),
+    status: aggregate.getStatus(),
+    servicePeriodId: aggregate.getServicePeriodId(),
+    contactId: aggregate.getContactId(),
+    partySize: aggregate.getPartySize(),
+    reservationDate: aggregate.getReservationDateTime().toISOString(),
+  };
 }

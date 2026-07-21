@@ -27,6 +27,18 @@ export interface ReservationRepository {
   findById(id: ReservationId): Promise<ReservationAggregate | null>;
 
   /**
+   * CAP-D01.01-AC34 — Today's Active Reservations Are Operationally
+   * Discoverable. Returns every reservation whose date falls on the
+   * given calendar day, in any status — the caller distinguishes
+   * Proposed/Confirmed/Cancelled, this does not filter them out.
+   * Service-Period-scoped discovery is not available: Service Period
+   * Management does not exist as a capability yet (see
+   * ServicePeriodReader), so "current service period" narrows to "this
+   * calendar day" for now.
+   */
+  findByDate(date: Date): Promise<ReservationAggregate[]>;
+
+  /**
    * CAP-D01.01-R44 — supports safe retry of a creation command: if
    * commandId was already applied, the caller should return this
    * reservation instead of generating and discarding a new identity.

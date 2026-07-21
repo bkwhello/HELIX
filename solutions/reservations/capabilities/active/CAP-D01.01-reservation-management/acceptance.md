@@ -10,7 +10,7 @@ artifact_type: Capability Acceptance Model
 capability_id: CAP-D01.01
 capability_name: Reservation Management
 
-version: 1.1.0
+version: 1.2.0
 status: Approved
 
 owner: Reservation Management
@@ -18,6 +18,7 @@ authority: capability.md
 ```
 
 Version 1.1.0 adds CAP-D01.01-AC38, alongside CAP-D01.01-R50 in `rule-model.md`.
+Version 1.2.0 adds CAP-D01.01-AC39, closing the same kind of gap for creation (CAP-D01.01-R32) — found during a pilot-readiness review of Create Reservation.
 
 ---
 
@@ -1200,6 +1201,34 @@ Added in version 1.1.0, alongside CAP-D01.01-R50 (see `rule-model.md`).
 
 ---
 
+## CAP-D01.01-AC39 — Reject Unauthorized Creation
+
+```yaml
+acceptance_level: A2
+priority: Critical
+related_rules:
+  - CAP-D01.01-R32
+  - CAP-D01.01-R43
+```
+
+**Given**
+
+an actor lacks permission to create reservations.
+
+**When**
+
+the actor submits Create Reservation.
+
+**Then**
+
+- the request is rejected;
+- no reservation is created;
+- the unauthorized attempt is attributable.
+
+Added in version 1.2.0. CAP-D01.01-R32 existed since the original rule model but had no dedicated acceptance criterion or test — found during pilot-readiness review of Create Reservation.
+
+---
+
 # 16. Acceptance Traceability Matrix
 
 | Acceptance Scenario | Capability Concern | Primary Rules | Primary Event |
@@ -1216,6 +1245,7 @@ Added in version 1.1.0, alongside CAP-D01.01-R50 (see `rule-model.md`).
 | AC32–AC35 | Operational use | Multiple | Multiple |
 | AC36–AC37 | Security and accountability | R18, R32–R35, R41 | Multiple |
 | AC38 | Confirmation authorization | R50 | E03 |
+| AC39 | Creation authorization | R32 | E01 |
 
 ---
 

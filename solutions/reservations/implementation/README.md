@@ -9,7 +9,9 @@ built to satisfy, verified through the tests in `tests/`.
 
 TypeScript / Node, chosen to match the existing `konnichiwa-kitchen`
 (Next.js/Prisma) codebase rather than introducing a second language
-ecosystem. Vitest for tests. No framework dependency in `domain/`.
+ecosystem. Prisma (SQLite locally, PostgreSQL is the production target —
+see `prisma/schema.prisma`). Express for the HTTP API. Vitest for tests.
+No framework dependency in `domain/`.
 
 ## Engineering artifact → implementation mapping
 
@@ -20,42 +22,61 @@ ecosystem. Vitest for tests. No framework dependency in `domain/`.
 | `rule-model.md` | `domain/rules/*.ts` |
 | `event-model.md` | `domain/events/ReservationEvents.ts` |
 | `interaction-model.md` | `domain/repositories/ReservationRepository.ts`, `application/ports/*.ts` |
-| `acceptance.md` | `tests/acceptance/*.test.ts` |
+| `acceptance.md` | `tests/acceptance/*.test.ts`, `tests/api/*.test.ts` |
 
 This mapping does not vary between capabilities (see CA-001 §54, Phase 2 of the engineering brief for this capability).
 
-## Status
+## Status: Create Reservation is pilot-ready; the rest of the lifecycle is not yet
 
-Phase 3 complete: the `ReservationAggregate` enforces CAP-D01.01-R01–R49
-(see `domain/rules/ArchitecturalInvariants.ts` for the rules enforced by
-construction rather than a runtime check) and emits the five lifecycle
-events. Acceptance scenarios AC01, AC03–AC09, AC11–AC19 have automated
-coverage; AC02, AC10 partially covered at the handler layer.
+**Create Reservation** (domain rules, application orchestration, Prisma
+persistence, and the `POST /reservations` / `GET /reservations` HTTP
+endpoints) has been reviewed against `acceptance.md` §17's Pilot exit
+criteria and hardened accordingly:
 
-Not yet covered by automated tests (require real infrastructure, not just
-the in-memory test double in `tests/support/`):
+- All Critical acceptance scenarios for creation (AC01–AC04, AC39) are
+  automated, at both the domain and HTTP layers (`tests/acceptance/creation.test.ts`,
+  `tests/api/reservations.test.ts`).
+- Failure and retry behaviour is tested against real SQLite, not just the
+  in-memory double: a repeated `commandId` is idempotent, a concurrent
+  create race resolves to exactly one winner (verified with `Promise.all`
+  against Prisma directly), and a failed write never drains pending
+  domain events.
+- Authorization is tested (CAP-D01.01-R32 / AC39).
+- Staff can discover what was created — `GET /reservations?date=` — a
+  requirement of AC34 that had no implementation before this review.
+- Unhandled errors return JSON (`api/app.ts`'s error middleware), not
+  Express's default HTML error page.
 
-- AC20 (persistence failure) — the in-memory repository can simulate a
-  thrown error, but true atomicity needs a real transactional store.
-- AC21, R44 idempotency — covered at the repository-port level; a real
-  command bus / HTTP layer needs its own idempotency-key handling.
-- AC24–AC28 (event integrity, correlation/causation across retries) —
-  needs a real event store.
-- AC29–AC37 (ownership boundaries, operational and security acceptance) —
-  organizational/structural, not runtime-testable against this layer
-  alone.
+**Confirm / Modify / Cancel / Complete** have the same domain-level rule
+and authorization coverage as Create, but have *not* been through the
+same HTTP-level and pilot-readiness pass — see "Known limitations" below.
+
+## Known limitations (before wider rollout, not blocking a controlled pilot)
+
+- `ContactReader` and `ServicePeriodReader` are placeholder adapters
+  (`infrastructure/Unvalidated*.ts`) that always report valid — Contact
+  Management and Service Period Management don't exist as capabilities
+  yet. Real validation is deferred until they do; this is a known,
+  intentional gap, not an oversight.
+- `actorFromHeader()` in `api/app.ts` trusts request headers for actor
+  identity — acceptable for a controlled pilot on a trusted device/network,
+  not for a public-facing deployment. Needs real authentication before
+  wider rollout.
+- SQLite is fine for a single-location controlled pilot; switch
+  `prisma/schema.prisma`'s `provider` (and `DATABASE_URL`) to PostgreSQL
+  before scaling beyond one site or one process.
+- No transactional outbox — events are persisted atomically with state
+  (see `PrismaReservationRepository.save()`), but nothing publishes them
+  to an external consumer yet, because none exists.
+- Confirm/Modify/Cancel/Complete lack HTTP-level tests and the
+  `GET /reservations` discoverability pass that Create just got.
 
 ## Run
 
 ```bash
 npm install
+npx prisma migrate deploy   # or `prisma migrate dev` locally
 npm run typecheck
 npm test
+npm run dev                 # http://localhost:3001, see api/server.ts
 ```
-
-## Not built yet (Phase 4, by design)
-
-REST endpoints, persistence adapter, frontend, external integrations.
-Per the engineering brief for this capability: only after the domain and
-application layers pass their tests does implementation expand outward
-into `infrastructure/` and `api/`.

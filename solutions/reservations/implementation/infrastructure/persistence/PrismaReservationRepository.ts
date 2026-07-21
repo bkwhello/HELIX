@@ -28,6 +28,19 @@ export class PrismaReservationRepository implements ReservationRepository {
     return row ? this.toAggregate(row) : null;
   }
 
+  async findByDate(date: Date): Promise<ReservationAggregate[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const rows = await this.prisma.reservation.findMany({
+      where: { reservationDate: { gte: startOfDay, lt: endOfDay } },
+      orderBy: { reservationDate: "asc" },
+    });
+    return rows.map((row) => this.toAggregate(row));
+  }
+
   private toAggregate(row: {
     id: string;
     status: string;

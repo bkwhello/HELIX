@@ -42,6 +42,18 @@ export class InMemoryReservationRepository implements ReservationRepository {
     return row ? this.toAggregate(reservationId, row) : null;
   }
 
+  async findByDate(date: Date): Promise<ReservationAggregate[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    return [...this.byId.entries()]
+      .filter(([, row]) => row.reservationDate >= startOfDay && row.reservationDate < endOfDay)
+      .sort(([, a], [, b]) => a.reservationDate.getTime() - b.reservationDate.getTime())
+      .map(([id, row]) => this.toAggregate(id, row));
+  }
+
   private toAggregate(id: string, row: StoredReservation): ReservationAggregate {
     return ReservationAggregate.reconstitute({
       id,

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { ReservationAggregate } from "../../domain/aggregates/ReservationAggregate.js";
 import { ReservationStatus } from "../../domain/value-objects/ReservationStatus.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
-import { validCreateCommand, PAST_DATE } from "../support/factories.js";
+import { validCreateCommand, unauthorizedActor, PAST_DATE } from "../support/factories.js";
 
 // CAP-D01.01-AC01 — Create a Valid Reservation
 describe("AC01 — Create a Valid Reservation", () => {
@@ -80,6 +80,18 @@ describe("AC05 — Detect a Potential Duplicate", () => {
     const created = result.value.pullEvents()[0];
     if (created?.type === "ReservationCreated") {
       expect(created.potentialDuplicateWarning).toBe(false);
+    }
+  });
+});
+
+// CAP-D01.01-AC39 — Reject Unauthorized Creation
+describe("AC39 — Reject Unauthorized Creation", () => {
+  it("rejects creation from an actor without permission and creates nothing (CAP-D01.01-R32)", () => {
+    const result = ReservationAggregate.create(validCreateCommand({ actor: unauthorizedActor }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R32")).toBe(true);
     }
   });
 });
