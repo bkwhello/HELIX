@@ -40,6 +40,13 @@ export function createApp(deps: AppDependencies): Express {
   // Pilot-only staff interface (see PILOT.md) — plain static HTML/JS, no
   // build step. Talks to the JSON endpoints below via fetch().
   app.use(express.static(publicDir));
+  // The bare root has no page of its own (no public/index.html) — without
+  // this, visiting http://localhost:PORT/ gives Express's default
+  // "Cannot GET /", which is exactly the confusing error a non-technical
+  // pilot user hits by typing the URL without /pilot.html.
+  app.get("/", (_req: Request, res: Response) => {
+    res.redirect("/pilot.html");
+  });
 
   const createHandler = new CreateReservationHandler(
     deps.repository,
