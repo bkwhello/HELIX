@@ -236,6 +236,39 @@ describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)",
   });
 });
 
+describe("PATCH /reservations/:id — marking a reservation as arrived", () => {
+  it("has no arrival mark on a freshly created reservation", async () => {
+    const { app } = buildApp();
+    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-arrive-none" }));
+    const before = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(before.body.arrivedAt).toBeUndefined();
+  });
+
+  it("marks a reservation as arrived, then clears the mark via an explicit null", async () => {
+    const { app } = buildApp();
+    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-arrive" }));
+
+    const arrivedAt = new Date().toISOString();
+    const marked = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-arrive-1", changes: { arrivedAt } });
+    expect(marked.status).toBe(204);
+
+    const afterMark = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(afterMark.body.arrivedAt).toBe(new Date(arrivedAt).toISOString());
+
+    const cleared = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-arrive-2", changes: { arrivedAt: null } });
+    expect(cleared.status).toBe(204);
+
+    const afterClear = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(afterClear.body.arrivedAt).toBeUndefined();
+  });
+});
+
 describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R36/R37)", () => {
   it("adds a note to a reservation created without one, then corrects it", async () => {
     const { app } = buildApp();

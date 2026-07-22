@@ -53,6 +53,8 @@ export class ReservationAggregate {
     private notes: string | undefined,
     /** CAP-D01.01-R48: a manual, staff-entered table note — not an owned Seating Assignment guarantee. Mutable, unlike the other creation-time fields, since it is normally set after creation. */
     private tableAssignment: string | undefined,
+    /** Operational, staff-toggled arrival marker — out of scope of this capability's formal rule model, like tableAssignment. Never set at creation; always undefined until a staff member marks the guest as arrived. */
+    private arrivedAt: Date | undefined,
     private readonly createdBy: string,
     private readonly createdAt: Date,
     /**
@@ -80,6 +82,7 @@ export class ReservationAggregate {
     preferredArea?: PreferredArea;
     notes?: string;
     tableAssignment?: string;
+    arrivedAt?: Date;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -105,6 +108,7 @@ export class ReservationAggregate {
       props.preferredArea,
       props.notes,
       props.tableAssignment,
+      props.arrivedAt,
       props.createdBy,
       props.createdAt,
       props.version
@@ -182,6 +186,7 @@ export class ReservationAggregate {
       source,
       cmd.preferredArea,
       cmd.notes,
+      undefined,
       undefined,
       cmd.actor.id,
       cmd.now,
@@ -318,6 +323,13 @@ export class ReservationAggregate {
       resultingValues["preferredArea"] = cmd.changes.preferredArea;
     }
 
+    // `null` explicitly clears a mistaken arrival mark; `undefined` (the
+    // default, same convention as every other field here) leaves it untouched.
+    if (cmd.changes.arrivedAt !== undefined) {
+      previousValues["arrivedAt"] = this.arrivedAt;
+      resultingValues["arrivedAt"] = cmd.changes.arrivedAt;
+    }
+
     if (violations.length > 0) {
       return fail(violations);
     }
@@ -352,6 +364,9 @@ export class ReservationAggregate {
     }
     if (cmd.changes.preferredArea !== undefined) {
       this.preferredArea = cmd.changes.preferredArea;
+    }
+    if (cmd.changes.arrivedAt !== undefined) {
+      this.arrivedAt = cmd.changes.arrivedAt ?? undefined;
     }
 
     this.pendingEvents.push({
@@ -483,6 +498,10 @@ export class ReservationAggregate {
 
   getTableAssignment(): string | undefined {
     return this.tableAssignment;
+  }
+
+  getArrivedAt(): Date | undefined {
+    return this.arrivedAt;
   }
 
   getPartySize(): number {

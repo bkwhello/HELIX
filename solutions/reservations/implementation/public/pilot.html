@@ -21,6 +21,15 @@
     --ok-text: #2c5c2a;
     --sushi-bg: #e3edfa;
     --sushi-text: #1c4e8a;
+    --status-grey-bg: #efece5;
+    --status-grey-text: #6b6258;
+    --status-blue-bg: #dce9fb;
+    --status-blue-text: #1e4f8f;
+    --status-purple-bg: #ece3f7;
+    --status-purple-text: #5b3a91;
+    --level-green: #2f8f4e;
+    --level-orange: #d98c1f;
+    --level-red: #c9463c;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -37,6 +46,15 @@
       --ok-text: #a9dba6;
       --sushi-bg: #16233a;
       --sushi-text: #8fb8ef;
+      --status-grey-bg: #2a2620;
+      --status-grey-text: #a89c8c;
+      --status-blue-bg: #16233f;
+      --status-blue-text: #8fb3ef;
+      --status-purple-bg: #2a1f3d;
+      --status-purple-text: #c3a8ea;
+      --level-green: #45b06c;
+      --level-orange: #e6a13d;
+      --level-red: #e0655c;
     }
   }
   * { box-sizing: border-box; }
@@ -54,14 +72,15 @@
   header h1 { margin: 0; font-size: 1.25rem; }
   header p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.9rem; }
   main {
-    max-width: 900px;
+    max-width: 1300px;
     margin: 0 auto;
     padding: 1.5rem;
     display: grid;
     gap: 1.5rem;
   }
-  @media (min-width: 800px) {
-    main { grid-template-columns: 1fr 1fr; align-items: start; }
+  @media (min-width: 900px) {
+    main { grid-template-columns: 7fr 3fr; align-items: start; }
+    .full-width { grid-column: 1 / -1; }
   }
   section {
     background: var(--bg-panel);
@@ -70,6 +89,25 @@
     padding: 1.25rem;
   }
   section h2 { margin: 0 0 1rem; font-size: 1.05rem; }
+  .compact-form label { display: block; font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0.2rem; }
+  .compact-form label:first-of-type { margin-top: 0; }
+  .compact-form input, .compact-form select, .compact-form textarea {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-family: inherit;
+  }
+  .compact-form textarea { resize: vertical; min-height: 2.2rem; }
+  .compact-form .row { display: flex; gap: 0.5rem; }
+  .compact-form .row > div { flex: 1; }
+  .compact-form .staff-name-row { margin-bottom: 0.5rem; }
+  .compact-form .staff-name-row label { font-size: 0.7rem; }
+  .compact-form .staff-name-row input { font-size: 0.78rem; padding: 0.3rem 0.5rem; }
+  .compact-form button { margin-top: 0.75rem; padding: 0.5rem 0.9rem; font-size: 0.88rem; }
   label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
   label:first-of-type { margin-top: 0; }
   input, select, textarea {
@@ -109,10 +147,11 @@
   th, td { text-align: left; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
   .status { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
-  .status-Proposed { background: var(--warn-bg); color: var(--warn-text); }
-  .status-Confirmed { background: var(--ok-bg); color: var(--ok-text); }
+  .status-Proposed { background: var(--status-grey-bg); color: var(--status-grey-text); }
+  .status-Confirmed { background: var(--status-blue-bg); color: var(--status-blue-text); }
   .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
-  .status-Completed { background: var(--bg-page); color: var(--muted); }
+  .status-Completed { background: var(--status-purple-bg); color: var(--status-purple-text); }
+  .time-cell { font-size: 1.55rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
   .empty { color: var(--muted); font-size: 0.9rem; padding: 0.5rem 0; }
   .notes-cell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .preference-select { width: auto; padding: 0.2rem 0.4rem; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border); }
@@ -123,13 +162,30 @@
   .list-item:last-child { border-bottom: none; }
   .list-item .remove { background: transparent; border: none; color: var(--danger-text); cursor: pointer; font-size: 0.85rem; margin: 0; padding: 0.2rem 0.4rem; }
   .edit-button { background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
+  .confirm-button { background: transparent; border: 1px solid var(--status-blue-text); color: var(--status-blue-text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
+  .cancel-button { background: transparent; border: 1px solid var(--danger-text); color: var(--danger-text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
+  .action-cell { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  .filter-bar { display: flex; gap: 0.4rem; margin-top: 0.75rem; }
+  .filter-button { background: transparent; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 0.82rem; margin: 0; padding: 0.3rem 0.7rem; border-radius: 999px; }
+  .filter-button.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .arrival-button { border: none; cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.15rem 0.55rem; border-radius: 999px; white-space: nowrap; font-family: inherit; }
+  .arrival-Arrived { background: var(--ok-bg); color: var(--ok-text); }
+  .arrival-Late { background: var(--danger-bg); color: var(--danger-text); }
+  .arrival-Expected { background: var(--status-grey-bg); color: var(--status-grey-text); }
   .edit-banner { display: none; margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 6px; background: var(--warn-bg); color: var(--warn-text); font-size: 0.9rem; }
   .edit-banner.active { display: block; }
   .occupancy-row { font-size: 0.9rem; }
-  .occupancy-row td { padding: 0.35rem 0.3rem; }
-  .occupancy-orange td { background: var(--warn-bg); color: var(--warn-text); }
-  .occupancy-red td { background: var(--danger-bg); color: var(--danger-text); font-weight: 600; }
-  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1rem; }
+  .occupancy-row td { padding: 0.4rem 0.3rem; }
+  .occupancy-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
+  .occupancy-bar-track { flex: 1; min-width: 4rem; max-width: 9rem; height: 0.55rem; border-radius: 999px; background: var(--border); overflow: hidden; }
+  .occupancy-bar-fill { height: 100%; border-radius: 999px; }
+  .occupancy-bar-fill.level-green { background: var(--level-green); }
+  .occupancy-bar-fill.level-orange { background: var(--level-orange); }
+  .occupancy-bar-fill.level-red { background: var(--level-red); }
+  .occupancy-percentage { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 2.5rem; text-align: right; }
+  .occupancy-orange .occupancy-percentage { color: var(--level-orange); }
+  .occupancy-red .occupancy-percentage { color: var(--level-red); }
+  footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1rem; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -141,11 +197,43 @@
 
 <main>
   <section>
+    <h2>Dagoverzicht</h2>
+    <div class="row">
+      <div>
+        <label for="list-date">Datum</label>
+        <input id="list-date" type="date" />
+      </div>
+      <div style="flex: 2;">
+        <label for="list-search">Zoek gast</label>
+        <input id="list-search" type="search" placeholder="naam of telefoonnummer…" />
+      </div>
+      <div style="flex: 0; align-self: flex-end;">
+        <button type="button" class="secondary" id="reload-list" style="margin-top: 0;">Vernieuwen</button>
+      </div>
+    </div>
+    <div class="filter-bar" id="area-filter">
+      <button type="button" class="filter-button active" data-area="All">Alle</button>
+      <button type="button" class="filter-button" data-area="Teppanyaki">Teppanyaki</button>
+      <button type="button" class="filter-button" data-area="Sushi">Sushi</button>
+    </div>
+    <div id="list-message"></div>
+    <table id="list-table" style="margin-top: 0.75rem;">
+      <thead>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Aankomst</th><th>Opmerkingen</th><th></th></tr>
+      </thead>
+      <tbody id="list-body"></tbody>
+    </table>
+    <div id="list-empty" class="empty" style="display:none;">Geen reserveringen voor deze datum.</div>
+  </section>
+
+  <section>
     <h2 id="form-title">Nieuwe reservering</h2>
     <div id="edit-banner" class="edit-banner"></div>
-    <form id="create-form">
-      <label for="staff-name">Jouw naam (voor de administratie)</label>
-      <input id="staff-name" type="text" required placeholder="bijv. Kelvin" />
+    <form id="create-form" class="compact-form">
+      <div class="staff-name-row">
+        <label for="staff-name">Jouw naam (voor de administratie)</label>
+        <input id="staff-name" type="text" required placeholder="bijv. Kelvin" />
+      </div>
 
       <div class="row">
         <div>
@@ -153,8 +241,8 @@
           <input id="guest-name" type="text" required placeholder="bijv. Jan Jansen" />
         </div>
         <div>
-          <label for="guest-phone">Telefoonnummer gast</label>
-          <input id="guest-phone" type="tel" required placeholder="bijv. 06-12345678" />
+          <label for="guest-phone">Telefoon</label>
+          <input id="guest-phone" type="tel" required placeholder="06-12345678" />
         </div>
       </div>
 
@@ -171,19 +259,24 @@
         </div>
       </div>
 
-      <label for="party-size">Aantal personen</label>
-      <input id="party-size" type="number" min="1" value="2" required />
-
-      <label for="source">Bron</label>
-      <select id="source">
-        <option value="Telephone" selected>Telefoon</option>
-        <option value="Walk-in">Walk-in</option>
-        <option value="Website">Website</option>
-        <option value="Google">Google</option>
-        <option value="TheFork">TheFork</option>
-        <option value="Staff">Personeel</option>
-        <option value="Other Approved Source">Overig</option>
-      </select>
+      <div class="row">
+        <div>
+          <label for="party-size">Personen</label>
+          <input id="party-size" type="number" min="1" value="2" required />
+        </div>
+        <div>
+          <label for="source">Bron</label>
+          <select id="source">
+            <option value="Telephone" selected>Telefoon</option>
+            <option value="Walk-in">Walk-in</option>
+            <option value="Website">Website</option>
+            <option value="Google">Google</option>
+            <option value="TheFork">TheFork</option>
+            <option value="Staff">Personeel</option>
+            <option value="Other Approved Source">Overig</option>
+          </select>
+        </div>
+      </div>
 
       <label for="preferred-area">Voorkeur</label>
       <select id="preferred-area" required>
@@ -192,8 +285,8 @@
         <option value="Teppanyaki">Teppanyaki</option>
       </select>
 
-      <label for="notes">Opmerkingen (allergieën, speciale wensen)</label>
-      <textarea id="notes" placeholder="bijv. notenallergie, verjaardag, rolstoeltoegankelijke tafel"></textarea>
+      <label for="notes">Opmerkingen</label>
+      <textarea id="notes" placeholder="allergieën, speciale wensen…"></textarea>
 
       <button type="submit" id="create-submit">Reservering aanmaken</button>
       <button type="button" class="secondary" id="cancel-edit" style="display:none;">Annuleren</button>
@@ -201,28 +294,7 @@
     </form>
   </section>
 
-  <section>
-    <h2>Dagoverzicht</h2>
-    <div class="row">
-      <div>
-        <label for="list-date">Datum</label>
-        <input id="list-date" type="date" />
-      </div>
-      <div style="flex: 0; align-self: flex-end;">
-        <button type="button" class="secondary" id="reload-list" style="margin-top: 0;">Vernieuwen</button>
-      </div>
-    </div>
-    <div id="list-message"></div>
-    <table id="list-table" style="margin-top: 0.75rem;">
-      <thead>
-        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Opmerkingen</th><th></th></tr>
-      </thead>
-      <tbody id="list-body"></tbody>
-    </table>
-    <div id="list-empty" class="empty" style="display:none;">Geen reserveringen voor deze datum.</div>
-  </section>
-
-  <section>
+  <section class="full-width">
     <h2>Sluitingsdagen</h2>
     <form id="closing-day-form">
       <div class="row">
@@ -244,12 +316,12 @@
     <div id="closing-day-empty" class="empty" style="display:none;">Geen sluitingsdagen ingesteld.</div>
   </section>
 
-  <section>
+  <section class="full-width">
     <h2>Teppanyaki bezetting</h2>
     <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem;">Komende 14 dagen, per dienst, op basis van 40 plaatsen. Oranje vanaf 70%, rood vanaf 90%.</p>
     <table id="occupancy-table">
       <thead>
-        <tr><th>Datum</th><th>Dienst</th><th>Bezet</th><th>%</th></tr>
+        <tr><th>Datum</th><th>Dienst</th><th>Bezetting</th></tr>
       </thead>
       <tbody id="occupancy-body"></tbody>
     </table>
@@ -257,7 +329,7 @@
   </section>
 </main>
 
-<footer>CAP-D01.01 Reservation Management — pilot-interface, geen productie-UI. Zie PILOT.md.</footer>
+<footer id="footer-info">HELIX Pilot v0.1</footer>
 
 <script>
   const STAFF_NAME_KEY = "konnichiwa-pilot-staff-name";
@@ -504,6 +576,13 @@
     }
   }
 
+  // Loaded once per date/reload; search and area-filter re-render this
+  // in-memory list instantly, with no extra round trip to the server.
+  let dailyReservations = [];
+  let activeAreaFilter = "All";
+  const searchInput = document.getElementById("list-search");
+  const areaFilterBar = document.getElementById("area-filter");
+
   async function loadList() {
     clearMessage(listMessage);
     try {
@@ -513,18 +592,69 @@
         showMessage(listMessage, data.message || "Kon dagoverzicht niet laden.", "error");
         return;
       }
-      listBody.innerHTML = "";
-      listEmpty.style.display = data.reservations.length === 0 ? "block" : "none";
+      dailyReservations = data.reservations;
+      renderList();
+    } catch (err) {
+      showMessage(listMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  }
 
-      // Teppanyaki first (tables need assigning), each group by time.
-      const sorted = [...data.reservations].sort((a, b) => {
-        const aTeppan = a.preferredArea === "Teppanyaki" ? 0 : 1;
-        const bTeppan = b.preferredArea === "Teppanyaki" ? 0 : 1;
-        if (aTeppan !== bTeppan) return aTeppan - bTeppan;
-        return new Date(a.reservationDate) - new Date(b.reservationDate);
-      });
+  async function confirmReservation(r) {
+    const res = await fetch(`/reservations/${r.id}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({ commandId: `pilot-confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showMessage(listMessage, ruleMessages(data.violations) || data.message || "Kon reservering niet bevestigen.", "error");
+      return;
+    }
+    await loadList();
+  }
 
-      for (const r of sorted) {
+  // Cancellation has no undo path once the reservation is Cancelled (a
+  // terminal status per CAP-D01.01-R16), so this is the one row action
+  // that asks for confirmation first.
+  async function cancelReservation(r) {
+    const who = r.contactName || r.contactId;
+    if (!confirm(`Reservering van ${who} annuleren?`)) return;
+    const reason = prompt("Reden (optioneel):") || undefined;
+    const res = await fetch(`/reservations/${r.id}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({ commandId: `pilot-cancel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, reason }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showMessage(listMessage, ruleMessages(data.violations) || data.message || "Kon reservering niet annuleren.", "error");
+      return;
+    }
+    await loadList();
+  }
+
+  function renderList() {
+    listBody.innerHTML = "";
+
+    const query = searchInput.value.trim().toLowerCase();
+    const filtered = dailyReservations.filter((r) => {
+      if (activeAreaFilter !== "All" && r.preferredArea !== activeAreaFilter) return false;
+      if (!query) return true;
+      return (r.contactName || "").toLowerCase().includes(query) || (r.contactId || "").toLowerCase().includes(query);
+    });
+    listEmpty.style.display = filtered.length === 0 ? "block" : "none";
+    listEmpty.textContent =
+      dailyReservations.length === 0 ? "Geen reserveringen voor deze datum." : "Geen reserveringen komen overeen met dit filter.";
+
+    // Teppanyaki first (tables need assigning), each group by time.
+    const sorted = [...filtered].sort((a, b) => {
+      const aTeppan = a.preferredArea === "Teppanyaki" ? 0 : 1;
+      const bTeppan = b.preferredArea === "Teppanyaki" ? 0 : 1;
+      if (aTeppan !== bTeppan) return aTeppan - bTeppan;
+      return new Date(a.reservationDate) - new Date(b.reservationDate);
+    });
+
+    for (const r of sorted) {
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
         const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
@@ -571,6 +701,27 @@
           tableCell.textContent = "—";
         }
 
+        // Time is the primary thing staff scan for during service: has
+        // this guest shown up yet? Click to mark arrived; click again to
+        // undo a mistaken tap. "Te laat"/"Verwacht" only reflects the
+        // browser's clock at the moment the list was (re)loaded — there is
+        // no live countdown, matching the rest of this page.
+        const arrivalCell = document.createElement("td");
+        const arrivalButton = document.createElement("button");
+        arrivalButton.type = "button";
+        const isArrived = Boolean(r.arrivedAt);
+        const isLate = !isArrived && new Date(r.reservationDate).getTime() < Date.now();
+        const arrivalState = isArrived ? "Arrived" : isLate ? "Late" : "Expected";
+        const arrivalLabel = isArrived ? "✓ Aangekomen" : isLate ? "Te laat" : "Verwacht";
+        arrivalButton.className = "arrival-button arrival-" + arrivalState;
+        arrivalButton.textContent = arrivalLabel;
+        arrivalButton.addEventListener("click", async () => {
+          arrivalButton.disabled = true;
+          await saveReservationField(r.id, { arrivedAt: isArrived ? null : new Date().toISOString() }, arrivalButton, "aankomst");
+          await loadList();
+        });
+        arrivalCell.appendChild(arrivalButton);
+
         // Always editable, on every reservation — staff routinely need to
         // add or correct this after the fact (put it on the bill, a wish
         // mentioned in a follow-up call), not only at creation time.
@@ -589,6 +740,25 @@
         // bron) can be corrected in one flow, rather than needing a
         // dedicated inline editor per field.
         const actionCell = document.createElement("td");
+        actionCell.className = "action-cell";
+
+        if (r.status === "Proposed") {
+          const confirmButton = document.createElement("button");
+          confirmButton.type = "button";
+          confirmButton.className = "confirm-button";
+          confirmButton.textContent = "Bevestigen";
+          confirmButton.addEventListener("click", () => confirmReservation(r));
+          actionCell.appendChild(confirmButton);
+        }
+        if (r.status === "Proposed" || r.status === "Confirmed") {
+          const cancelButton = document.createElement("button");
+          cancelButton.type = "button";
+          cancelButton.className = "cancel-button";
+          cancelButton.textContent = "Annuleren";
+          cancelButton.addEventListener("click", () => cancelReservation(r));
+          actionCell.appendChild(cancelButton);
+        }
+
         const editButton = document.createElement("button");
         editButton.type = "button";
         editButton.className = "edit-button";
@@ -597,7 +767,7 @@
         actionCell.appendChild(editButton);
 
         tr.innerHTML = `
-          <td>${time}</td>
+          <td class="time-cell">${time}</td>
           <td>${guest}</td>
           <td>${r.partySize}</td>
           <td></td>
@@ -606,20 +776,27 @@
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
           <td></td>
           <td></td>
+          <td></td>
         `;
         tr.children[3].replaceWith(preferenceCell);
         tr.children[4].replaceWith(tableCell);
-        tr.children[7].replaceWith(notesCell);
-        tr.children[8].replaceWith(actionCell);
+        tr.children[7].replaceWith(arrivalCell);
+        tr.children[8].replaceWith(notesCell);
+        tr.children[9].replaceWith(actionCell);
         listBody.appendChild(tr);
-      }
-    } catch (err) {
-      showMessage(listMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     }
   }
 
   document.getElementById("reload-list").addEventListener("click", loadList);
   listDateInput.addEventListener("change", loadList);
+  searchInput.addEventListener("input", renderList);
+  areaFilterBar.addEventListener("click", (event) => {
+    const button = event.target.closest(".filter-button");
+    if (!button) return;
+    activeAreaFilter = button.dataset.area;
+    areaFilterBar.querySelectorAll(".filter-button").forEach((b) => b.classList.toggle("active", b === button));
+    renderList();
+  });
   loadList();
 
   // --- Sluitingsdagen -------------------------------------------------
@@ -715,12 +892,18 @@
       occupancyEmpty.style.display = data.days.length === 0 ? "block" : "none";
       for (const row of data.days) {
         const tr = document.createElement("tr");
-        tr.className = "occupancy-row" + (row.level === "orange" ? " occupancy-orange" : row.level === "red" ? " occupancy-red" : "");
+        const levelClass = row.level === "orange" ? "occupancy-orange" : row.level === "red" ? "occupancy-red" : "";
+        const barLevel = row.level === "orange" ? "level-orange" : row.level === "red" ? "level-red" : "level-green";
+        tr.className = "occupancy-row" + (levelClass ? " " + levelClass : "");
         tr.innerHTML = `
           <td>${formatDateNL(row.date)}</td>
           <td>${SERVICE_LABELS[row.servicePeriodId] || row.servicePeriodId}</td>
-          <td>${row.bookedSeats} / ${row.capacity}</td>
-          <td>${row.percentage}%</td>
+          <td>
+            <div class="occupancy-bar-wrap">
+              <div class="occupancy-bar-track"><div class="occupancy-bar-fill ${barLevel}" style="width: ${Math.min(row.percentage, 100)}%;"></div></div>
+              <span class="occupancy-percentage">${row.percentage}%</span>
+            </div>
+          </td>
         `;
         occupancyBody.appendChild(tr);
       }
@@ -730,6 +913,17 @@
   }
 
   loadOccupancy();
+
+  // --- Footer / developer mode ------------------------------------------
+  // Staff don't need to see the capability ID — click to reveal it.
+  const footerInfo = document.getElementById("footer-info");
+  let footerExpanded = false;
+  footerInfo.addEventListener("click", () => {
+    footerExpanded = !footerExpanded;
+    footerInfo.textContent = footerExpanded
+      ? "CAP-D01.01 Reservation Management — pilot-interface, geen productie-UI. Zie PILOT.md."
+      : "HELIX Pilot v0.1";
+  });
 </script>
 </body>
 </html>

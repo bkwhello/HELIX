@@ -103,6 +103,35 @@ describe("Manual table assignment", () => {
   });
 });
 
+// Operational arrival marker — staff-toggled, not modeled with a formal rule (see ReservationAggregate).
+describe("Marking a reservation as arrived", () => {
+  it("has no arrival mark by default", () => {
+    const aggregate = createProposedReservation();
+    expect(aggregate.getArrivedAt()).toBeUndefined();
+  });
+
+  it("marks the reservation as arrived", () => {
+    const aggregate = createProposedReservation();
+    const arrivedAt = new Date(NOW.getTime() + 60_000);
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { arrivedAt } }, NOW);
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getArrivedAt()).toEqual(arrivedAt);
+  });
+
+  it("clears a mistaken arrival mark via an explicit null", () => {
+    const aggregate = createProposedReservation();
+    aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { arrivedAt: new Date(NOW.getTime() + 60_000) } }, NOW);
+    aggregate.pullEvents();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { arrivedAt: null } }, NOW);
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getArrivedAt()).toBeUndefined();
+  });
+});
+
 // CAP-D01.01-R36/R37 — notes can be added or corrected after creation
 describe("Editing notes after creation", () => {
   it("adds a note to a reservation that had none", () => {

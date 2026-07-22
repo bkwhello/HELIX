@@ -23,6 +23,7 @@ export interface ModifyReservationRequest {
     readonly tableAssignment?: string;
     readonly notes?: string;
     readonly preferredArea?: PreferredArea;
+    readonly arrivedAt?: Date | null;
   };
   readonly isServicePeriodStillValid?: boolean;
   readonly isAuthorizedCorrection?: boolean;

@@ -56,6 +56,7 @@ export class PrismaReservationRepository implements ReservationRepository {
     preferredArea: string | null;
     notes: string | null;
     tableAssignment: string | null;
+    arrivedAt: Date | null;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -76,6 +77,7 @@ export class PrismaReservationRepository implements ReservationRepository {
       preferredArea: (row.preferredArea as PreferredArea) ?? undefined,
       notes: row.notes ?? undefined,
       tableAssignment: row.tableAssignment ?? undefined,
+      arrivedAt: row.arrivedAt ?? undefined,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -149,6 +151,7 @@ export class PrismaReservationRepository implements ReservationRepository {
               tableAssignment: aggregate.getTableAssignment(),
               notes: aggregate.getNotes(),
               preferredArea: aggregate.getPreferredArea(),
+              arrivedAt: aggregate.getArrivedAt() ?? null,
               version: { increment: 1 },
             },
           });

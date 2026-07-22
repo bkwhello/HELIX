@@ -214,6 +214,7 @@ export function createApp(deps: AppDependencies): Express {
         tableAssignment?: string;
         notes?: string;
         preferredArea?: string;
+        arrivedAt?: string | null;
       };
       isServicePeriodStillValid?: boolean;
       isAuthorizedCorrection?: boolean;
@@ -242,6 +243,8 @@ export function createApp(deps: AppDependencies): Express {
         tableAssignment: body.changes?.tableAssignment,
         notes: body.changes?.notes,
         preferredArea: preferredArea.present ? preferredArea.value : undefined,
+        arrivedAt:
+          body.changes?.arrivedAt === undefined ? undefined : body.changes.arrivedAt === null ? null : new Date(body.changes.arrivedAt),
       },
       isServicePeriodStillValid: body.isServicePeriodStillValid,
       isAuthorizedCorrection: body.isAuthorizedCorrection,
@@ -434,6 +437,7 @@ function serializeReservation(aggregate: {
   getPreferredArea(): string | undefined;
   getNotes(): string | undefined;
   getTableAssignment(): string | undefined;
+  getArrivedAt(): Date | undefined;
 }) {
   return {
     id: aggregate.getId().toString(),
@@ -447,5 +451,6 @@ function serializeReservation(aggregate: {
     preferredArea: aggregate.getPreferredArea(),
     notes: aggregate.getNotes(),
     tableAssignment: aggregate.getTableAssignment(),
+    arrivedAt: aggregate.getArrivedAt()?.toISOString(),
   };
 }

@@ -13,6 +13,7 @@ interface StoredReservation {
   preferredArea: ReturnType<ReservationAggregate["getPreferredArea"]>;
   notes: ReturnType<ReservationAggregate["getNotes"]>;
   tableAssignment: ReturnType<ReservationAggregate["getTableAssignment"]>;
+  arrivedAt: ReturnType<ReservationAggregate["getArrivedAt"]>;
   createdBy: string;
   createdAt: Date;
   version: number;
@@ -71,6 +72,7 @@ export class InMemoryReservationRepository implements ReservationRepository {
       preferredArea: row.preferredArea,
       notes: row.notes,
       tableAssignment: row.tableAssignment,
+      arrivedAt: row.arrivedAt,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -113,14 +115,15 @@ export class InMemoryReservationRepository implements ReservationRepository {
       reservationDate: aggregate.getReservationDateTime(),
       partySize: aggregate.getPartySize(),
       // Unlike createdBy/createdAt below (set once at creation),
-      // contactName, source, preferredArea, notes, and tableAssignment are
-      // meant to change via modify() after creation — always take the
-      // aggregate's current value, never fall back to the stored one.
+      // contactName, source, preferredArea, notes, tableAssignment, and
+      // arrivedAt are meant to change via modify() after creation — always
+      // take the aggregate's current value, never fall back to the stored one.
       contactName: aggregate.getContactName(),
       source: aggregate.getSource(),
       preferredArea: aggregate.getPreferredArea(),
       notes: aggregate.getNotes(),
       tableAssignment: aggregate.getTableAssignment(),
+      arrivedAt: aggregate.getArrivedAt(),
       createdBy: existing?.createdBy ?? aggregate.getCreatedBy(),
       createdAt: existing?.createdAt ?? aggregate.getCreatedAt(),
       version: newVersion,

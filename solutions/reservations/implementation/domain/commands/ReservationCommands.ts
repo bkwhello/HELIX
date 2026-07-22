@@ -54,6 +54,8 @@ export interface ModifyReservationCommand extends CommandEnvelope {
     readonly notes?: string;
     /** CAP-D01.01-R48: a guest can change their mind, or staff learn the real preference after creation. */
     readonly preferredArea?: PreferredArea;
+    /** Operational arrival marker. `null` explicitly clears a mistaken mark; `undefined` (omitted) leaves it untouched. */
+    readonly arrivedAt?: Date | null;
   };
   /** CAP-D01.01-R20: supplied by the caller after confirming the existing Service Period still holds for the new date/time. */
   readonly isServicePeriodStillValid?: boolean;

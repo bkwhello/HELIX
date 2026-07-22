@@ -38,6 +38,11 @@ model Reservation {
   // CAP-D01.01-R48: manual, staff-entered table note (e.g. "C1"). Not an
   // owned Seating Assignment guarantee — see the rule comments.
   tableAssignment    String?
+  // Operational arrival marker, staff-toggled during service. Outside the
+  // scope of this capability's formal rule model (no Rxx) — like
+  // tableAssignment, it's a pragmatic staff-facing field, not a modeled
+  // check-in/Seating Management capability.
+  arrivedAt          DateTime?
   createdBy          String
   createdAt          DateTime
   updatedAt          DateTime @updatedAt
