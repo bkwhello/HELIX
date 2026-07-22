@@ -110,14 +110,14 @@ export class InMemoryReservationRepository implements ReservationRepository {
       status: aggregate.getStatus(),
       servicePeriodId: aggregate.getServicePeriodId(),
       contactId: aggregate.getContactId(),
-      contactName: existing?.contactName ?? aggregate.getContactName(),
       reservationDate: aggregate.getReservationDateTime(),
       partySize: aggregate.getPartySize(),
-      source: existing?.source ?? aggregate.getSource(),
-      // Unlike the fields above (set once at creation), preferredArea,
-      // notes, and tableAssignment are meant to change via modify() after
-      // creation — always take the aggregate's current value, never fall
-      // back to the stored one.
+      // Unlike createdBy/createdAt below (set once at creation),
+      // contactName, source, preferredArea, notes, and tableAssignment are
+      // meant to change via modify() after creation — always take the
+      // aggregate's current value, never fall back to the stored one.
+      contactName: aggregate.getContactName(),
+      source: aggregate.getSource(),
       preferredArea: aggregate.getPreferredArea(),
       notes: aggregate.getNotes(),
       tableAssignment: aggregate.getTableAssignment(),

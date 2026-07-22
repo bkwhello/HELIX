@@ -208,6 +208,8 @@ export function createApp(deps: AppDependencies): Express {
         reservationDate?: string;
         partySize?: number;
         contactId?: string;
+        contactName?: string;
+        source?: { category: string; externalReference?: string; importedBy?: string };
         servicePeriodId?: string;
         tableAssignment?: string;
         notes?: string;
@@ -234,6 +236,8 @@ export function createApp(deps: AppDependencies): Express {
         reservationDate: body.changes?.reservationDate ? new Date(body.changes.reservationDate) : undefined,
         partySize: body.changes?.partySize,
         contactId: body.changes?.contactId,
+        contactName: body.changes?.contactName,
+        source: body.changes?.source as never,
         servicePeriodId: body.changes?.servicePeriodId,
         tableAssignment: body.changes?.tableAssignment,
         notes: body.changes?.notes,

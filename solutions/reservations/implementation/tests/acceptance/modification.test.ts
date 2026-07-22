@@ -152,6 +152,49 @@ describe("Changing the preferred area after creation", () => {
   });
 });
 
+// CAP-D01.01-R07 — a mis-noted guest name can be corrected after creation
+describe("Editing the guest name after creation", () => {
+  it("corrects a misspelled name", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { contactName: "Jan Janssen" } }, NOW);
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getContactName()).toBe("Jan Janssen");
+  });
+});
+
+// CAP-D01.01-R12 — the recorded source can be corrected after creation
+describe("Editing the reservation source after creation", () => {
+  it("corrects the source category", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { source: { category: "Google" } } },
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    expect(aggregate.getSource().category).toBe("Google");
+  });
+
+  it("rejects an unknown source category and leaves the source unchanged (CAP-D01.01-R12)", () => {
+    const aggregate = createProposedReservation();
+    const originalCategory = aggregate.getSource().category;
+
+    const result = aggregate.modify(
+      { ...testEnvelope(), actor: staffActor, changes: { source: { category: "Carrier Pigeon" as never } } },
+      NOW
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R12")).toBe(true);
+    }
+    expect(aggregate.getSource().category).toBe(originalCategory);
+  });
+});
+
 // CAP-D01.01-AC11 — Prevent Internal Identity Modification
 describe("AC11 — Prevent Internal Identity Modification", () => {
   it("rejects an attempt to modify the internal Reservation Identity", () => {

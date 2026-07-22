@@ -122,6 +122,9 @@
   .list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
   .list-item:last-child { border-bottom: none; }
   .list-item .remove { background: transparent; border: none; color: var(--danger-text); cursor: pointer; font-size: 0.85rem; margin: 0; padding: 0.2rem 0.4rem; }
+  .edit-button { background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
+  .edit-banner { display: none; margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 6px; background: var(--warn-bg); color: var(--warn-text); font-size: 0.9rem; }
+  .edit-banner.active { display: block; }
   .occupancy-row { font-size: 0.9rem; }
   .occupancy-row td { padding: 0.35rem 0.3rem; }
   .occupancy-orange td { background: var(--warn-bg); color: var(--warn-text); }
@@ -138,7 +141,8 @@
 
 <main>
   <section>
-    <h2>Nieuwe reservering</h2>
+    <h2 id="form-title">Nieuwe reservering</h2>
+    <div id="edit-banner" class="edit-banner"></div>
     <form id="create-form">
       <label for="staff-name">Jouw naam (voor de administratie)</label>
       <input id="staff-name" type="text" required placeholder="bijv. Kelvin" />
@@ -191,7 +195,8 @@
       <label for="notes">Opmerkingen (allergieën, speciale wensen)</label>
       <textarea id="notes" placeholder="bijv. notenallergie, verjaardag, rolstoeltoegankelijke tafel"></textarea>
 
-      <button type="submit">Reservering aanmaken</button>
+      <button type="submit" id="create-submit">Reservering aanmaken</button>
+      <button type="button" class="secondary" id="cancel-edit" style="display:none;">Annuleren</button>
       <div id="create-message"></div>
     </form>
   </section>
@@ -210,7 +215,7 @@
     <div id="list-message"></div>
     <table id="list-table" style="margin-top: 0.75rem;">
       <thead>
-        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Opmerkingen</th></tr>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Opmerkingen</th><th></th></tr>
       </thead>
       <tbody id="list-body"></tbody>
     </table>
@@ -306,6 +311,60 @@
 
   const createForm = document.getElementById("create-form");
   const createMessage = document.getElementById("create-message");
+  const createSubmit = document.getElementById("create-submit");
+  const cancelEditButton = document.getElementById("cancel-edit");
+  const editBanner = document.getElementById("edit-banner");
+  const formTitle = document.getElementById("form-title");
+
+  // Rather than a growing pile of small inline editors for every
+  // correctable field (name, phone, date/time, aantal, bron), "Bewerken"
+  // recalls the whole reservation into this same form and re-registers it
+  // via PATCH — one flow for any data-entry mistake, not many.
+  let editingReservationId = null;
+
+  function enterEditMode(r) {
+    editingReservationId = r.id;
+    document.getElementById("guest-name").value = r.contactName || "";
+    document.getElementById("guest-phone").value = r.contactId || "";
+    const local = toLocalDateAndTime(r.reservationDate);
+    dateInput.value = local.date;
+    timeSelect.value = local.time;
+    document.getElementById("party-size").value = r.partySize;
+    document.getElementById("source").value = r.sourceCategory || "Telephone";
+    document.getElementById("preferred-area").value = r.preferredArea || "";
+    document.getElementById("notes").value = r.notes || "";
+
+    formTitle.textContent = "Reservering bewerken";
+    createSubmit.textContent = "Wijzigingen opslaan";
+    cancelEditButton.style.display = "";
+    editBanner.className = "edit-banner active";
+    editBanner.textContent = `Je past de reservering van ${r.contactName || r.contactId} aan.`;
+    clearMessage(createMessage);
+    createForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function exitEditMode() {
+    editingReservationId = null;
+    createForm.reset();
+    document.getElementById("staff-name").value = staffNameInput.value;
+    formTitle.textContent = "Nieuwe reservering";
+    createSubmit.textContent = "Reservering aanmaken";
+    cancelEditButton.style.display = "none";
+    editBanner.className = "edit-banner";
+    clearMessage(createMessage);
+  }
+
+  cancelEditButton.addEventListener("click", exitEditMode);
+
+  // The list shows time via toLocaleTimeString in the browser's local
+  // zone, so populating the edit form must convert back the same way —
+  // otherwise a reservation entered at 19:00 could reopen showing 21:00.
+  function toLocalDateAndTime(isoString) {
+    const d = new Date(isoString);
+    const offset = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - offset * 60000);
+    return { date: local.toISOString().slice(0, 10), time: local.toISOString().slice(11, 16) };
+  }
 
   createForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -325,21 +384,51 @@
     const hour = Number(timeSelect.value.slice(0, 2));
     const servicePeriodId = hour >= 12 && hour < 16 ? "lunch" : "dinner";
 
-    const body = {
-      commandId: `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      servicePeriodId,
-      contactId: document.getElementById("guest-phone").value.trim(),
-      contactName: document.getElementById("guest-name").value.trim(),
-      reservationDate: new Date(datetimeValue).toISOString(),
-      partySize: Number(document.getElementById("party-size").value),
-      source: { category: document.getElementById("source").value },
-      preferredArea: document.getElementById("preferred-area").value,
-      notes: document.getElementById("notes").value.trim() || undefined,
-    };
-
-    const submitButton = createForm.querySelector("button[type=submit]");
-    submitButton.disabled = true;
+    createSubmit.disabled = true;
     try {
+      if (editingReservationId) {
+        const res = await fetch(`/reservations/${editingReservationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({
+            commandId: `pilot-edit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            changes: {
+              contactId: document.getElementById("guest-phone").value.trim(),
+              contactName: document.getElementById("guest-name").value.trim(),
+              reservationDate: new Date(datetimeValue).toISOString(),
+              servicePeriodId,
+              partySize: Number(document.getElementById("party-size").value),
+              source: { category: document.getElementById("source").value },
+              preferredArea: document.getElementById("preferred-area").value || undefined,
+              notes: document.getElementById("notes").value.trim() || undefined,
+            },
+            isServicePeriodStillValid: true,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showMessage(createMessage, "Kon wijzigingen niet opslaan:\n" + (ruleMessages(data.violations) || data.message || ""), "error");
+          return;
+        }
+        showMessage(createMessage, "Wijzigingen opgeslagen.", "ok");
+        exitEditMode();
+        await loadList();
+        await loadOccupancy();
+        return;
+      }
+
+      const body = {
+        commandId: `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        servicePeriodId,
+        contactId: document.getElementById("guest-phone").value.trim(),
+        contactName: document.getElementById("guest-name").value.trim(),
+        reservationDate: new Date(datetimeValue).toISOString(),
+        partySize: Number(document.getElementById("party-size").value),
+        source: { category: document.getElementById("source").value },
+        preferredArea: document.getElementById("preferred-area").value,
+        notes: document.getElementById("notes").value.trim() || undefined,
+      };
+
       const res = await fetch("/reservations", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...actorHeaders() },
@@ -365,7 +454,7 @@
     } catch (err) {
       showMessage(createMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     } finally {
-      submitButton.disabled = false;
+      createSubmit.disabled = false;
     }
   });
 
@@ -495,6 +584,18 @@
         notesInput.addEventListener("change", () => saveReservationField(r.id, { notes: notesInput.value.trim() }, notesInput, "opmerking"));
         notesCell.appendChild(notesInput);
 
+        // Recalls this reservation's full record into the create form so
+        // any data-entry mistake (naam, telefoonnummer, datum/tijd, aantal,
+        // bron) can be corrected in one flow, rather than needing a
+        // dedicated inline editor per field.
+        const actionCell = document.createElement("td");
+        const editButton = document.createElement("button");
+        editButton.type = "button";
+        editButton.className = "edit-button";
+        editButton.textContent = "Bewerken";
+        editButton.addEventListener("click", () => enterEditMode(r));
+        actionCell.appendChild(editButton);
+
         tr.innerHTML = `
           <td>${time}</td>
           <td>${guest}</td>
@@ -504,10 +605,12 @@
           <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
           <td></td>
+          <td></td>
         `;
         tr.children[3].replaceWith(preferenceCell);
         tr.children[4].replaceWith(tableCell);
         tr.children[7].replaceWith(notesCell);
+        tr.children[8].replaceWith(actionCell);
         listBody.appendChild(tr);
       }
     } catch (err) {

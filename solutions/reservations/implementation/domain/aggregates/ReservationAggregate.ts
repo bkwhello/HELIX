@@ -41,10 +41,12 @@ export class ReservationAggregate {
     private status: ReservationStatus,
     private servicePeriodId: string,
     private contactId: string,
-    private readonly contactName: string | undefined,
+    /** CAP-D01.01-R07: mutable — a mis-noted name is exactly the kind of correction staff need to make. */
+    private contactName: string | undefined,
     private dateTime: ReservationDateTime,
     private partySize: PartySize,
-    private readonly source: ReservationSource,
+    /** CAP-D01.01-R12: mutable — e.g. staff logged it as Telephone but it was actually a Google booking. */
+    private source: ReservationSource,
     /** CAP-D01.01-R48: a guest preference, never a seating guarantee. Mutable — a guest can change their mind, or staff learn the real preference after creation. */
     private preferredArea: PreferredArea | undefined,
     /** CAP-D01.01-R36/R37: operational context (allergies, special requests). Mutable — staff routinely add or correct this after creation (e.g. "put it on the bill", a wish mentioned in a follow-up call). */
@@ -286,6 +288,21 @@ export class ReservationAggregate {
       resultingValues["contactId"] = cmd.changes.contactId;
     }
 
+    if (cmd.changes.contactName !== undefined) {
+      previousValues["contactName"] = this.contactName;
+      resultingValues["contactName"] = cmd.changes.contactName;
+    }
+
+    if (cmd.changes.source !== undefined) {
+      const sourceResult = ReservationSource.create(cmd.changes.source);
+      if (!sourceResult.ok) {
+        violations.push(...sourceResult.violations);
+      } else {
+        previousValues["source"] = this.source.category;
+        resultingValues["source"] = sourceResult.value.category;
+      }
+    }
+
     if (cmd.changes.tableAssignment !== undefined) {
       previousValues["tableAssignment"] = this.tableAssignment;
       resultingValues["tableAssignment"] = cmd.changes.tableAssignment;
@@ -316,6 +333,13 @@ export class ReservationAggregate {
     }
     if (cmd.changes.contactId !== undefined) {
       this.contactId = cmd.changes.contactId;
+    }
+    if (cmd.changes.contactName !== undefined) {
+      this.contactName = cmd.changes.contactName;
+    }
+    if (cmd.changes.source !== undefined) {
+      const r = ReservationSource.create(cmd.changes.source);
+      if (r.ok) this.source = r.value;
     }
     if (cmd.changes.servicePeriodId !== undefined) {
       this.servicePeriodId = cmd.changes.servicePeriodId;

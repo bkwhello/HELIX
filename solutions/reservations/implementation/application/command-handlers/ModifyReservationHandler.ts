@@ -2,6 +2,7 @@ import { Result, fail, ok, violation } from "../../domain/shared/Result.js";
 import { Actor } from "../../domain/value-objects/Actor.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
+import { ReservationSourceProps } from "../../domain/value-objects/ReservationSource.js";
 import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
@@ -16,6 +17,8 @@ export interface ModifyReservationRequest {
     readonly reservationDate?: Date;
     readonly partySize?: number;
     readonly contactId?: string;
+    readonly contactName?: string;
+    readonly source?: ReservationSourceProps;
     readonly servicePeriodId?: string;
     readonly tableAssignment?: string;
     readonly notes?: string;

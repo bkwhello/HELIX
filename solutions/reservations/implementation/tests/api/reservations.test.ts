@@ -295,6 +295,54 @@ describe("PATCH /reservations/:id — changing the preferred area after creation
   });
 });
 
+describe("PATCH /reservations/:id — correcting the guest name and source (CAP-D01.01-R07/R12)", () => {
+  it("corrects a misspelled guest name", async () => {
+    const { app } = buildApp();
+    const created = await request(app)
+      .post("/reservations")
+      .set(staffHeaders)
+      .send(validBody({ commandId: "http-cmd-name-edit", contactName: "Jan Jansen" }));
+
+    const patched = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-name-edit-1", changes: { contactName: "Jan Janssen" } });
+    expect(patched.status).toBe(204);
+
+    const after = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactName).toBe("Jan Janssen");
+  });
+
+  it("corrects the reservation source", async () => {
+    const { app } = buildApp();
+    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-source-edit" }));
+    const before = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(before.body.sourceCategory).toBe("Telephone");
+
+    const patched = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-source-edit-1", changes: { source: { category: "Google" } } });
+    expect(patched.status).toBe(204);
+
+    const after = await request(app).get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.sourceCategory).toBe("Google");
+  });
+
+  it("rejects an unrecognized source category with a 422 domain violation (CAP-D01.01-R12)", async () => {
+    const { app } = buildApp();
+    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-source-bad-edit" }));
+
+    const res = await request(app)
+      .patch(`/reservations/${created.body.reservationId}`)
+      .set(staffHeaders)
+      .send({ commandId: "http-cmd-source-bad-edit-1", changes: { source: { category: "Carrier Pigeon" } } });
+
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R12")).toBe(true);
+  });
+});
+
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
   it("lists reservations for the requested date, including guest name and preferred area", async () => {
     const { app } = buildApp();

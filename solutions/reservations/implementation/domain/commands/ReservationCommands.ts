@@ -42,6 +42,10 @@ export interface ModifyReservationCommand extends CommandEnvelope {
     readonly reservationDate?: Date;
     readonly partySize?: number;
     readonly contactId?: string;
+    /** CAP-D01.01-R07: a mis-noted guest name is exactly the kind of correction staff need to make. */
+    readonly contactName?: string;
+    /** CAP-D01.01-R12: e.g. staff logged it as Telephone but it was actually a Google booking. */
+    readonly source?: ReservationSourceProps;
     /** CAP-D01.01-R20: a revalidated Service Period for a date/time change, or a standalone correction. */
     readonly servicePeriodId?: string;
     /** CAP-D01.01-R48: a manual, staff-entered table note (e.g. "C1") — not a Seating Assignment guarantee, which stays owned elsewhere once that capability exists. */
