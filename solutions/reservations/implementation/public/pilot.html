@@ -63,6 +63,7 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--bg-page);
     color: var(--text);
+    font-size: 16px;
   }
   header {
     padding: 1.25rem 1.5rem;
@@ -71,58 +72,106 @@
   }
   header h1 { margin: 0; font-size: 1.25rem; }
   header p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.9rem; }
+
+  /* Breakpoints: mobile 0-639, tablet 640-1023, desktop 1024-1439, large desktop 1440+.
+     Section order in the HTML already reads Reservations -> Form -> Occupancy ->
+     Closing days, which is the required order on mobile/tablet, so no reordering
+     is needed there. Desktop switches to two columns; the wide (reservations)
+     column is kept first/left, per the explicit "reservations should dominate"
+     direction from earlier — see the chat summary for why this intentionally
+     mirrors the spec's proportions but not its left/right assignment. */
   main {
-    max-width: 1300px;
+    max-width: 1440px;
     margin: 0 auto;
-    padding: 1.5rem;
+    padding: 16px 12px 40px;
     display: grid;
-    gap: 1.5rem;
+    gap: 1rem;
   }
-  @media (min-width: 900px) {
-    main { grid-template-columns: 7fr 3fr; align-items: start; }
+  @media (min-width: 640px) {
+    main { padding-left: 24px; padding-right: 24px; }
+  }
+  @media (min-width: 1024px) {
+    main {
+      grid-template-columns: 1fr minmax(320px, 380px);
+      gap: 24px;
+      align-items: start;
+      padding-left: 32px;
+      padding-right: 32px;
+    }
     .full-width { grid-column: 1 / -1; }
   }
+  @media (min-width: 1440px) {
+    main { grid-template-columns: 1fr 400px; }
+  }
+
   section {
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 1.25rem;
+    padding: 16px;
   }
-  section h2 { margin: 0 0 1rem; font-size: 1.05rem; }
-  .compact-form label { display: block; font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0.2rem; }
+  @media (min-width: 640px) {
+    section { padding: 20px; }
+  }
+  @media (min-width: 1024px) {
+    section { padding: 22px; border-radius: 12px; }
+  }
+  section h2 { margin: 0 0 1rem; font-size: 20px; }
+  .compact-form label { display: block; font-size: 14px; color: var(--muted); margin: 0.5rem 0 0.2rem; }
   .compact-form label:first-of-type { margin-top: 0; }
   .compact-form input, .compact-form select, .compact-form textarea {
     width: 100%;
-    padding: 0.4rem 0.5rem;
+    padding: 10px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 7px;
     background: transparent;
     color: var(--text);
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-family: inherit;
+    min-height: 44px;
   }
-  .compact-form textarea { resize: vertical; min-height: 2.2rem; }
+  .compact-form textarea { resize: vertical; min-height: 72px; }
   .compact-form .row { display: flex; gap: 0.5rem; }
   .compact-form .row > div { flex: 1; }
   .compact-form .staff-name-row { margin-bottom: 0.5rem; }
-  .compact-form .staff-name-row label { font-size: 0.7rem; }
-  .compact-form .staff-name-row input { font-size: 0.78rem; padding: 0.3rem 0.5rem; }
-  .compact-form button { margin-top: 0.75rem; padding: 0.5rem 0.9rem; font-size: 0.88rem; }
-  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
+  .compact-form button { margin-top: 0.75rem; padding: 0.5rem 0.9rem; font-size: 0.9rem; min-height: 44px; }
+  .compact-form button[type="submit"] { width: auto; }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 0.75rem 0 0.25rem; }
   label:first-of-type { margin-top: 0; }
   input, select, textarea {
     width: 100%;
-    padding: 0.5rem 0.6rem;
+    padding: 10px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 7px;
     background: transparent;
     color: var(--text);
     font-size: 0.95rem;
     font-family: inherit;
+    min-height: 44px;
   }
-  textarea { resize: vertical; min-height: 3.5rem; }
+  textarea { resize: vertical; min-height: 72px; }
   .row { display: flex; gap: 0.75rem; }
   .row > div { flex: 1; }
+  @media (max-width: 639px) {
+    /* Rem-based sizes throughout the page scale down with the root size;
+       the handful of literal-px sizes below (body/labels/section titles)
+       are reduced to match, since rem doesn't reach those. */
+    html { font-size: 14px; }
+    body { font-size: 14px; }
+    section h2 { font-size: 17px; }
+    label, .compact-form label { font-size: 12.5px; }
+    .compact-form input, .compact-form select, .compact-form textarea, .compact-form button,
+    input, select, button {
+      min-height: 48px;
+    }
+    .compact-form button[type="submit"] { width: 100%; }
+    /* Guest+Phone and Date+Time share a row from 640px up, where there's
+       room for two columns — on a phone that squeezes each input (the
+       phone number especially) too narrow to read properly. Stack instead. */
+    .row, .compact-form .row {
+      flex-direction: column;
+    }
+  }
   button {
     margin-top: 1rem;
     padding: 0.6rem 1rem;
@@ -145,13 +194,61 @@
   .message.ok { background: var(--ok-bg); color: var(--ok-text); }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   th, td { text-align: left; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border); }
+  /* Mobile: no table, no horizontal scroll — each row becomes a card of
+     labeled fields via the CSS "responsive table" technique (data-label
+     drives the ::before content), so this reuses the same row-building JS
+     instead of maintaining a second, parallel card-rendering code path. */
+  @media (max-width: 639px) {
+    #list-table thead { display: none; }
+    #list-table, #list-table tbody, #list-table tr, #list-table td { display: block; width: 100%; }
+    #list-table tr {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: var(--bg-page);
+    }
+    /* Every field gets the card's full width, label above value — no
+       side-by-side squeeze, so a value like a phone number always has
+       room to sit on one line instead of wrapping mid-number. */
+    #list-table td {
+      border-bottom: none;
+      padding: 5px 0;
+    }
+    #list-table td::before {
+      content: attr(data-label);
+      display: block;
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 2px;
+    }
+    #list-table td.time-cell::before,
+    #list-table td.action-cell::before {
+      content: none;
+    }
+    #list-table td.action-cell {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    #list-table td.notes-cell {
+      max-width: none;
+      overflow: visible;
+      white-space: normal;
+    }
+  }
   th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
   .status { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
   .status-Proposed { background: var(--status-grey-bg); color: var(--status-grey-text); }
   .status-Confirmed { background: var(--status-blue-bg); color: var(--status-blue-text); }
   .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
   .status-Completed { background: var(--status-purple-bg); color: var(--status-purple-text); }
-  .time-cell { font-size: 1.55rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .time-cell { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  @media (max-width: 639px) {
+    .time-cell { font-size: 16px; }
+  }
   .empty { color: var(--muted); font-size: 0.9rem; padding: 0.5rem 0; }
   .notes-cell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .preference-select { width: auto; padding: 0.2rem 0.4rem; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border); }
@@ -218,6 +315,18 @@
     </div>
     <div id="list-message"></div>
     <table id="list-table" style="margin-top: 0.75rem;">
+      <colgroup>
+        <col style="width: 64px" />
+        <col />
+        <col style="width: 60px" />
+        <col style="width: 120px" />
+        <col style="width: 80px" />
+        <col style="width: 110px" />
+        <col style="width: 140px" />
+        <col style="width: 110px" />
+        <col />
+        <col style="width: 90px" />
+      </colgroup>
       <thead>
         <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Aankomst</th><th>Opmerkingen</th><th></th></tr>
       </thead>
@@ -259,24 +368,19 @@
         </div>
       </div>
 
-      <div class="row">
-        <div>
-          <label for="party-size">Personen</label>
-          <input id="party-size" type="number" min="1" value="2" required />
-        </div>
-        <div>
-          <label for="source">Bron</label>
-          <select id="source">
-            <option value="Telephone" selected>Telefoon</option>
-            <option value="Walk-in">Walk-in</option>
-            <option value="Website">Website</option>
-            <option value="Google">Google</option>
-            <option value="TheFork">TheFork</option>
-            <option value="Staff">Personeel</option>
-            <option value="Other Approved Source">Overig</option>
-          </select>
-        </div>
-      </div>
+      <label for="party-size">Personen</label>
+      <input id="party-size" type="number" min="1" value="2" required />
+
+      <label for="source">Bron</label>
+      <select id="source">
+        <option value="Telephone" selected>Telefoon</option>
+        <option value="Walk-in">Walk-in</option>
+        <option value="Website">Website</option>
+        <option value="Google">Google</option>
+        <option value="TheFork">TheFork</option>
+        <option value="Staff">Personeel</option>
+        <option value="Other Approved Source">Overig</option>
+      </select>
 
       <label for="preferred-area">Voorkeur</label>
       <select id="preferred-area" required>
@@ -292,6 +396,18 @@
       <button type="button" class="secondary" id="cancel-edit" style="display:none;">Annuleren</button>
       <div id="create-message"></div>
     </form>
+  </section>
+
+  <section class="full-width">
+    <h2>Teppanyaki bezetting</h2>
+    <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem;">Komende 14 dagen, op basis van 40 plaatsen. Oranje vanaf 70%, rood vanaf 90%.</p>
+    <table id="occupancy-table">
+      <thead>
+        <tr><th>Datum</th><th>Bezetting</th></tr>
+      </thead>
+      <tbody id="occupancy-body"></tbody>
+    </table>
+    <div id="occupancy-empty" class="empty" style="display:none;">Nog geen Teppanyaki-reserveringen in deze periode.</div>
   </section>
 
   <section class="full-width">
@@ -314,18 +430,6 @@
     </form>
     <div id="closing-day-list" style="margin-top: 1rem;"></div>
     <div id="closing-day-empty" class="empty" style="display:none;">Geen sluitingsdagen ingesteld.</div>
-  </section>
-
-  <section class="full-width">
-    <h2>Teppanyaki bezetting</h2>
-    <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem;">Komende 14 dagen, per dienst, op basis van 40 plaatsen. Oranje vanaf 70%, rood vanaf 90%.</p>
-    <table id="occupancy-table">
-      <thead>
-        <tr><th>Datum</th><th>Dienst</th><th>Bezetting</th></tr>
-      </thead>
-      <tbody id="occupancy-body"></tbody>
-    </table>
-    <div id="occupancy-empty" class="empty" style="display:none;">Nog geen Teppanyaki-reserveringen in deze periode.</div>
   </section>
 </main>
 
@@ -664,6 +768,7 @@
         // whether the Tafel field applies and the Teppanyaki-bezetting
         // count, so both reload afterward.
         const preferenceCell = document.createElement("td");
+        preferenceCell.dataset.label = "Voorkeur";
         const preferenceSelect = document.createElement("select");
         preferenceSelect.className = "preference-select preference-select-" + (r.preferredArea || "none");
         if (!r.preferredArea) {
@@ -689,6 +794,7 @@
         preferenceCell.appendChild(preferenceSelect);
 
         const tableCell = document.createElement("td");
+        tableCell.dataset.label = "Tafel";
         if (r.preferredArea === "Teppanyaki" || r.preferredArea === "Sushi") {
           const input = document.createElement("input");
           input.type = "text";
@@ -707,6 +813,7 @@
         // browser's clock at the moment the list was (re)loaded — there is
         // no live countdown, matching the rest of this page.
         const arrivalCell = document.createElement("td");
+        arrivalCell.dataset.label = "Aankomst";
         const arrivalButton = document.createElement("button");
         arrivalButton.type = "button";
         const isArrived = Boolean(r.arrivedAt);
@@ -727,6 +834,7 @@
         // mentioned in a follow-up call), not only at creation time.
         const notesCell = document.createElement("td");
         notesCell.className = "notes-cell";
+        notesCell.dataset.label = "Opmerkingen";
         const notesInput = document.createElement("input");
         notesInput.type = "text";
         notesInput.className = "notes-input";
@@ -767,13 +875,13 @@
         actionCell.appendChild(editButton);
 
         tr.innerHTML = `
-          <td class="time-cell">${time}</td>
-          <td>${guest}</td>
-          <td>${r.partySize}</td>
+          <td class="time-cell" data-label="Tijd">${time}</td>
+          <td data-label="Gast">${guest}</td>
+          <td data-label="Aantal">${r.partySize}</td>
           <td></td>
           <td></td>
-          <td>${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
-          <td><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
+          <td data-label="Bron">${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
+          <td data-label="Status"><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
           <td></td>
           <td></td>
           <td></td>
@@ -880,7 +988,6 @@
   // --- Teppanyaki bezetting --------------------------------------------
   const occupancyBody = document.getElementById("occupancy-body");
   const occupancyEmpty = document.getElementById("occupancy-empty");
-  const SERVICE_LABELS = { lunch: "Lunch", dinner: "Diner" };
 
   async function loadOccupancy() {
     try {
@@ -897,7 +1004,6 @@
         tr.className = "occupancy-row" + (levelClass ? " " + levelClass : "");
         tr.innerHTML = `
           <td>${formatDateNL(row.date)}</td>
-          <td>${SERVICE_LABELS[row.servicePeriodId] || row.servicePeriodId}</td>
           <td>
             <div class="occupancy-bar-wrap">
               <div class="occupancy-bar-track"><div class="occupancy-bar-fill ${barLevel}" style="width: ${Math.min(row.percentage, 100)}%;"></div></div>
