@@ -1,0 +1,1 @@
+No measurement records placed yet. Candidate contents: the five existing HV-* registers currently under `/solutions/visibility/` (HV-BL-001, HV-DB-001, HV-IR-001, HV-TS-001, HV-AR-001) — pending a per-register placement decision (measurement / work-objects / design / transformation) as required by the migration instruction.
