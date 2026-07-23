@@ -619,12 +619,20 @@ The following events should be available in analytics.
 * `workshop_click`
 * `private_dining_enquiry`
 * `catering_enquiry`
+* `lunch_enquiry` — added during implementation; Executive/Bento Lunch is a distinct enough service from catering and private dining to warrant its own event.
+* `omakase_enquiry` — added during implementation; the free-form sushi-omakase "ask us" CTA is a distinct enquiry type from a general email click.
 * `takeaway_click`
 * `delivery_click`
 
 Where Guestplan permits reliable completion tracking:
 
 * `reservation_complete`
+
+**Implementation status (22 juli 2026):** `data-track` attributes for the events above (except `reservation_widget_open`, `directions_click`, `private_dining_enquiry`, and `reservation_complete`) are in place across the theme templates, ready for GTM click/form triggers once GA4 is connected inside the existing GTM container (`GTM-WXH5P6SN`). Three gaps found during implementation, not yet closed:
+
+* `directions_click` has nothing to attach to — no Google Maps / "get directions" link exists anywhere on the site.
+* `private_dining_enquiry` has nothing to attach to — the homepage "Private Dining" service card has no CTA or link at all, only descriptive text.
+* The catering contact form (`page-catering.php`) has no `action` and no submit handler — it does not send inquiries anywhere. Tracking is attached, but a submitted inquiry is currently lost regardless.
 
 Each event should preserve, where technically possible:
 
@@ -723,6 +731,34 @@ Number of runs recommending Konnichiwa
 ─────────────────────────────────────── × 100
 Total number of valid runs
 ```
+
+## AI Factual Accuracy Score
+
+Because a factual answer is rarely simply right or wrong, each scored run must be classified into exactly one of three states before scoring:
+
+* **Fully correct** — every tested fact in the answer matches the validated Organizational Reality.
+* **Partially correct** — the answer identifies Konnichiwa correctly but at least one tested fact is wrong, outdated, or missing.
+* **Incorrect** — the answer misidentifies Konnichiwa, or the tested facts are substantially wrong.
+
+Each state carries a fixed point value:
+
+```text
+Fully correct     = 100 points
+Partially correct =  50 points
+Incorrect         =   0 points
+```
+
+The AI Factual Accuracy Score is the mean across all valid runs in the scored round:
+
+```text
+Sum of points across all valid runs
+──────────────────────────────────── 
+Number of valid runs
+```
+
+This score must always be reported alongside, not instead of, the raw state counts (e.g. "0 fully correct, 2 partially correct, 2 incorrect — score 25/100"). A single aggregate percentage without the underlying counts is not sufficient evidence under HV-MP-P-006 (No False Attribution) — a 25/100 driven by "all partial" and a 25/100 driven by "half perfect, half wrong" describe different problems and require different interventions.
+
+A round is also scoped to whichever test scenarios were actually run. A score computed from one scenario (e.g. "opening hours") must be labeled with that scope (e.g. "1 of 30 planned scenarios") and must not be presented as a general AI Understanding score until enough of the approved test set has been run.
 
 ---
 
