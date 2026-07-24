@@ -3,7 +3,7 @@
 
 ## Status
 
-**Partially fulfilled, 24 July 2026.** Item 5 (Operational Context Declaration, E-11) received and processed — see observations/O-013.md, EV-020. Items 1–4 (E-05, E-06, E-07) remain **Open**. No profile, website, analytics, or production change is requested anywhere below.
+**Fulfilled to Partial, 24 July 2026 (capture date confirmed same day).** All 5 items now have a response. Item 5 (E-11) is fully **Completed** (EV-020). Items 1–4 (E-05, E-06, E-07) were supplied as 14 screenshots and processed to **Partial** status. Kelvin subsequently confirmed via a formal Owner Declaration (EV-024) that all 14 screenshots were captured **2026-07-24**, Europe/Amsterdam — this let the E-06 review sample be approximately dated within the investigation window and the E-07 post activity be read as likely predating it, but per this task's own instruction, status was **not** promoted merely because the date is now known: E-05's three attribute-change transition dates remain unknown, E-06 remains a bounded sample rather than a full export, and E-07's Photos tab was never supplied. See observations/O-013.md (EV-021, EV-022, EV-023, EV-024) for full detail. No profile, website, analytics, or production change is requested anywhere below.
 
 ## Why this exists
 
@@ -15,7 +15,9 @@ decisions/DD-013 (OC-002 Evidence Sufficiency Gate, PASSED WITH CONDITIONS) and 
 
 ---
 
-## Item 1 — GBP profile change / edit history (→ E-05)
+## Item 1 — GBP profile change / edit history (→ E-05) — **Received (as Item 2's screenshots), Partial**
+
+No dedicated edit-history/change-log screenshot was supplied, but the profile screenshots below (Item 2) revealed 3 confirmed, Google-attributed "HUIDIG vs. VORIGE" attribute differences — real change signal, but undated. See observations/O-013.md, EV-021.
 
 - **Screen/report name:** Business Profile "Bewerkingsgeschiedenis" / "Edit history" if your GBP interface exposes one (location varies — check under profile settings or the account activity panel); if none is visible, your own recollection is an acceptable substitute, recorded as an Owner Declaration.
 - **Required date range:** November 2025 – July 2026 (wider than the decline window itself, to catch a change that preceded and could have caused it).
@@ -24,7 +26,9 @@ decisions/DD-013 (OC-002 Evidence Sufficiency Gate, PASSED WITH CONDITIONS) and 
 - **Privacy precautions:** none needed — this is your own business data.
 - **Corresponds to:** E-05.
 
-## Item 2 — Current profile categories, hours, and links (→ E-05, baseline for comparison)
+## Item 2 — Current profile categories, hours, and links (→ E-05, baseline for comparison) — **Received, Partial**
+
+9 screenshots of the Bedrijfsgegevens panel supplied — full current-state configuration now documented. Capture date confirmed 2026-07-24 (EV-024, Owner Declaration). See observations/O-013.md, EV-021.
 
 - **Screen/report name:** the main "Bedrijfsprofiel bewerken" / "Edit profile" screen.
 - **Required date range:** current state (today).
@@ -33,7 +37,9 @@ decisions/DD-013 (OC-002 Evidence Sufficiency Gate, PASSED WITH CONDITIONS) and 
 - **Privacy precautions:** none needed.
 - **Corresponds to:** E-05 (used as the current endpoint; does not by itself establish when any field last changed).
 
-## Item 3 — Monthly review count and rating (→ E-06)
+## Item 3 — Monthly review count and rating (→ E-06) — **Received, Partial**
+
+4 screenshots of the review list (sort: Nieuwste) supplied — 8 usable reviews with relative dates and star ratings. No aggregate total/rating visible (CR-006 unaffected). Capture date confirmed 2026-07-24 (EV-024, Owner Declaration), allowing approximate calendar-week dating of the sample; a reliable monthly breakdown is still not derivable from 8 sparse, approximate points. See observations/O-013.md, EV-022.
 
 - **Screen/report name:** the Reviews section, sorted by date (newest first is fine).
 - **Required date range:** February 2026 – July 2026 (same as the investigation period).
@@ -42,7 +48,9 @@ decisions/DD-013 (OC-002 Evidence Sufficiency Gate, PASSED WITH CONDITIONS) and 
 - **Privacy precautions:** **please do not export or forward individual reviewer names or full review text unless a specific review is directly relevant** — aggregate counts (how many reviews, what rating, whether you responded) are all that's needed. If a screenshot unavoidably shows a reviewer's name, that's fine; it just won't be copied into the case files beyond what's needed for the count.
 - **Corresponds to:** E-06.
 
-## Item 4 — Photo and Google Post activity (→ E-07)
+## Item 4 — Photo and Google Post activity (→ E-07) — **Partially received, Partial**
+
+1 screenshot of the "Alle posts" panel supplied (5 posts, all labeled "vorig jaar"). The separate Photos section was not supplied. Capture date confirmed 2026-07-24 (EV-024, Owner Declaration) — relative to that date, "vorig jaar" indicates these posts likely predate the Feb 2026 investigation window, though no exact date is assigned. See observations/O-013.md, EV-023.
 
 - **Screen/report name:** the Photos section and the Posts ("Updates") section of your Business Profile.
 - **Required date range:** February 2026 – July 2026, plus the most recent owner photo and most recent Google Post regardless of date.

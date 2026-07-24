@@ -30,6 +30,46 @@ Kelvin completed the Operational Context Declaration (measurement/HV-ER-001…md
 
 This reassessment does not authorize Organizational Understanding, Diagnosis, Design, or Transformation, and does not change OC-002's status as a Justified Organizational Claim.
 
+## Third Reassessment, 24 July 2026 (E-05, E-06, E-07 screenshot intake)
+
+Kelvin supplied 14 GBP screenshots covering the three remaining blocked evidence groups. Processed in observations/O-013.md (EV-021, EV-022, EV-023) per the Claude Execution Markup — EC-002 GBP Screenshot Evidence Intake instruction.
+
+**Result:** all three items move from **Blocked** to **Partial** — not to Completed. The limiting factor across all three is consistent: **capture date is Unknown for every one of the 14 supplied images**, per this task's own rule against inferring capture date from message time. This means:
+
+- **E-05:** current profile configuration is now thoroughly documented (name, categories, description, hours, service area, links, and an extensive attribute list). Three confirmed, Google-attributed configuration changes were found (Hoogtepunten, Planning, Serviceopties — each explicitly labeled "geüpdatet door Google" in the platform's own interface), but none carries a calendar date, so none can be placed within, before, or after the Feb–Jul 2026 window.
+- **E-06:** a bounded, relatively-dated sample of 8 reviews was obtained (average 4.75★, 0/8 visible owner responses), but the unknown capture date prevents anchoring "N weken geleden" to any absolute date, so no monthly trend or window-specific conclusion is possible. **No aggregate review-count total is visible in this evidence — CR-006 (605 vs. 625) gains no new data point and remains Open, unaffected.**
+- **E-07:** Google Post activity evidence was obtained (5 posts, all labeled "Gepubliceerd op vorig jaar"), suggestive of an extended posting gap, but not confirmed as covering the investigation period (list completeness and capture date both unknown), and the separate Photos tab was not supplied at all.
+
+**Effect on the competing explanations register:** CE-06 (profile activity — photos/posts) and CE-07 (review trend/response behavior) both advance from Unassessable to **Weakly Supported**, each narrowly scoped and each still limited by the unknown capture date. One new candidate explanation, **CE-12** (GBP-side attribute/category change, Google-initiated), was added — status **Unassessable**, since no mechanism connects an attribute change to the tracked engagement metrics and no date exists to place it relative to the window. **No candidate explanation reaches Plausible.**
+
+**Effect on OC-002:** none beyond the prior Reassessment (claims/OC-002…md). This screenshot intake addresses candidate explanations for the decline, not the decline's own characterization, which is unchanged.
+
+**Verdict for this effect: Evidence Sufficiency Remains PASSED WITH CONDITIONS.** No bounded relationship reaches a level suitable for unconditional PASSED — four "Weakly Supported" findings, even combined, do not constitute one. FAILED is not warranted — real, structured evidence was obtained for all three previously-blocked items, and the decline itself remains reliably characterized.
+
+**Recommendation, updated:** given that 10 of 13 HV-MP-002 items are now at Completed or Partial status (only E-03 and E-10 remain structurally unavailable), this gate now explicitly states: **Eligible for case-owner consideration of an Understanding Authorization Gate.** This is a recommendation only — it does **not** authorize, begin, or constitute Organizational Understanding. That remains a separate, not-yet-made case-owner decision (decisions/DD-011, DD-012).
+
+This reassessment does not change OC-002's status as a Justified Organizational Claim, does not change `current_stage`, and does not authorize Organizational Understanding, Diagnosis, Design, or Transformation.
+
+## Fourth Reassessment, 24 July 2026 (screenshot capture-date confirmed)
+
+Kelvin submitted a formal Owner Declaration confirming all 14 screenshots processed in the Third Reassessment were captured **2026-07-24**, Europe/Amsterdam, via authenticated read-only GBP access. Recorded as **EV-024** in observations/O-013.md.
+
+**Classification distinction maintained:** the screenshot *content* (business fields, review ratings, post captions) remains **Direct System Screenshot** evidence; the *capture date* is separately classified as **Owner Declaration** metadata. This distinction is preserved throughout observations/O-013.md, HV-ER-001, Traceability.md, and current.md.
+
+**Effect, per item — no status is promoted merely because the date is now known, per Kelvin's explicit instruction:**
+
+- **E-05: remains Partial.** The HUIDIG (current) configuration snapshot is now precisely dated (2026-07-24). The three confirmed Google-attributed attribute changes (Hoogtepunten, Planning, Serviceopties) are not newly dated by this — only the resulting snapshot is dated, not the VORIGE→HUIDIG transition itself. Current configuration plus undated changes still does not constitute a complete change history.
+- **E-06: remains Partial.** The 8-review sample can now be approximately placed on the calendar (derived, week-level estimates, e.g. "13 weken geleden" ≈ week of 2026-04-24) — all 8 now fall approximately within the Feb–Jul 2026 investigation window, which was not establishable before. This remains a bounded sample, not a full monthly export, so it does not reach Completed.
+- **E-07: remains Partial.** "Gepubliceerd op vorig jaar," read against the confirmed 2026-07-24 capture date, indicates the 5 visible posts likely predate the investigation window — a more specific, though still imprecise, reading than before. No exact post date is assigned, per this task's explicit instruction. The Photos tab was never supplied, and list completeness remains unconfirmed, so this does not reach Completed.
+
+**CR-006 (605 vs. 625 reviews):** unaffected. This Owner Declaration concerns capture *date*, not a review *count* — no new total is introduced, and CR-006 remains **Open**, both values preserved.
+
+**Effect on the competing explanations register:** CE-06 and CE-07 remain **Weakly Supported** (unchanged status, sharpened description reflecting the now-approximate/likely-pre-window dating). CE-12 remains **Unassessable** (the transition date, not the snapshot date, is what CE-12 needs, and that remains unknown). No candidate explanation is promoted, and none becomes causal.
+
+**Verdict for this effect: Evidence Sufficiency Remains PASSED WITH CONDITIONS.** Historical-completeness limitations remain for all three items (E-05's transition dates, E-06's sample size, E-07's list completeness and missing Photos tab) even though the capture-date blocker itself is now resolved. The Recommendation (**"Eligible for case-owner consideration of an Understanding Authorization Gate"**) is unchanged — it was already reflecting evidence-base maturity, not date-resolution specifically, and remains a recommendation only, not an authorization.
+
+This reassessment does not change OC-002's status as a Justified Organizational Claim, does not change `current_stage`, and does not authorize Organizational Understanding, Diagnosis, Design, or Transformation.
+
 ## Verdict (original, 24 July 2026 — unchanged by the Reassessments above)
 
 **PASSED WITH CONDITIONS.**
@@ -62,13 +102,13 @@ Unconditional PASSED requires support for "at least one bounded relationship sui
 
 ## Explicit Conditions
 
-1. None of the eleven candidate explanations in claims/OC-002-competing-explanations-register.md may be treated as more than its recorded status (Weakly Supported, Unsupported, Unassessable, or Contradicted) until further evidence resolves the relevant blocker.
-2. **E-05, E-06, and E-07** still require Kelvin's direct GBP access — see observations/O-013.md's per-item "Request" lines. This is the highest-priority next step for OC-002 specifically. **E-11 is resolved** (EV-020, Owner Declaration, 24 July 2026) and is no longer a Condition.
+1. None of the twelve candidate explanations in claims/OC-002-competing-explanations-register.md may be treated as more than its recorded status (Weakly Supported, Unsupported, Unassessable, or Contradicted) until further evidence resolves the relevant blocker.
+2. **E-05, E-06, and E-07 are Partial**, not Completed. The capture-date blocker is **resolved** (EV-024, Owner Declaration, 24 July 2026 — all 14 screenshots dated 2026-07-24) and is no longer a Condition. Distinct, remaining limitations persist per item: **E-05** — the three Google-attributed attribute changes have a dated current snapshot but no dated transition; a GBP edit-history log (if one exists) or Kelvin's recollection of when each change occurred would resolve this. **E-06** — 8 reviews are a bounded sample, not a full monthly export; a complete review export would resolve this. **E-07** — the Photos tab was never supplied, and the visible post list is not confirmed exhaustive; both remain open requests. **E-11 is resolved** (EV-020, Owner Declaration, 24 July 2026) and is no longer a Condition.
 3. This gate does not change OC-002's status as a Justified Organizational Claim (decisions/DD-010) and does not change the case's authoritative lifecycle stage (`current_stage: Justified Organizational Claims`, decisions/DD-012).
 
 ## Recommendation
 
-**Eligible for a future Understanding Authorization decision** once the Explicit Conditions above are substantially addressed — specifically, once at least one candidate explanation in the register is upgraded to "Plausible" with real supporting evidence, or once the four blocked items are resolved enough to confirm no such explanation is forthcoming. This recommendation does not authorize or begin Organizational Understanding; that remains a separate, not-yet-made case-owner decision (decisions/DD-011, DD-012).
+**Eligible for case-owner consideration of an Understanding Authorization Gate** (updated 24 July 2026, Third Reassessment) — 10 of 13 HV-MP-002 items are now Completed or Partial, and four candidate explanations reached Weakly Supported. This recommendation reflects evidence-base maturity, not sufficiency for a bounded relationship — no candidate explanation reaches Plausible. It does **not** authorize or begin Organizational Understanding; that remains a separate, not-yet-made case-owner decision (decisions/DD-011, DD-012).
 
 ## Scope Boundary
 
