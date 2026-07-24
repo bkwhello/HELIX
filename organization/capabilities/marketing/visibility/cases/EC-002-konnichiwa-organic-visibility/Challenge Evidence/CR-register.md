@@ -70,3 +70,15 @@ Create one entry whenever: a top-three claim is made; causality is inferred from
 - Response: not yet given — validation has not occurred yet.
 - Resolution: open.
 - Status: **Open.**
+
+## CR-005
+
+- Target artifact or claim: design/HV-VCM-001.md priority classification of "Omakase Utrecht" as a weak/priority-2 gap; measurement/HV-BL-001.md's use of HV-IV-003 as the omakase baseline reference point
+- Challenger: observations/O-001.md / O-004.md, Search Console export (EV-014, 23 July 2026)
+- Date: 23 July 2026
+- Challenge: evidence/HV-IV-003.md (informal search-tool check, 22 July 2026) classified "omakase Utrecht" as weak, Amsterdam-dominated. Real Search Console data for the same query shows an average position of 4.7 over the last ~90 days — comparable to "teppanyaki Utrecht" (4.47), which HV-IV-003 called strong. The two evidence sources materially disagree on the same query.
+- Evidence: observations/O-001.md (Search Console, 29 impressions... 388 impressions, 29 clicks, position 4.7) vs. evidence/HV-IV-003.md (single-session automated search tool, no location control).
+- Consequence if valid: HV-VCM-001's "priority 2" ranking for omakase, and the choice of "omakase Utrecht" as HV-INT-002's baseline reference metric, may be based on the weaker of two conflicting signals. The actual gap may be narrower than assumed, or the two metrics may be measuring different things (Search Console position reflects Konnichiwa's own historical ranking trend; the search-tool check reflects a single simulated search result page composition, which is more sensitive to competitor presence and personalization).
+- Response: not yet given.
+- Resolution: open — requires a fresh, controlled search-tool check on the exact query "omakase utrecht" before this is resolved either way.
+- Status: **Open.**

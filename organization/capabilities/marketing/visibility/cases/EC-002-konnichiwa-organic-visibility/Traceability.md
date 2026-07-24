@@ -39,17 +39,17 @@
 
 | Observation | Status | Linked Evidence |
 |---|---|---|
-| O-001 (Search Console) | Not collected | — |
-| O-002 (GBP performance) | Not collected | — |
-| O-003 (local rankings) | Partially informed | evidence/HV-IV-003.md, evidence/HV-TS-001.md |
-| O-004 (organic rankings) | Partially informed | evidence/HV-IV-003.md |
-| O-005 (indexation/sitemap) | Informed | evidence/HV-IV-007.md |
+| O-001 (Search Console) | **Collected** (23 July 2026) | EV-014, evidence/raw/search-console-2026-07-23/ |
+| O-002 (GBP performance) | **Collected** (23 July 2026) — major unexplained 6-month decline found | EV-015, evidence/raw/gbp-performance-2026-07-23/ |
+| O-003 (local rankings) | Partially informed | evidence/HV-IV-003.md, evidence/HV-TS-001.md, EV-014 |
+| O-004 (organic rankings) | Substantially collected, one contradiction open (CR-005) | evidence/HV-IV-003.md, EV-014 |
+| O-005 (indexation/sitemap) | Informed | evidence/HV-IV-007.md, EV-014 (pages, not formal coverage) |
 | O-006 (metadata/schema) | Informed | evidence/HV-IV-001.md, evidence/HV-IV-007.md |
-| O-007 (landing pages) | Informed | evidence/HV-IV-007.md, design/omakase-pagina-brief.md |
-| O-008 (NAP consistency) | Informed | evidence/HV-IV-001.md, evidence/HV-IV-002.md, evidence/HV-IV-003.md |
+| O-007 (landing pages) | Informed, new finding pending follow-up | evidence/HV-IV-007.md, design/omakase-pagina-brief.md, EV-014 (`/nl/home-nederlands/`) |
+| O-008 (NAP consistency) | Informed, quantified | evidence/HV-IV-001.md, evidence/HV-IV-002.md, evidence/HV-IV-003.md, EV-014, EV-015 |
 | O-009 (reviews) | Partially informed | evidence/HV-IV-001.md, evidence/HV-IV-006.md |
 | O-010 (competitors) | Informed | evidence/HV-IV-006.md |
-| O-011 (reservation conversion) | Not collected, gaps identified | measurement/HV-MP-001.md §7 |
+| O-011 (reservation conversion) | **Business volume collected** (24 July 2026); channel attribution still open | EV-016, measurement/HV-MP-001.md §7 |
 | O-012 (mobile performance) | Not collected | — |
 | EC-002-O-001…006 (legacy) | Partially validated | evidence/HV-IV-001.md, HV-IV-002.md, HV-IV-004.md, HV-IV-007.md |
 
