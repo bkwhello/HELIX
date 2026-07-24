@@ -1,14 +1,28 @@
 # Organizational Understanding — Index (EC-002)
 ---
 
-> **STATUS: Draft — Prematurely Produced. Not Authoritative.** OU-001 and OU-002 were constructed without a prior decision authorizing entry into the Organizational Understanding stage — see decisions/DD-012 (Lifecycle Compliance Review), 24 July 2026. `current_stage` has been reverted to `Justified Organizational Claims` in current.md. Neither record may be cited as established until explicit case-owner authorization is given.
+## Current Candidate Understanding (24 July 2026, decisions/DD-014 authorization, decisions/DD-015 reconstruction)
+
+Following Kelvin Wong's AUTHORIZED WITH CONDITIONS decision (decisions/DD-014), Organizational Understanding was **independently reconstructed** from OC-001 through OC-007 — not promoted from OU-001/OU-002 below. The reconstruction (decisions/DD-015, Gate Verdict: PASSED WITH CONDITIONS) produced:
+
+- **understanding/UR-001…md, UR-002…md, UR-003…md** — three surviving candidate relationships (UR-004 was constructed, challenged, and Rejected; preserved, not deleted).
+- **understanding/OU-003-search-and-entity-presence.md** (from OC-001, OC-003, OC-004, via UR-001) — Candidate Organizational Understanding, survives challenge.
+- **understanding/OU-004-technical-foundation.md** (from OC-005, OC-006, via UR-002) — Candidate Organizational Understanding, survives challenge.
+- **OC-002 remains a Standalone Condition** — the only relationship attempted for it (UR-004, to OC-004) was Rejected; this is an explicit, acceptable outcome per DD-014 Condition 5.
+- **OC-007 remains a Measurement/Attribution Constraint** (UR-003), applied to OU-003 and OU-004, not integrated as a coexistence-type finding.
+
+`organizational_understanding_established` remains `false` pending Kelvin's explicit case-owner response to decisions/DD-015 (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED).
+
+## Historical Drafts (superseded, preserved unmodified)
+
+> **STATUS: Draft — Prematurely Produced. Not Authoritative.** OU-001 and OU-002 were constructed without a prior decision authorizing entry into the Organizational Understanding stage — see decisions/DD-012 (Lifecycle Compliance Review), 24 July 2026. Both are now additionally superseded by OU-003 and OU-004 (decisions/DD-015, Phase 5 comparison: independent re-derivation confirmed, no unsupported material found). Neither OU-001 nor OU-002 may be cited as established or as evidence — their files remain unmodified below.
 
 Two Organizational Understanding records were drafted, each synthesizing a genuinely related cluster of Justified Organizational Claims:
 
-- **OU-001 — Konnichiwa's Search and Entity Presence for Flagship Dining Formats** (from OC-001, OC-003, OC-004)
-- **OU-002 — Sound Technical Foundation With Targeted Content-Accessibility Gaps** (from OC-005, OC-006)
+- **OU-001 — Konnichiwa's Search and Entity Presence for Flagship Dining Formats** (from OC-001, OC-003, OC-004) — superseded by OU-003
+- **OU-002 — Sound Technical Foundation With Targeted Content-Accessibility Gaps** (from OC-005, OC-006) — superseded by OU-004
 
-## Explicitly Not Integrated
+## Explicitly Not Integrated (original reasoning, drafted alongside OU-001/OU-002; independently reconfirmed by decisions/DD-015's UR-004 rejection and UR-003 constraint typing)
 
 **OC-002 (Sustained Multi-Metric Decline in Google Business Profile Engagement)** and **OC-007 (Reservation Volume Is Measured but Not Attributable to Visibility Channels)** are **not** incorporated into either Organizational Understanding above, and this is a deliberate, recorded decision, not an oversight:
 
