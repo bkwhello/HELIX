@@ -41,8 +41,8 @@
 |---|---|---|
 | O-001 (Search Console) | **Collected** (23 July 2026) | EV-014, evidence/raw/search-console-2026-07-23/ |
 | O-002 (GBP performance) | **Collected** (23 July 2026) — major unexplained 6-month decline found | EV-015, evidence/raw/gbp-performance-2026-07-23/ |
-| O-003 (local rankings) | Partially informed | evidence/HV-IV-003.md, evidence/HV-TS-001.md, EV-014 |
-| O-004 (organic rankings) | Substantially collected, one contradiction open (CR-005) | evidence/HV-IV-003.md, EV-014 |
+| O-003 (local rankings) | **Collected** (24 July 2026) — Utrecht-controlled local-pack observation, position 2 of 3 | EV-018, observations/O-003.md; superseded proxy attempts: evidence/HV-IV-003.md, EV-014 (WebSearch, no geo-control) |
+| O-004 (organic rankings) | Collected; CR-005 **Resolved for Initial Baseline** (24 July 2026) via O-003's EV-018 | evidence/HV-IV-003.md, EV-014, EV-018 |
 | O-005 (indexation/sitemap) | Informed | evidence/HV-IV-007.md, EV-014 (pages, not formal coverage) |
 | O-006 (metadata/schema) | Informed | evidence/HV-IV-001.md, evidence/HV-IV-007.md |
 | O-007 (landing pages) | Informed, new finding pending follow-up | evidence/HV-IV-007.md, design/omakase-pagina-brief.md, EV-014 (`/nl/home-nederlands/`) |
@@ -50,7 +50,7 @@
 | O-009 (reviews) | Partially informed | evidence/HV-IV-001.md, evidence/HV-IV-006.md |
 | O-010 (competitors) | Informed | evidence/HV-IV-006.md |
 | O-011 (reservation conversion) | **Business volume collected** (24 July 2026); channel attribution still open | EV-016, measurement/HV-MP-001.md §7 |
-| O-012 (mobile performance) | Not collected | — |
+| O-012 (mobile performance) | **Collected** (24 July 2026 — real CrUX field data via Kelvin-supplied report URL, after 2 automated attempts failed) | EV-017, observations/O-012.md |
 | EC-002-O-001…006 (legacy) | Partially validated | evidence/HV-IV-001.md, HV-IV-002.md, HV-IV-004.md, HV-IV-007.md |
 
 ## Defect → Coverage → Transformation Traceability
@@ -71,10 +71,10 @@ VD-005 (Intent Coverage Gap) + VD-008 (Machine Accessibility Failure)
 
 ## Lifecycle Traceability
 
-Current stage: Case Establishment / Observation (see Lifecycle Scope.md).
+Current stage: Case Establishment **Completed** (decisions/DD-008, 24 July 2026, PASSED WITH CONDITIONS) → Observation and Evidence Collection (see Lifecycle Scope.md).
 
-Completed: Case Identity, Purpose, Explicit Boundaries, Observed Conditions, Lifecycle Scope declared. Prior-round Observation and Evidence exist (HV-IV-001–007). One Design realized as Transformation (HV-INT-002, live). One Design blocked before Transformation (HV-INT-001).
+Completed: Case Identity, Purpose, Explicit Boundaries, Observed Conditions, Lifecycle Scope declared. Prior-round Observation and Evidence exist (HV-IV-001–007). New-round Observation complete: O-001, O-002, O-003, O-004, O-011, O-012 fully collected; O-005–O-010 informed with explicit limitations where evidence is partial. work-objects/WO-001-search-visibility-baseline.md formalizes this as the case's Active, **Established** baseline work object (24 July 2026, final pass) — see its Baseline Acceptance Criteria Assessment: all nine criteria met. The verdict was earned incrementally: an initial premature `true` was corrected to `Provisional`/`false` the same day (decisions/DD-008 §6), two genuine tooling/method gaps (O-012, O-003) were documented honestly rather than assumed away, and both were then closed with real evidence (EV-017 CrUX field data; EV-018 Kelvin's Utrecht-controlled local-pack observation) before the verdict returned to `true`. One Design realized as Transformation (HV-INT-002, live). One Design blocked before Transformation (HV-INT-001). Two additional Transformations prepared, not deployed (HV-INT-004, HV-INT-005). One infrastructure Transformation completed and validated (HV-INT-003, GA4).
 
-Not yet established: new O-001–O-012 formal observation round; any Justified Organizational Claim; Organizational Understanding; Organizational Diagnosis; Evaluation.
+Not yet established: any Justified Organizational Claim; Organizational Understanding; Organizational Diagnosis; Evaluation. The baseline itself is now Established — this is the foundation those later stages will be built on, not a substitute for them.
 
-No Organizational Design or Transformation beyond the two named interventions is authorized.
+No Organizational Design or Transformation beyond the five named interventions (HV-INT-001–005) is authorized. decisions/DD-009 tracks what access/approval each remaining gap requires. decisions/DD-008 §7 tracks resolution of all four original gate-review conditions, including the `business/Marketing/` ↔ `organization/capabilities/marketing/` relationship (resolved — the former is an empty placeholder, the latter is authoritative, see capability.md and business/Marketing/README.md).

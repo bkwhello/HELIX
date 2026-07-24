@@ -1,11 +1,30 @@
 # Current State — EC-002
 ---
 
-Last updated: 24 July 2026 (Guestplan data received — full baseline now complete; two website UX fixes prepared).
+Last updated: 24 July 2026 (baseline formally **Established** — Kelvin performed a genuinely Utrecht-controlled local-pack observation for "omakase Utrecht," closing the last of nine baseline acceptance criteria).
+
+## Formal State (per decisions/DD-008 gate verdict, corrected, then Established)
+
+```yaml
+status: Open
+current_stage: Observation and Evidence Collection
+case_establishment: Completed
+baseline_state: Established
+baseline_established: true
+diagnosis_established: false
+design_authorized: false
+transformation_started: false
+external_changes_authorized: false
+next_action: Begin constructing Justified Organizational Claims from the now-Established baseline (decisions/DD-004 Days 4–7) — see work-objects/WO-001-search-visibility-baseline.md
+```
+
+**Correction accepted, 24 July 2026:** an earlier version of this record set `baseline_established: true` on the reasoning that the underlying HV-BL-001 data was real and complete. That reasoning was insufficiently rigorous — completeness of *data collection* is not the same as satisfying the case's *baseline acceptance criteria*. `baseline_state` was corrected to `Provisional` / `baseline_established: false` until the criteria were actually, verifiably met.
+
+**Remediation, same day:** O-012 was attempted twice by Claude (PageSpeed Insights API, then a fresh interactive-tool analysis) and genuinely blocked by tooling (HTTP 429 without an API key; async-loading page). Kelvin then supplied a completed PSI report URL directly — that succeeded, yielding real Chrome UX Report field data (EV-017): Core Web Vitals Passed on both mobile and desktop, with one flagged soft spot (TTFB 26% poor). That closed 8 of 9 criteria. O-003 was first given a documented, explicitly-limited WebSearch method with no Utrecht geographic control (Konnichiwa position 3 of 5, not conclusive). **Kelvin then performed the genuine Utrecht-located check this had been waiting for**: mobile, Chrome Incognito, logged out, Google-confirmed Utrecht region, 24 July 2026 06:41 — Konnichiwa at local-pack position 2 of 3 (EV-018). This resolved CR-005 for the initial baseline and closed the ninth and final criterion. See work-objects/WO-001-search-visibility-baseline.md's Baseline Acceptance Criteria Assessment for the full table and history.
 
 ## Current lifecycle stage
 
-Case Establishment / Observation (see Lifecycle Scope.md).
+Case Establishment: **Completed** (gate passed with conditions, decisions/DD-008, 24 July 2026). Now in Observation and Evidence Collection (see Lifecycle Scope.md).
 
 ## Completed artifacts
 
@@ -24,16 +43,25 @@ Case Establishment / Observation (see Lifecycle Scope.md).
 - **observations/O-002.md — Collected (23 July 2026).** Real Google Business Profile data (EV-015, `evidence/raw/gbp-performance-2026-07-23/`), 6-month window (Feb–Jul 2026). Updated measurement/HV-BL-001.md local baseline from "TE LEVEREN" to complete.
 - **observations/O-011.md — Business volume collected (24 July 2026).** Real Guestplan data (EV-016), 90-day window (23 Apr–23 Jul 2026, exact match to the required period). Updated measurement/HV-BL-001.md business baseline — **all four baseline sections are now complete.** Channel-specific conversion attribution (which reservations came from organic/GBP) remains open, pending the three known tracking gaps.
 - **transformation/HV-IR-001.md — HV-INT-004 (popup fix) and HV-INT-005 (mobile page-title overflow fix) prepared, 24 July 2026.** Both fixed in the local theme copy (`Local Sites/konnichiwa/.../themes/konnichiwa/`), not yet deployed via FTP.
+- **decisions/DD-008 — EC-002 Case Establishment Gate Review, 24 July 2026.** Verdict: PASSED WITH CONDITIONS. Verified all AD-014 mandatory invariants present; verified all 5 migrated HV artifacts preserved ID/history/epistemic-status/traceability. Four conditions raised (HV-DB-001 dashboard stale; business/Marketing duplication remains open; WO-001 needed formalizing — done same task; O-012 has no legitimate blocker).
+- **work-objects/WO-001-search-visibility-baseline.md — promoted from Candidate to Active, 24 July 2026.** Structured register of all 12 baseline observations with collection question/source/method/date range/access/evidence artifact/limitations/confidence/owner/blocker status per observation.
+- **decisions/DD-009 — Access and Approval Register, 24 July 2026.** Separates read-only requests, data-export requests, configuration-change requests, and external-change approvals. No external system changed while producing it.
+- **observations/O-012.md — Collected, 24 July 2026.** Real Chrome UX Report field data (EV-017), obtained after Kelvin supplied a completed PageSpeed Insights report URL. Core Web Vitals Passed on mobile and desktop. Two prior automated attempts (API, fresh interactive analysis) had failed with no numbers fabricated at any point.
+- **observations/O-003.md — Collected, 24 July 2026 (EV-018).** Genuinely Utrecht-controlled Google local-pack observation performed by Kelvin (mobile, Chrome Incognito, logged out, Utrecht region confirmed): Konnichiwa at position 2 of 3 for "omakase utrecht." Satisfies O-003's original requirement for an initial baseline. A prior WebSearch-based proxy attempt (no geo-control, position 3 of 5) is retained in the record but superseded.
+- **Challenge Evidence/CR-register.md, CR-005 — Resolved for Initial Baseline, 24 July 2026.** EV-018 corroborates Search Console's optimistic reading over the earlier non-geo-controlled checks. Limitation preserved: single point/time/device, not a multi-point grid.
+- **measurement/HV-DB-001.md — regenerated as v5, 24 July 2026.** Per-source status matrix (Measured/Pending/Unavailable/Not Configured) with last-measured dates; no missing data shown as zero. The *published, live* dashboard page has not itself been republished — separate follow-up.
+- **business/Marketing/README.md — created, 24 July 2026.** Points to `organization/capabilities/marketing/` as authoritative for capability engineering; clarifies `business/Marketing/` is an empty structural placeholder, not a competing authority. `capability.md`'s relationship section rewritten to match.
+- **decisions/DD-008 §6–7 — correction and condition resolution recorded, 24 July 2026.**
 
 ## Active work
 
-- New O-001–O-012 SEO/local observation round: **3 fully collected (O-001, O-002, O-011)**, 6 informed/substantially informed by prior evidence or the new exports (O-004, O-005, O-006, O-007, O-008, O-010), 1 partially informed (O-009), 1 still fully blocked (O-012, mobile performance — no PageSpeed test run yet).
-- **Baseline complete as of 24 July 2026** — all four sections of measurement/HV-BL-001.md (AI, external-source, website, local, business) now hold real data. This closes the "baseline collection" phase of decisions/DD-004's 30-day plan (Days 1–3), three days after the case's re-establishment. Next lifecycle step per DD-004 Days 4–7: construct justified claims, challenge feasibility, prepare change records.
+- New O-001–O-012 SEO/local observation round: **6 fully collected (O-001, O-002, O-003, O-004, O-011, O-012)**, 5 informed with explicit limitations (O-005, O-006, O-007, O-008, O-010), 1 partially informed (O-009).
+- **All nine baseline acceptance criteria are now met — `baseline_state: Established`, `baseline_established: true`.** See work-objects/WO-001-search-visibility-baseline.md's Baseline Acceptance Criteria Assessment for the full, criterion-by-criterion basis and the corrected history (an initial premature `true` → `Provisional`/`false` → `Established`, earned incrementally with real evidence at each step, nothing fabricated).
 - **New unresolved item (O-011):** 162-reservation gap between "Reserveringen per bron" (576) and "Service-reserveringen" (414) in Guestplan — plausibly workshop/private-dining/catering/lunch bookings not covered by the two-category service breakdown, not confirmed. Also: 0% no-shows over 90 days is unusually clean and worth confirming with Kelvin rather than trusting at face value; 12.3% cancellation rate flagged with no benchmark to judge it against.
 - **Two website UX fixes prepared, not yet deployed (HV-INT-004, HV-INT-005):** holiday popup now only shows once per visitor (was showing on every homepage load); the shared page-title component (`pageBanner()`) had no responsive font-size, causing long single-word titles like "Arrangements" to overflow off-screen on mobile — now fixed site-wide. Both sit in the local theme copy at `Local Sites/konnichiwa/app/public/wp-content/themes/konnichiwa/`, awaiting FTP deployment by Kelvin.
 - Weekly Monday 10:00 operating loop (decisions/DD-003) — not yet run once.
 - **HV-INT-003 — GA4 tag published and confirmed working, 23 July 2026 (Provisionally Earned).** Root cause: the GA4 Google-tag (G-C29ZMF288W) was added to the GTM container 2 months ago but never published — sat unpublished in "Wijzigingen in behandeling." Published, then Realtime testing in Safari still showed 0 (Safari's cross-site tracking prevention blocked it) — retested in Chrome, confirmed active users appearing in Realtime. Fix confirmed working. See transformation/HV-IR-001.md, HV-INT-003. Container quality also flagged "3 issues" needing attention — not yet reviewed.
-- **New, unresolved contradiction (CR-005):** Search Console shows "omakase Utrecht" at position 4.7 — comparable to "teppanyaki Utrecht" (4.47) — contradicting evidence/HV-IV-003.md's earlier "weak, Amsterdam-dominated" read. Needs a fresh controlled search-tool check before HV-VCM-001's priority-2 omakase classification is trusted either way.
+- **CR-005 — Resolved for Initial Baseline, 24 July 2026.** Kelvin's genuinely Utrecht-located, incognito, logged-out mobile search for "omakase utrecht" (06:41) showed Konnichiwa at local-pack position 2 of 3 (Kong Izakaya #1, Konnichiwa #2, Japanese Don Dining KOUNOSUKE #3) — EV-018. This corroborates Search Console's optimistic "position 4.7" reading over the earlier non-geo-controlled checks (evidence/HV-IV-003.md and the 24 July WebSearch proxy), which likely understated Konnichiwa's real local prominence for lack of geographic control. Preserved limitation: one point, one time, one device — not a multi-point grid; says nothing about organic (non-local-pack) ranking, which remains O-004's domain; no claim of city-wide or time-stable ranking.
 - **New finding to follow up:** `/nl/home-nederlands/` is a real, better-ranking page (position 5.05 vs. homepage 8.93) that was not catalogued in evidence/HV-IV-007.md's page inventory. Needs reconciling.
 - **Major new finding, highest priority for diagnosis:** every Google Business Profile metric (interactions, website clicks, route requests, calls, menu views, appointments) has declined steadily for 6 straight months (Feb→Jul 2026), roughly halving to two-thirds down. Predates EC-002 and HV-INT-002 entirely — cause unknown, not yet investigated. See observations/O-002.md.
 
@@ -45,11 +73,12 @@ Case Establishment / Observation (see Lifecycle Scope.md).
 - Three conversion-tracking gaps unresolved: no directions link, no Private Dining CTA, broken catering form (see observations/O-011.md).
 - Formal Search Console indexation/coverage report — not included in the 23 July export, still needed for O-005.
 - HV-INT-004 and HV-INT-005 (popup + mobile title fix) — prepared locally, awaiting FTP deployment by Kelvin before they can be validated.
-- Formal mobile performance test (O-012) — no PageSpeed Insights or equivalent run yet.
+- Lighthouse lab scores (Performance/Accessibility/Best-Practices/SEO 0–100) for O-012 — CrUX field data was obtained, but the lab-score portion of the PSI report was not present in the fetched content. Minor, non-blocking.
+- Multi-point Utrecht rank grid for O-003 — the single 24 July observation is accepted as sufficient for the initial baseline, but broader coverage (multiple points/times/devices) remains a future measurement-maturity improvement, not currently blocking anything.
 
 ## Next authorized action
 
-Baseline collection (DD-004 Days 1–3) is functionally complete. Per decisions/DD-004: move into Days 4–7 (diagnose and authorize) — construct justified claims from the now-complete baseline, challenge feasibility per theme, identify the smallest high-leverage interventions, prepare change records, obtain approval before further website/profile changes. O-012 (mobile performance) remains open and can be collected in parallel without blocking this move.
+**Baseline is Established.** decisions/DD-004 Days 4–7 (diagnose and authorize) formally opens: construct justified claims from the now-complete baseline, challenge feasibility per theme, identify the smallest high-leverage interventions, prepare change records, obtain approval before further website/profile changes. Highest-priority input for that work: the unexplained 6-month GBP decline (observations/O-002.md) — the largest, least-understood finding in the case.
 
 ## Unresolved unknowns
 
@@ -66,6 +95,10 @@ Baseline collection (DD-004 Days 1–3) is functionally complete. Per decisions/
 - What explains the 162-reservation gap between Guestplan's two reservation reports (observations/O-011.md)?
 - Is Guestplan's 0% no-shows figure accurate, or is no-show tracking incomplete?
 - No same-period-last-year comparison exists for the Guestplan baseline — is 576 reservations/90 days typical, growing, or declining?
+- Whether Konnichiwa's #2 local-pack position (EV-018) holds across other Utrecht points, times, and devices — only one point-in-time observation exists so far.
+- The published, live HV-DB-001 dashboard page (and the Command Center artifact) still show the older v4 state — not republished against v5 in this task.
+- What is causing TTFB to be "poor" for 26% of mobile page loads (observations/O-012.md)? Server response time, hosting, or caching — not investigated.
+- Lighthouse lab scores (0–100) for konnichiwa.nl remain unobtained (O-012) — field data (CrUX) was collected instead, which answers the real-user question but not the synthetic-lab-score question.
 
 ## Migration note
 

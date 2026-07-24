@@ -5,7 +5,7 @@ From the new case-establishment source, §13. All Candidate; must be validated t
 
 | ID | Work Object | State |
 |---|---|---|
-| WO-001 | Search Visibility Baseline | Candidate — see measurement/HV-BL-001.md |
+| WO-001 | Search Visibility Baseline | **Active** — promoted 24 July 2026, see work-objects/WO-001-search-visibility-baseline.md (decisions/DD-008) |
 | WO-002 | Query-to-Page Map | Candidate — not yet built |
 | WO-003 | Google Business Profile Record | Candidate — not yet built (blocked on O-002) |
 | WO-004 | Technical SEO Issue Register | Candidate — partially covered by observations/O-005, O-006 and evidence/HV-IV-007.md |
