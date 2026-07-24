@@ -3,7 +3,7 @@
 
 ## Status
 
-Open. Waiting on Kelvin. No profile, website, analytics, or production change is requested anywhere below.
+**Partially fulfilled, 24 July 2026.** Item 5 (Operational Context Declaration, E-11) received and processed — see observations/O-013.md, EV-020. Items 1–4 (E-05, E-06, E-07) remain **Open**. No profile, website, analytics, or production change is requested anywhere below.
 
 ## Why this exists
 
@@ -51,7 +51,9 @@ decisions/DD-013 (OC-002 Evidence Sufficiency Gate, PASSED WITH CONDITIONS) and 
 - **Privacy precautions:** none needed for your own uploaded content; avoid forwarding photos that include identifiable customers if any customer-uploaded photos are reviewed.
 - **Corresponds to:** E-07.
 
-## Item 5 — Operational Context Declaration (→ E-11)
+## Item 5 — Operational Context Declaration (→ E-11) — **Received and processed, 24 July 2026**
+
+Kelvin completed this declaration in full (all 13 answers: No). Recorded as EV-020 in observations/O-013.md. See that file for the full answer table, classification, and relationship assessment.
 
 No system export can answer this — please complete the questionnaire below directly, in your own words. This is recorded as an **Owner Declaration**, not system-generated evidence, and is treated accordingly (with its own stated confidence, not equal to a platform export).
 

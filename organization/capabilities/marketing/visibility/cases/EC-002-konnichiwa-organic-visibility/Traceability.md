@@ -51,7 +51,7 @@
 | O-010 (competitors) | Informed | evidence/HV-IV-006.md |
 | O-011 (reservation conversion) | **Business volume collected** (24 July 2026); channel attribution still open | EV-016, measurement/HV-MP-001.md §7 |
 | O-012 (mobile performance) | **Collected** (24 July 2026 — real CrUX field data via Kelvin-supplied report URL, after 2 automated attempts failed) | EV-017, observations/O-012.md |
-| O-013 (OC-002 evidence collection) | **Partially Observed** (24 July 2026) — 9 of 13 HV-MP-002 items executed; E-05/E-06/E-07/E-11 blocked | EV-015 (re-read), EV-019, EV-014, EV-016 (cross-reference) |
+| O-013 (OC-002 evidence collection) | **Partially Observed** (24 July 2026, updated) — 10 of 13 HV-MP-002 items executed; E-05/E-06/E-07 blocked, E-11 Completed | EV-015 (re-read), EV-019, EV-020, EV-014, EV-016 (cross-reference) |
 | EC-002-O-001…006 (legacy) | Partially validated | evidence/HV-IV-001.md, HV-IV-002.md, HV-IV-004.md, HV-IV-007.md |
 
 ## Evidence → Claim Traceability (24 July 2026, decisions/DD-010)
@@ -75,6 +75,10 @@ O-013 → EV-019 (derived chart-position reading of EV-015) → claims/OC-002-co
 ## OC-002 Blocked Evidence Follow-Up (24 July 2026, decisions/DD-013 Reassessment)
 
 A dedicated attempt to complete E-05, E-06, E-07, and E-11 (observations/O-013.md's four blockers) found no authenticated GBP access available and no new data supplied. Per this task's own rule ("when no evidence is supplied: update blocker status only; do not create a positive or negative observation"), no new EV-### or O-### record was created — O-013.md's four blocked sections were annotated with a status-only update, and measurement/HV-ER-001-oc-002-blocked-evidence-request.md was created specifying exactly what Kelvin would need to supply. decisions/DD-013 was reassessed and **Remains PASSED WITH CONDITIONS** — no new evidence means no basis to advance to PASSED or fall to FAILED. OC-002's Justified Organizational Claim status (decisions/DD-010) and the case's authoritative lifecycle stage (Justified Organizational Claims, decisions/DD-012) are both unaffected.
+
+## E-11 Operational Context — Completed (24 July 2026, EV-020)
+
+Kelvin completed the Operational Context Declaration (measurement/HV-ER-001…md, Item 5) — 13 of 13 questions answered No, recorded as EV-020 (Owner Declaration) in observations/O-013.md. Narrow conclusion recorded: no known owner-controlled operational change in the thirteen examined categories was reported for February–July 2026 — not treated as proof that no operational cause of any kind existed. claims/OC-002-competing-explanations-register.md was updated with a new row, CE-11, status Unsupported (scoped to the thirteen categories). E-05, E-06, and E-07 remain Blocked. decisions/DD-013 was reassessed for this effect only — verdict unchanged, PASSED WITH CONDITIONS, with E-11 removed from the outstanding-evidence list.
 
 ## Evidence Conflict — Review Count (24 July 2026, Challenge Evidence/CR-register.md, CR-006)
 

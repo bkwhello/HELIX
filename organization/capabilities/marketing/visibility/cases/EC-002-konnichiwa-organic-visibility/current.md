@@ -1,7 +1,7 @@
 # Current State — EC-002
 ---
 
-Last updated: 24 July 2026 (Blocked-evidence-completion attempt for OC-002: no authenticated GBP access available, no new data supplied; DD-013 reassessed and Remains PASSED WITH CONDITIONS; Evidence Request Package HV-ER-001 issued to Kelvin. Lifecycle stage, Understanding-authorization, and all other DD-012 fields unchanged.).
+Last updated: 24 July 2026 (E-11 Operational Context Declaration received and processed, EV-020: 13 of 13 answers No. DD-013 reassessed for this effect only — Remains PASSED WITH CONDITIONS, E-11 removed from outstanding evidence. E-05/E-06/E-07 still Blocked. Lifecycle stage, Understanding-authorization, and all other DD-012 fields unchanged.).
 
 ## Formal State (per decisions/DD-012 lifecycle compliance review; evidence-collection fields per decisions/DD-013)
 
@@ -16,18 +16,18 @@ claims_gate: Passed
 justified_claims_established: true
 organizational_understanding_established: false
 organizational_understanding_note: Draft artifacts exist (OU-001, OU-002) but are Not Authoritative — entered without valid authorization, see decisions/DD-012
-oc002_evidence_collection: Partially Completed (decisions/DD-013, 24 July 2026) — 9 of 13 HV-MP-002 items executed with existing evidence and public documentation
+oc002_evidence_collection: Partially Completed (decisions/DD-013, 24 July 2026, updated) — 10 of 13 HV-MP-002 items executed
 oc_002_blocked_evidence:
   e_05: Blocked
   e_06: Blocked
   e_07: Blocked
-  e_11: Blocked
-oc002_evidence_sufficiency_gate: Passed With Conditions (decisions/DD-013, reassessed 24 July 2026 — unchanged, no new evidence obtained)
+  e_11: Completed
+oc002_evidence_sufficiency_gate: Passed With Conditions (decisions/DD-013, reassessed 24 July 2026 for E-11 effect only — verdict unchanged)
 diagnosis_established: false
 design_authorized: false
 transformation_started: false
 external_changes_authorized: false
-next_action: Await Kelvin's response to measurement/HV-ER-001-oc-002-blocked-evidence-request.md; separately, obtain explicit unambiguous case-owner authorization before re-entering Organizational Understanding
+next_action: Await Kelvin's response to measurement/HV-ER-001-oc-002-blocked-evidence-request.md Items 1-4 (E-05, E-06, E-07); separately, obtain explicit unambiguous case-owner authorization before re-entering Organizational Understanding
 ```
 
 **Correction, 24 July 2026 (decisions/DD-012):** the previous version of this record set `current_stage: Organizational Understanding` and `organizational_understanding_established: true` on the basis of Kelvin's message "registratie klopt, de rest kan starten," interpreted as authorization to begin that stage. A lifecycle compliance review found this insufficient: that message confirmed an evidentiary fact (Guestplan no-shows), not a named lifecycle-stage transition, and decisions/DD-010 explicitly states Organizational Understanding was "not yet begun" after the Claims gate passed. No prior decision authorized the transition. OU-001 and OU-002 are preserved, unmodified, but reclassified **Draft — Prematurely Produced, Not Authoritative**. `current_stage` is reverted to `Justified Organizational Claims`, the last validly-gated stage (decisions/DD-010, PASSED).
@@ -89,6 +89,7 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 - **decisions/DD-013 — OC-002 Evidence Sufficiency Gate, 24 July 2026.** Verdict: PASSED WITH CONDITIONS. Decline now well-characterized; not yet sufficient to support Organizational Understanding for OC-002. Recommends "Eligible for a future Understanding Authorization decision" once conditions are met — does not itself authorize Understanding.
 - **measurement/HV-ER-001-oc-002-blocked-evidence-request.md — created, 24 July 2026.** Evidence Request Package for E-05/E-06/E-07/E-11: a follow-up attempt to complete these four items found no authenticated GBP access available and no new data supplied, so — per this task's own rule — no new observation was fabricated; instead this package specifies exactly what Kelvin would need to supply, including the Operational Context Declaration questionnaire. Waiting on Kelvin.
 - **Challenge Evidence/CR-register.md, CR-006 — created, 24 July 2026.** Konnichiwa's Google review count is not a single figure: 605 (evidence/HV-IV-001.md, 22 July 2026, general search results) and 625 (observations/O-003.md addendum, 24 July 2026, local-pack surface, Owner Declaration) are both now supported, at different dates. **Open — both preserved, no cause inferred.** Any future reference to "the" review count must cite which figure and date.
+- **observations/O-013.md, EV-020 — E-11 Operational Context Declaration completed, 24 July 2026.** Kelvin answered all 13 questions No (no closure, hour change, capacity reduction, menu/pricing change, renovation, staffing constraint, or known promotional cause for the April–May movement). Recorded as an Owner Declaration, Medium confidence, scoped narrowly to the thirteen examined categories — not treated as proof no operational cause of any kind existed. claims/OC-002-competing-explanations-register.md updated with a new row, CE-11, status Unsupported.
 - **decisions/DD-013 — Reassessment section added, 24 July 2026.** Evidence Sufficiency **Remains PASSED WITH CONDITIONS** (unchanged) — no new evidence arrived to advance or fail the verdict; the four Conditions stand.
 
 ## Active work
@@ -114,13 +115,13 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 - HV-INT-004 and HV-INT-005 (popup + mobile title fix) — prepared locally, awaiting FTP deployment by Kelvin before they can be validated.
 - Lighthouse lab scores (Performance/Accessibility/Best-Practices/SEO 0–100) for O-012 — CrUX field data was obtained, but the lab-score portion of the PSI report was not present in the fetched content. Minor, non-blocking.
 - Multi-point Utrecht rank grid for O-003 — the single 24 July observation is accepted as sufficient for the initial baseline, but broader coverage (multiple points/times/devices) remains a future measurement-maturity improvement, not currently blocking anything.
-- **OC-002 evidence-collection blockers (observations/O-013.md), confirmed still open, 24 July 2026:** E-05 (GBP profile-change timeline), E-06 (review trend/recency/response), E-07 (photo/post activity), and E-11 (restaurant operational context — closures, hour changes, capacity) all require Kelvin's direct GBP access or recollection. A dedicated follow-up attempt found no authenticated GBP access available and no new data supplied — request package issued, see measurement/HV-ER-001-oc-002-blocked-evidence-request.md. Nothing was guessed.
+- **OC-002 evidence-collection blockers (observations/O-013.md), updated 24 July 2026:** E-05 (GBP profile-change timeline), E-06 (review trend/recency/response), and E-07 (photo/post activity) remain Blocked, requiring Kelvin's direct GBP access. **E-11 (restaurant operational context) is now Completed** (EV-020, Owner Declaration) — see measurement/HV-ER-001-oc-002-blocked-evidence-request.md.
 
 ## Next authorized action
 
 **Two separate, independent next actions:**
 
-1. **OC-002 evidence collection (Path 1): executed, Partially Completed; blocked-evidence follow-up attempted, still Blocked.** Kelvin's response to measurement/HV-ER-001-oc-002-blocked-evidence-request.md (screenshots/exports for E-05/E-06/E-07, and the completed Operational Context Declaration for E-11) is the concrete next step to advance decisions/DD-013 beyond PASSED WITH CONDITIONS. The GBP decline itself is still not a diagnosis and no intervention has been selected.
+1. **OC-002 evidence collection (Path 1): executed, Partially Completed — 10 of 13 items done.** E-11 completed 24 July 2026 (EV-020). Kelvin's response to measurement/HV-ER-001-oc-002-blocked-evidence-request.md Items 1-4 (screenshots/exports for E-05/E-06/E-07) is the concrete next step to advance decisions/DD-013 beyond PASSED WITH CONDITIONS. The GBP decline itself is still not a diagnosis and no intervention has been selected.
 2. **Organizational Understanding (not authorized):** OU-001 and OU-002 exist as Draft, Not Authoritative (decisions/DD-012). Re-entering this stage requires an explicit, unambiguous case-owner statement naming the transition — not inferred from confirming an evidentiary fact. Until given, the case's authoritative stage remains Justified Organizational Claims (decisions/DD-010).
 
 No Diagnosis, Design, or Transformation is authorized for any part of the case.

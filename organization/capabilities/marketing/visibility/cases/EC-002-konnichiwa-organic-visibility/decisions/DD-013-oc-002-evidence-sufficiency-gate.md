@@ -15,7 +15,22 @@ This reassessment does not authorize Organizational Understanding, Diagnosis, De
 
 **Correction, 24 July 2026 (same day, before this reassessment was reported as final):** a case-owner review of this checkpoint's own review-count citation (605, from evidence/HV-IV-001.md) against EV-018 surfaced a second, previously untranscribed figure — 625 reviews, visible on the same screen as the 24 July local-pack observation, now recorded as an Owner Declaration in observations/O-003.md and tracked as an open evidence conflict, Challenge Evidence/CR-register.md CR-006. Both values are preserved with their dates; neither is treated as "the" current count. This does not change the Reassessment outcome above — it corrects a documentation-currency issue found while reviewing this checkpoint, the same category of correction as claims/ES-001-evidence-synthesis-review.md's earlier catch on observations/O-004.md.
 
-## Verdict (original, 24 July 2026 — unchanged by the Reassessment above)
+## Second Reassessment, 24 July 2026 (E-11 effect only)
+
+Kelvin completed the Operational Context Declaration (measurement/HV-ER-001…md, Item 5): all 13 examined categories answered No — no closure, hours change, capacity reduction, fewer reservable slots, reservation-link change, menu/concept/pricing change, renovation, delivery/takeaway/lunch/omakase availability change, staffing constraint, or known promotion/event explaining the April–May movement. Recorded as **EV-020** (Owner Declaration) in observations/O-013.md.
+
+**Effect on this gate, evaluated for E-11 only:**
+
+- E-11 moves from Blocked to **Completed**. 10 of 13 HV-MP-002 items are now executed (up from 9).
+- claims/OC-002-competing-explanations-register.md gains one new row, CE-11 ("Konnichiwa-side operational restriction"), status **Unsupported** — narrowly scoped to the thirteen examined categories, not escalated to "Contradicted" since this rests on Owner Declaration, not system-verified evidence.
+- This closes off one category of *supply-side* candidate explanation. It does **not** newly support any *demand-side* explanation (CE-10 remains Unassessable, weakly challenged) and does **not** newly support any bounded relationship suitable for Organizational Understanding — an Owner Declaration that a set of conditions did *not* occur is negative evidence against those specific conditions, not positive evidence for a different cause.
+- E-05, E-06, and E-07 remain **Blocked** — unaffected by this update.
+
+**Verdict for this effect: Evidence Sufficiency Remains PASSED WITH CONDITIONS.** Advancing to unconditional PASSED still requires at least one bounded relationship with sufficient evidence for Organizational Understanding — E-11's completion narrows the explanation space but does not supply one. The Conditions are updated to remove E-11 from the outstanding-evidence list; E-05, E-06, and E-07 remain the open Conditions.
+
+This reassessment does not authorize Organizational Understanding, Diagnosis, Design, or Transformation, and does not change OC-002's status as a Justified Organizational Claim.
+
+## Verdict (original, 24 July 2026 — unchanged by the Reassessments above)
 
 **PASSED WITH CONDITIONS.**
 
@@ -47,8 +62,8 @@ Unconditional PASSED requires support for "at least one bounded relationship sui
 
 ## Explicit Conditions
 
-1. None of the ten candidate explanations in claims/OC-002-competing-explanations-register.md may be treated as more than its recorded status (Weakly Supported, Unassessable, or Contradicted) until further evidence resolves the relevant blocker.
-2. E-05, E-06, E-07, and E-11 require Kelvin's direct GBP access and/or recollection — see observations/O-013.md's per-item "Request" lines. This is the highest-priority next step for OC-002 specifically.
+1. None of the eleven candidate explanations in claims/OC-002-competing-explanations-register.md may be treated as more than its recorded status (Weakly Supported, Unsupported, Unassessable, or Contradicted) until further evidence resolves the relevant blocker.
+2. **E-05, E-06, and E-07** still require Kelvin's direct GBP access — see observations/O-013.md's per-item "Request" lines. This is the highest-priority next step for OC-002 specifically. **E-11 is resolved** (EV-020, Owner Declaration, 24 July 2026) and is no longer a Condition.
 3. This gate does not change OC-002's status as a Justified Organizational Claim (decisions/DD-010) and does not change the case's authoritative lifecycle stage (`current_stage: Justified Organizational Claims`, decisions/DD-012).
 
 ## Recommendation
