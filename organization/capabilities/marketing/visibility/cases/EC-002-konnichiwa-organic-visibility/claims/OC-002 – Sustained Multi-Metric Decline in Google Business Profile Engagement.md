@@ -103,6 +103,26 @@ OC-002 is sufficiently supported by EV-015 for use in subsequent Organizational 
 
 Challenged — Survives with Narrowing.
 
+#### Reassessment, 24 July 2026 (observations/O-013.md, decisions/DD-013)
+
+Executed per the authorized OC-002 evidence-collection plan (measurement/HV-MP-002…md, Path 1). This section is an addition; the Organizational Claim, Evidential Basis, and other sections above are preserved unmodified as the claim's original history.
+
+**Claim status:** Remains a Justified Organizational Claim (decisions/DD-010) — not replaced, not rejected.
+
+**Evidence added:** O-013 (chart-position re-reading of EV-015 at monthly granularity, previously only approximated; E-12 public-documentation check of GBP metric definitions; E-13 cross-source comparison against Search Console, GA4, and Guestplan); claims/OC-002-competing-explanations-register.md (10 candidate explanations assessed, none reaching Plausible).
+
+**Scope change:** None — Scope section above remains accurate (GBP-only, all engagement types, aggregate geography/device, Feb–Jul 2026).
+
+**Confidence change:** Existence and overall six-month direction of the decline: unchanged, still High. Precision of the shape between individual months: **increased** from Medium (single approximate table) to Medium-High (independently charted monthly points, internally consistent with each chart's own stated total).
+
+**Wording requiring narrowing:** The Organizational Claim's phrase "declined continuously and did not recover at any point within the window" is **not fully supported** by the more precise reading in O-013. All six metrics show a brief flat-to-slightly-positive segment (most visible in Menucontent bekeken, which rises from an estimated ~55 in April to ~88 in May, close to its March level) before the decline resumes and steepens in June–July. The overall six-month shape (high in February, lowest in July) is unaffected. **Corrected characterization:** the decline is sustained and large in aggregate across the full window, with a brief pause or partial recovery around April–May in most metrics, rather than a strictly monotonic decline with no recovery at any point.
+
+**Challenge required:** Yes — this narrowing is itself a new falsification-relevant finding (it partially falsifies the "no recovery at any point" clause) and is recorded here rather than silently smoothed over, consistent with this case's standing practice.
+
+**Reason:** HV-MP-002's evidence-collection plan required examining the source screenshots at finer granularity than O-002's original pass. The finer reading surfaced a real pattern the original approximate reading could not resolve. This does not weaken the claim's core finding (a large, sustained, six-month, six-metric decline exists and predates this case) — it corrects one overstated clause within it.
+
+**Sufficiency for Organizational Understanding:** Not yet — see decisions/DD-013 (Evidence Sufficiency Gate). Ten candidate explanations were assessed (claims/OC-002-competing-explanations-register.md); none currently rises above "Weakly Supported," and the categories most likely to explain the decline (profile-change history, review trend, photo/post activity, operational context) remain uncollected pending Kelvin's direct GBP access.
+
 #### Traceability
 
-O-002 → EV-015 → OC-002
+O-002 → EV-015 → OC-002 → (24 July 2026 reassessment) → O-013 → EV-019 → decisions/DD-013

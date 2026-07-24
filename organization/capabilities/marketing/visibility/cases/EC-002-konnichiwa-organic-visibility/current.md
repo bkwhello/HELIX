@@ -1,9 +1,9 @@
 # Current State — EC-002
 ---
 
-Last updated: 24 July 2026 (Lifecycle compliance correction — decisions/DD-012: Organizational Understanding was entered without valid prior authorization; `current_stage` reverted to Justified Organizational Claims; OU-001/OU-002 reclassified Draft — Not Authoritative; Kelvin separately authorized Path 1 evidence collection for OC-002).
+Last updated: 24 July 2026 (OC-002 evidence collection executed, decisions/DD-013: Evidence Sufficiency Gate PASSED WITH CONDITIONS; lifecycle stage, Understanding-authorization, and all other DD-012 fields unchanged).
 
-## Formal State (per decisions/DD-012 lifecycle compliance review)
+## Formal State (per decisions/DD-012 lifecycle compliance review; evidence-collection fields per decisions/DD-013)
 
 ```yaml
 status: Open
@@ -16,12 +16,13 @@ claims_gate: Passed
 justified_claims_established: true
 organizational_understanding_established: false
 organizational_understanding_note: Draft artifacts exist (OU-001, OU-002) but are Not Authoritative — entered without valid authorization, see decisions/DD-012
-oc002_evidence_collection: Authorized (Path 1, decisions/DD-011 amendment, 24 July 2026) — read-only, diagnosis and intervention selection explicitly not authorized
+oc002_evidence_collection: Partially Completed (decisions/DD-013, 24 July 2026) — 9 of 13 HV-MP-002 items executed with existing evidence and public documentation; 4 items (E-05, E-06, E-07, E-11) blocked pending Kelvin's direct GBP access
+oc002_evidence_sufficiency_gate: Passed With Conditions (decisions/DD-013)
 diagnosis_established: false
 design_authorized: false
 transformation_started: false
 external_changes_authorized: false
-next_action: Execute measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md (read-only); separately, obtain explicit unambiguous case-owner authorization before re-entering Organizational Understanding
+next_action: Resolve E-05/E-06/E-07/E-11 blockers (decisions/DD-013 Conditions) if OC-002 is to become Diagnosis-eligible; separately, obtain explicit unambiguous case-owner authorization before re-entering Organizational Understanding
 ```
 
 **Correction, 24 July 2026 (decisions/DD-012):** the previous version of this record set `current_stage: Organizational Understanding` and `organizational_understanding_established: true` on the basis of Kelvin's message "registratie klopt, de rest kan starten," interpreted as authorization to begin that stage. A lifecycle compliance review found this insufficient: that message confirmed an evidentiary fact (Guestplan no-shows), not a named lifecycle-stage transition, and decisions/DD-010 explicitly states Organizational Understanding was "not yet begun" after the Claims gate passed. No prior decision authorized the transition. OU-001 and OU-002 are preserved, unmodified, but reclassified **Draft — Prematurely Produced, Not Authoritative**. `current_stage` is reverted to `Justified Organizational Claims`, the last validly-gated stage (decisions/DD-010, PASSED).
@@ -36,7 +37,7 @@ next_action: Execute measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md (
 
 ## Current lifecycle stage
 
-Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. **This is the case's current authoritative stage.** Organizational Understanding: **Attempted without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026); OU-001 and OU-002 exist but do not count as established. Organizational Diagnosis: **Not started.** OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Authorized, read-only, not yet executed** — see measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md.
+Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. **This is the case's current authoritative stage.** Organizational Understanding: **Attempted without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026); OU-001 and OU-002 exist but do not count as established. Organizational Diagnosis: **Not started.** OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Executed, Partially Completed** (observations/O-013.md, decisions/DD-013, 24 July 2026) — Evidence Sufficiency Gate **PASSED WITH CONDITIONS**; not yet sufficient to support Organizational Understanding for OC-002.
 
 ## Completed artifacts
 
@@ -77,6 +78,10 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 - **decisions/DD-012 — Lifecycle Compliance Review, 24 July 2026.** Verdict: FAILED. Found that Organizational Understanding was entered without a prior authorizing decision. OU-001/OU-002 reclassified Draft — Not Authoritative; `current_stage` reverted to Justified Organizational Claims; explicit case-owner authorization required before re-entry.
 - **measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md — created, 24 July 2026.** Bounded, 13-item read-only evidence-collection plan for the GBP decline, authorized under Path 1.
 - **claims/OC-007…md — Classification added, 24 July 2026.** Classified as a Measurement/Attribution Constraint limiting evaluation of visibility-to-reservation performance; the unexplained reservation difference is explicitly not represented as lost reservations.
+- **observations/O-013.md — created, 24 July 2026.** OC-002 evidence-collection execution: 9 of 13 HV-MP-002 items completed using existing raw evidence (EV-015 re-read at monthly granularity) and public Google documentation (E-12); 4 items (E-05, E-06, E-07, E-11) blocked, requiring Kelvin's direct GBP access. Key finding: the GBP decline is not strictly monotonic — a brief plateau/partial recovery appears around April–May in all six metrics before the decline resumes and steepens in June–July.
+- **claims/OC-002-competing-explanations-register.md — created, 24 July 2026.** 10 candidate explanations for the GBP decline assessed; none reaches "Plausible"; two "Weakly Supported" (narrow scope only); one "Contradicted"; seven "Unassessable," concentrated in the blocked evidence categories.
+- **claims/OC-002…md — Reassessment section added, 24 July 2026.** Claim status unchanged (Justified Organizational Claim); wording "did not recover at any point" narrowed as overstated; original claim text preserved unmodified above the new section.
+- **decisions/DD-013 — OC-002 Evidence Sufficiency Gate, 24 July 2026.** Verdict: PASSED WITH CONDITIONS. Decline now well-characterized; not yet sufficient to support Organizational Understanding for OC-002. Recommends "Eligible for a future Understanding Authorization decision" once conditions are met — does not itself authorize Understanding.
 
 ## Active work
 
@@ -89,7 +94,7 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 - **HV-INT-003 — GA4 tag published and confirmed working, 23 July 2026 (Provisionally Earned).** Root cause: the GA4 Google-tag (G-C29ZMF288W) was added to the GTM container 2 months ago but never published — sat unpublished in "Wijzigingen in behandeling." Published, then Realtime testing in Safari still showed 0 (Safari's cross-site tracking prevention blocked it) — retested in Chrome, confirmed active users appearing in Realtime. Fix confirmed working. See transformation/HV-IR-001.md, HV-INT-003. Container quality also flagged "3 issues" needing attention — not yet reviewed.
 - **CR-005 — Resolved for Initial Baseline, 24 July 2026.** Kelvin's genuinely Utrecht-located, incognito, logged-out mobile search for "omakase utrecht" (06:41) showed Konnichiwa at local-pack position 2 of 3 (Kong Izakaya #1, Konnichiwa #2, Japanese Don Dining KOUNOSUKE #3) — EV-018. This corroborates Search Console's optimistic "position 4.7" reading over the earlier non-geo-controlled checks (evidence/HV-IV-003.md and the 24 July WebSearch proxy), which likely understated Konnichiwa's real local prominence for lack of geographic control. Preserved limitation: one point, one time, one device — not a multi-point grid; says nothing about organic (non-local-pack) ranking, which remains O-004's domain; no claim of city-wide or time-stable ranking.
 - **New finding to follow up:** `/nl/home-nederlands/` is a real, better-ranking page (position 5.05 vs. homepage 8.93) that was not catalogued in evidence/HV-IV-007.md's page inventory. Needs reconciling.
-- **Major new finding, highest priority for diagnosis:** every Google Business Profile metric (interactions, website clicks, route requests, calls, menu views, appointments) has declined steadily for 6 straight months (Feb→Jul 2026), roughly halving to two-thirds down. Predates EC-002 and HV-INT-002 entirely — cause unknown, not yet investigated. See observations/O-002.md.
+- **Major finding, still highest priority, now more precisely characterized:** every Google Business Profile metric (interactions, website clicks, route requests, calls, menu views, appointments) has declined substantially across 6 months (Feb→Jul 2026), with a brief plateau/partial recovery around April–May before steepening again in June–July. Predates EC-002 and HV-INT-002 entirely — cause still unknown; ten candidate explanations assessed, none Plausible. See observations/O-002.md, O-013.md, claims/OC-002-competing-explanations-register.md.
 
 ## Blockers
 
@@ -101,12 +106,13 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 - HV-INT-004 and HV-INT-005 (popup + mobile title fix) — prepared locally, awaiting FTP deployment by Kelvin before they can be validated.
 - Lighthouse lab scores (Performance/Accessibility/Best-Practices/SEO 0–100) for O-012 — CrUX field data was obtained, but the lab-score portion of the PSI report was not present in the fetched content. Minor, non-blocking.
 - Multi-point Utrecht rank grid for O-003 — the single 24 July observation is accepted as sufficient for the initial baseline, but broader coverage (multiple points/times/devices) remains a future measurement-maturity improvement, not currently blocking anything.
+- **OC-002 evidence-collection blockers (observations/O-013.md):** E-05 (GBP profile-change timeline), E-06 (review trend/recency/response), E-07 (photo/post activity), and E-11 (restaurant operational context — closures, hour changes, capacity) all require Kelvin's direct GBP access or recollection; none was available this run and none was guessed.
 
 ## Next authorized action
 
 **Two separate, independent next actions:**
 
-1. **OC-002 evidence collection (authorized, Path 1):** execute measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md's read-only items. The GBP decline itself is not a diagnosis and no intervention may be selected from this work.
+1. **OC-002 evidence collection (Path 1): executed, Partially Completed.** decisions/DD-013 (Evidence Sufficiency Gate, PASSED WITH CONDITIONS) recommends resolving the E-05/E-06/E-07/E-11 blockers above before OC-002 can be considered for Organizational Understanding. The GBP decline itself is still not a diagnosis and no intervention has been selected.
 2. **Organizational Understanding (not authorized):** OU-001 and OU-002 exist as Draft, Not Authoritative (decisions/DD-012). Re-entering this stage requires an explicit, unambiguous case-owner statement naming the transition — not inferred from confirming an evidentiary fact. Until given, the case's authoritative stage remains Justified Organizational Claims (decisions/DD-010).
 
 No Diagnosis, Design, or Transformation is authorized for any part of the case.
@@ -119,8 +125,8 @@ No Diagnosis, Design, or Transformation is authorized for any part of the case.
 - Formal indexation status of priority pages (requires O-001).
 - Review recency and response-time data (requires O-009 completion).
 - Which of the remaining ~34 candidate search intents (legacy EC-002 §12) have business value — none evaluated beyond the 4 in evidence/HV-IV-005.md.
-- **What is causing the 6-month decline in every GBP metric (observations/O-002.md)?** No candidate explanation has been tested yet.
-- What is "takumi" (1,400 GBP profile-discovery searches, observations/O-002.md) — unexplained.
+- **What is causing the 6-month decline in every GBP metric (observations/O-002.md)?** 10 candidate explanations assessed 24 July 2026 (claims/OC-002-competing-explanations-register.md); none Plausible, none ruled in. Still open — see decisions/DD-013.
+- What is "takumi" (1,400 GBP profile-discovery searches, observations/O-002.md) — still unexplained; O-013 (24 July 2026) confirmed it is a distinct search term, not a Konnichiwa spelling variant, but its cause remains unknown.
 - What are the 3 flagged GTM "Container Quality" issues? Not yet reviewed.
 - How large is the Safari/iOS share of Konnichiwa's real visitors — needed to size how much GA4 will structurally undercount going forward (observations/O-002.md showed 85% of GBP discovery is mobile, device OS split unknown).
 - What explains the 162-reservation gap between Guestplan's two reservation reports (observations/O-011.md)? Still open — Kelvin's 24 July confirmation covered no-show tracking specifically, not this discrepancy.
