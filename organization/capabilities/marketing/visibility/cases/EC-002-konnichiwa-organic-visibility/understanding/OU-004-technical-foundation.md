@@ -3,7 +3,11 @@
 
 ## Status
 
-Candidate Organizational Understanding
+**Established Organizational Understanding** (Conditional). *Previously Candidate Organizational Understanding, 24 July 2026 — established 25 July 2026, see Authority below.*
+
+## Authority
+
+decisions/DD-015, Case-Owner Decision (Kelvin Wong, 25 July 2026) — **ESTABLISHED WITH CONDITIONS**, subject to the 10 conditions recorded there in full. Establishment is conditional on: OC-007 remaining a Measurement/Attribution Constraint, not a finding; no part of this record authorizing Diagnosis of the TTFB cause or of DD-005 hypothesis H-003, or any intervention.
 
 ## Authorization
 

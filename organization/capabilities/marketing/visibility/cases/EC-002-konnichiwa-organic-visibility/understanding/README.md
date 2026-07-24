@@ -1,17 +1,17 @@
 # Organizational Understanding — Index (EC-002)
 ---
 
-## Current Candidate Understanding (24 July 2026, decisions/DD-014 authorization, decisions/DD-015 reconstruction)
+## Established Organizational Understanding (25 July 2026, decisions/DD-015 Case-Owner Decision)
 
-Following Kelvin Wong's AUTHORIZED WITH CONDITIONS decision (decisions/DD-014), Organizational Understanding was **independently reconstructed** from OC-001 through OC-007 — not promoted from OU-001/OU-002 below. The reconstruction (decisions/DD-015, Gate Verdict: PASSED WITH CONDITIONS) produced:
+Following Kelvin Wong's AUTHORIZED WITH CONDITIONS decision (decisions/DD-014), Organizational Understanding was **independently reconstructed** from OC-001 through OC-007 — not promoted from OU-001/OU-002 below — and gated (decisions/DD-015, Gate Verdict: PASSED WITH CONDITIONS). Kelvin then issued **ESTABLISHED WITH CONDITIONS** (decisions/DD-015, Case-Owner Decision, 25 July 2026), accepting all 10 conditions verbatim. `organizational_understanding_established` is now `true`.
 
-- **understanding/UR-001…md, UR-002…md, UR-003…md** — three surviving candidate relationships (UR-004 was constructed, challenged, and Rejected; preserved, not deleted).
-- **understanding/OU-003-search-and-entity-presence.md** (from OC-001, OC-003, OC-004, via UR-001) — Candidate Organizational Understanding, survives challenge.
-- **understanding/OU-004-technical-foundation.md** (from OC-005, OC-006, via UR-002) — Candidate Organizational Understanding, survives challenge.
-- **OC-002 remains a Standalone Condition** — the only relationship attempted for it (UR-004, to OC-004) was Rejected; this is an explicit, acceptable outcome per DD-014 Condition 5.
+- **understanding/UR-001…md, UR-002…md, UR-003…md** — three **Established Relationships** (UR-001's narrowed, post-challenge wording only is authoritative). UR-004 was constructed, challenged, and **Rejected**; preserved, not deleted, authoritative use prohibited.
+- **understanding/OU-003-search-and-entity-presence.md** (from OC-001, OC-003, OC-004, via UR-001) — **Established Organizational Understanding** (Conditional).
+- **understanding/OU-004-technical-foundation.md** (from OC-005, OC-006, via UR-002) — **Established Organizational Understanding** (Conditional).
+- **OC-002 remains a Standalone Condition** — the only relationship attempted for it (UR-004, to OC-004) was Rejected; this is an explicit, acceptable, and now case-owner-confirmed outcome.
 - **OC-007 remains a Measurement/Attribution Constraint** (UR-003), applied to OU-003 and OU-004, not integrated as a coexistence-type finding.
 
-`organizational_understanding_established` remains `false` pending Kelvin's explicit case-owner response to decisions/DD-015 (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED).
+**Binding conditions carried forward** (decisions/DD-015 Case-Owner Decision): CR-006 remains Open; E-03 and E-10 continue to block discovery-trend and seasonal relationships; E-05, E-06, and E-07 remain Partial; CE-06 and CE-07 remain Weakly Supported, not causes; CE-12 remains Unassessable; no Understanding artifact authorizes Diagnosis or an intervention.
 
 ## Historical Drafts (superseded, preserved unmodified)
 

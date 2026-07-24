@@ -168,3 +168,62 @@ Outstanding, from OC-002's standalone status (not part of any OU, but the case's
 - What explains the six-month GBP engagement decline? (claims/OC-002-competing-explanations-register.md's twelve candidate explanations remain the current state of this question — none Plausible.)
 
 None of these questions is answered here. Answering any of them is Diagnosis-stage work, which remains unauthorized (`diagnosis_authorized: false`).
+
+---
+
+## Case-Owner Decision (recorded 25 July 2026)
+
+**This section records Kelvin Wong's explicit response to the Gate Verdict above. It does not replace, edit, or overwrite the Gate Verdict, the Precondition Verdict, the Phase 1–7 analysis, the Remaining Limitations, the Diagnosis Questions Enabled, or the "Pending" state that preceded this decision — all remain intact above, unmodified, as the historical record of the independent reconstruction and gate review.**
+
+```yaml
+decision: ESTABLISHED WITH CONDITIONS
+established_understanding:
+  - OU-003
+  - OU-004
+established_by: Kelvin Wong
+establishment_date: 2026-07-25
+gate_reference: DD-015
+diagnosis_authorized: false
+design_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Kelvin Wong, as case owner of EC-002 — Konnichiwa Organic Visibility Growth, accepts this gate's PASSED WITH CONDITIONS verdict in full and establishes the reconstructed Organizational Understanding **subject to every condition below**, copied verbatim from this gate's own findings and preserved as the binding terms of this establishment:
+
+1. Only the narrowed surviving UR-001 wording is authoritative — the pre-narrowing draft language quoted inside UR-001's own Challenge section is historical record only, not a separate authoritative version.
+2. UR-004 remains rejected — preserved in full, not deleted, and not to be cited as a relationship in any future work.
+3. OC-002 remains a standalone, unexplained condition — its absence from OU-003 and OU-004 is a deliberate, evidenced outcome, not a gap to be silently closed.
+4. OC-007 remains a Measurement/Attribution Constraint — not a finding, not an operational failure, and not to be reframed as either.
+5. CR-006 remains Open — the 605/625 review-count difference stays unreconciled, both values preserved with their dates.
+6. E-03 and E-10 continue to block discovery-trend and seasonal relationships respectively — no future relationship of either kind may be constructed on current evidence.
+7. E-05, E-06, and E-07 remain Partial — any future work touching the profile-configuration, review-sample, or post-activity evidence must inherit their stated boundaries.
+8. CE-06 and CE-07 remain Weakly Supported candidate explanations, not causes — this establishment does not elevate either.
+9. CE-12 remains Unassessable.
+10. No Understanding artifact — including OU-003, OU-004, UR-001, UR-002, or UR-003 — authorizes Diagnosis or an intervention. That remains a separate, not-yet-opened gate.
+
+### Authoritative Relationships
+
+| Relationship | Type | Status |
+|---|---|---|
+| UR-001 | Contrast | **Established Relationship** — narrowed surviving version only is authoritative |
+| UR-002 | Contrast | **Established Relationship** |
+| UR-003 | Constraint | **Established Relationship** |
+| UR-004 | Coexisting Condition (as proposed) | **Rejected** — authoritative use prohibited; preserved in full per Condition 2 above |
+
+### Understanding Status
+
+| Understanding | Status | Establishment | Authority |
+|---|---|---|---|
+| OU-003 — Search and Entity Presence Pattern | **Established Organizational Understanding** | Conditional | This Case-Owner Decision, decisions/DD-015 |
+| OU-004 — Technical Foundation Duality | **Established Organizational Understanding** | Conditional | This Case-Owner Decision, decisions/DD-015 |
+
+### Historical Drafts — Unaffected
+
+understanding/OU-001…md and understanding/OU-002…md remain **Draft — Prematurely Produced**, **Not Authoritative**, and **Historical Draft — Superseded** (decisions/DD-012, decisions/DD-015 Phase 5). This establishment does not promote, delete, or rewrite either file.
+
+### Effect on current_stage
+
+`current_stage` remains `Organizational Understanding`. `organizational_understanding_established` becomes `true`. `diagnosis_authorized`, `design_authorized`, `transformation_authorized`, and `external_changes_authorized` all remain `false`. See current.md for the full updated Formal State block.
+
+**Explicitly not authorized by this decision:** answering any of the Diagnosis Questions Enabled above, creating an Organizational Diagnosis, proposing any SEO or marketing intervention, any change to the live website or Google Business Profile, and Design or Transformation of any kind.

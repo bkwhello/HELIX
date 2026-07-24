@@ -5,7 +5,7 @@
 
 ## Status
 
-Candidate
+**Established Relationship** (decisions/DD-015, Case-Owner Decision, Kelvin Wong, 25 July 2026). *Previously Candidate, 24 July 2026, then Survives with Narrowing.* **Only the narrowed, post-challenge wording below is authoritative** — see Case-Owner Decision Condition 1.
 
 ## Relationship Type
 

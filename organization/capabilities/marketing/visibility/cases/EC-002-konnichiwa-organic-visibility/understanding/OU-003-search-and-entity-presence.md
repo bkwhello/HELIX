@@ -3,7 +3,11 @@
 
 ## Status
 
-Candidate Organizational Understanding
+**Established Organizational Understanding** (Conditional). *Previously Candidate Organizational Understanding, 24 July 2026 — established 25 July 2026, see Authority below.*
+
+## Authority
+
+decisions/DD-015, Case-Owner Decision (Kelvin Wong, 25 July 2026) — **ESTABLISHED WITH CONDITIONS**, subject to the 10 conditions recorded there in full (verbatim from this document's own Diagnosis Boundary and Excluded Interpretation sections). Establishment is conditional on: only the narrowed, post-challenge wording of UR-001 being authoritative; OC-002 remaining standalone and unexplained; CR-006 remaining Open; E-03/E-05/E-06/E-07/E-10's stated boundaries being inherited by any future work; no part of this record authorizing Diagnosis or an intervention.
 
 ## Authorization
 

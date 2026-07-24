@@ -1,9 +1,9 @@
 # Current State — EC-002
 ---
 
-Last updated: 24 July 2026 (Organizational Understanding reconstructed under decisions/DD-014's authorization, gated by decisions/DD-015: Gate Verdict **PASSED WITH CONDITIONS**. Four candidate relationships constructed and independently challenged (UR-001, UR-002, UR-003 survive; UR-004 Rejected, preserved). Two new candidate Understanding records survive challenge (OU-003, OU-004), independently reconstructed from OC-001–OC-007 — OU-001/OU-002 read only for Phase 5 contamination comparison, confirmed superseded, left unmodified and Not Authoritative. OC-002 remains a Standalone Condition; OC-007 remains a Measurement/Attribution Constraint. `organizational_understanding_established` remains `false` pending Kelvin's explicit response to DD-015. Diagnosis, Design, Transformation, and external changes remain unauthorized.).
+Last updated: 25 July 2026 (Case-owner decision recorded, decisions/DD-015: Kelvin Wong issued **ESTABLISHED WITH CONDITIONS** for OU-003 and OU-004, accepting all 10 conditions. `organizational_understanding_established` becomes `true`. UR-001 (narrowed wording only), UR-002, and UR-003 are Established Relationships; UR-004 remains Rejected, authoritative use prohibited. OC-002 remains standalone and unexplained; OC-007 remains a Measurement/Attribution Constraint. OU-001/OU-002 remain unmodified, Not Authoritative, Historical Draft — Superseded. Diagnosis, Design, Transformation, and external changes remain unauthorized.).
 
-## Formal State (per decisions/DD-012 lifecycle compliance review; evidence-collection fields per decisions/DD-013; authorization fields per decisions/DD-014; reconstruction fields per decisions/DD-015)
+## Formal State (per decisions/DD-012 lifecycle compliance review; evidence-collection fields per decisions/DD-013; authorization fields per decisions/DD-014; establishment fields per decisions/DD-015)
 
 ```yaml
 status: Open
@@ -15,12 +15,15 @@ evidence_synthesis: Completed
 claims_gate: Passed
 justified_claims_established: true
 organizational_understanding_authorized: true
-organizational_understanding_established: false
+organizational_understanding_established: true
 organizational_understanding_gate: Authorized With Conditions (decisions/DD-014, case-owner decision recorded 24 July 2026)
-organizational_understanding_note: OU-001 and OU-002 remain Draft — Prematurely Produced / Not Authoritative (decisions/DD-012); superseded by independently-reconstructed OU-003 and OU-004 (decisions/DD-015). OC-002 remains a Standalone Condition; OC-007 remains a Measurement/Attribution Constraint.
+organizational_understanding_note: OU-001 and OU-002 remain Draft — Prematurely Produced / Not Authoritative (decisions/DD-012), Historical Draft — Superseded (decisions/DD-015) — unmodified, not promoted. OC-002 remains a Standalone Condition; OC-007 remains a Measurement/Attribution Constraint.
 understanding_reconstruction: Completed (decisions/DD-015, 24 July 2026)
 understanding_establishment_gate: Passed With Conditions (decisions/DD-015)
-understanding_establishment_decision: Pending
+understanding_establishment_decision: Established With Conditions (Kelvin Wong, 25 July 2026, decisions/DD-015 Case-Owner Decision section)
+established_understandings:
+  - OU-003 — Search and Entity Presence Pattern
+  - OU-004 — Technical Foundation Duality
 oc002_evidence_collection: Partially Completed (decisions/DD-013, 24 July 2026, updated) — 10 of 13 HV-MP-002 items at Completed or Partial; 2 (E-03, E-10) structurally unavailable
 oc_002_blocked_evidence:
   e_05: Partial
@@ -38,7 +41,7 @@ design_authorized: false
 transformation_started: false
 transformation_authorized: false
 external_changes_authorized: false
-next_action: Await Kelvin's explicit case-owner response to decisions/DD-015 (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED)
+next_action: Prepare a Diagnosis Authorization Gate from the established understanding and bounded diagnosis questions
 ```
 
 **Correction, 24 July 2026 (decisions/DD-012):** the previous version of this record set `current_stage: Organizational Understanding` and `organizational_understanding_established: true` on the basis of Kelvin's message "registratie klopt, de rest kan starten," interpreted as authorization to begin that stage. A lifecycle compliance review found this insufficient: that message confirmed an evidentiary fact (Guestplan no-shows), not a named lifecycle-stage transition, and decisions/DD-010 explicitly states Organizational Understanding was "not yet begun" after the Claims gate passed. No prior decision authorized the transition. OU-001 and OU-002 are preserved, unmodified, but reclassified **Draft — Prematurely Produced, Not Authoritative**. `current_stage` is reverted to `Justified Organizational Claims`, the last validly-gated stage (decisions/DD-010, PASSED).
@@ -53,7 +56,7 @@ next_action: Await Kelvin's explicit case-owner response to decisions/DD-015 (ES
 
 ## Current lifecycle stage
 
-Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. Organizational Understanding: **first attempt was without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026) — OU-001 and OU-002 remain in that state, unmodified. **Authorization Gate reviewed** (decisions/DD-014, 24 July 2026) — RECOMMEND AUTHORIZED WITH CONDITIONS, then **Kelvin Wong, case owner, issued AUTHORIZED WITH CONDITIONS**, accepting all 10 Mandatory Conditions. **Reconstructed** (decisions/DD-015, 24 July 2026) directly from OC-001–OC-007: four candidate relationships constructed and independently challenged (three survive — UR-001, UR-002, UR-003; one Rejected and preserved — UR-004); two new candidate Understanding records survive challenge (OU-003, OU-004); OC-002 confirmed a Standalone Condition; OC-007 confirmed a Measurement/Attribution Constraint. **Establishment Gate verdict: PASSED WITH CONDITIONS.** **This is now the case's current authoritative stage** — `current_stage: Organizational Understanding`, `organizational_understanding_authorized: true`, `organizational_understanding_established: false` (Kelvin's explicit ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED response to DD-015 is pending). Organizational Diagnosis: **Not started, not authorized.** OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Executed, Partially Completed** (observations/O-013.md, decisions/DD-013, 24 July 2026) — Evidence Sufficiency Gate **PASSED WITH CONDITIONS**.
+Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. Organizational Understanding: **first attempt was without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026) — OU-001 and OU-002 remain in that state, unmodified, now additionally Historical Draft — Superseded. **Authorization Gate reviewed** (decisions/DD-014, 24 July 2026), then Kelvin authorized. **Reconstructed** (decisions/DD-015, 24 July 2026) directly from OC-001–OC-007: four candidate relationships constructed and independently challenged (three survive — UR-001, UR-002, UR-003; one Rejected and preserved — UR-004); two new candidate Understanding records survive challenge (OU-003, OU-004). **Established** (decisions/DD-015 Case-Owner Decision, Kelvin Wong, 25 July 2026) — **ESTABLISHED WITH CONDITIONS.** OU-003 and OU-004 are now **Established Organizational Understanding** (Conditional); UR-001 (narrowed wording only), UR-002, UR-003 are **Established Relationships**; UR-004 remains **Rejected**, authoritative use prohibited. OC-002 remains a Standalone Condition; OC-007 remains a Measurement/Attribution Constraint. **This is now the case's current authoritative stage** — `current_stage: Organizational Understanding`, `organizational_understanding_authorized: true`, `organizational_understanding_established: true`. Organizational Diagnosis: **Not started, not authorized** — `diagnosis_authorized: false`. OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Executed, Partially Completed** (observations/O-013.md, decisions/DD-013, 24 July 2026) — Evidence Sufficiency Gate **PASSED WITH CONDITIONS**.
 
 ## Completed artifacts
 
@@ -117,6 +120,10 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 - **understanding/OU-004-technical-foundation.md — created, 24 July 2026.** New candidate Organizational Understanding, independently reconstructed from OC-005/OC-006 via UR-002. Whole-Understanding challenge: **Survives**.
 - **decisions/DD-015 — Organizational Understanding Establishment Gate, 24 July 2026.** Clean-room claim inventory (Phase 1), 4 candidate relationships constructed and challenged (Phase 2/4), standalone/constraint classification (Phase 3: OC-002 Standalone, OC-007 Constraint), OU-001/OU-002 contamination comparison (Phase 5: both Historical Draft — Superseded, independent re-derivation confirmed, unmodified), 2 new candidate Understanding records constructed and challenged (Phase 6/7). **Gate Verdict: PASSED WITH CONDITIONS.** `organizational_understanding_established` remains `false` — Kelvin's explicit response requested and pending.
 - **understanding/README.md — updated, 24 July 2026.** Indexes the new reconstruction; OU-001/OU-002 section relabeled "Historical Drafts (superseded, preserved unmodified)."
+- **decisions/DD-015, Case-Owner Decision section — added, 25 July 2026.** Kelvin Wong issued **ESTABLISHED WITH CONDITIONS**, accepting all 10 conditions verbatim. OU-003 and OU-004 become Established Organizational Understanding (Conditional); UR-001 (narrowed wording only), UR-002, UR-003 become Established Relationships; UR-004 remains Rejected, authoritative use prohibited. `organizational_understanding_established` set to `true`. Diagnosis, Design, Transformation, and external changes explicitly not authorized by this decision.
+- **understanding/OU-003…md, OU-004…md — Status/Authority updated, 25 July 2026.** Minimal edit: Status changed to "Established Organizational Understanding (Conditional)"; new "Authority" section added citing decisions/DD-015's Case-Owner Decision. No other content changed.
+- **understanding/UR-001…md, UR-002…md, UR-003…md — Status updated, 25 July 2026.** Minimal edit: Status changed to "Established Relationship," citing decisions/DD-015. No other content changed.
+- **understanding/UR-004…md — Status confirmation added, 25 July 2026.** Minimal edit: added a line confirming decisions/DD-015's Case-Owner Decision keeps this relationship Rejected, authoritative use prohibited, preservation required. No other content changed.
 
 ## Active work
 
@@ -145,11 +152,11 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 
 ## Next authorized action
 
-**Primary next action:** **Await Kelvin's explicit case-owner response to decisions/DD-015** (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED), regarding the reconstructed OU-003 and OU-004. Reconstruction itself is now **Completed** (decisions/DD-015, 24 July 2026) — built directly from OC-001–OC-007, not from understanding/OU-001…md or OU-002…md (which remain Draft, Not Authoritative, superseded, unmodified); every relationship received an explicit type and began Candidate; every relationship and every new Understanding was independently challenged; OC-002 remains standalone (its one relationship attempt, UR-004, was Rejected and preserved); OC-007 remains a Measurement/Attribution Constraint (UR-003); CE-06/CE-07/CE-12/CR-006 statuses were untouched by this work since OC-002 was not integrated into any relationship that survived. `organizational_understanding_established` remains `false` until Kelvin responds.
+**Primary next action:** **Prepare a Diagnosis Authorization Gate from the established understanding and bounded diagnosis questions.** Organizational Understanding is now **Established (with Conditions)** — decisions/DD-015 Case-Owner Decision, 25 July 2026. OU-003 and OU-004's own "Diagnosis Questions Enabled" sections list six specific, bounded questions (why the broader search categories underperform; whether naming inconsistency has any effect; whether the local-pack position generalizes; the TTFB cause; whether OC-005's gaps relate to the AI-representation errors; whether closing OC-005's gaps would change anything) plus one outstanding question tied to OC-002's standalone status (what explains the GBP decline). None of these is answered yet — this remains a future, separately-authorized step. Preparing the gate means scoping which question(s) to pursue first and what evidence each would require, not answering them.
 
-**Secondary, independent next action:** OC-002 evidence collection (Path 1) remains **Partial across E-05/E-06/E-07, Completed for E-11 — 10 of 13 items done.** Capture date confirmed (EV-024); remaining gaps are item-specific: E-05 would benefit from a GBP edit-history log or Kelvin's recollection of when the 3 confirmed attribute changes occurred; E-06 would benefit from a fuller review export beyond the current 8-review sample; E-07 would benefit from the Photos tab and confirmation the visible post list is complete. E-03 and E-10 remain structurally unavailable regardless. The GBP decline itself is still not a diagnosis and no intervention has been selected.
+**Secondary, independent next action:** OC-002 evidence collection (Path 1) remains **Partial across E-05/E-06/E-07, Completed for E-11 — 10 of 13 items done.** E-05 would benefit from a GBP edit-history log or Kelvin's recollection of when the 3 confirmed attribute changes occurred; E-06 would benefit from a fuller review export beyond the current 8-review sample; E-07 would benefit from the Photos tab and confirmation the visible post list is complete. E-03 and E-10 remain structurally unavailable regardless.
 
-**Not authorized by this decision:** Organizational Diagnosis, Design, Transformation, or any external system change — all remain separately gated and `false`.
+**Not authorized by this decision:** Organizational Diagnosis, Design, Transformation, any SEO or marketing intervention, or any external system change — all remain separately gated and `false`.
 
 No Diagnosis, Design, or Transformation is authorized for any part of the case.
 

@@ -136,9 +136,27 @@ Four candidate relationships were constructed (within the 2–5 target range): t
 
 **Gate verdict (decisions/DD-015): PASSED WITH CONDITIONS.** `organizational_understanding_established` remains `false` — per this task's Establishment Authority Boundary, the gate reviewer does not self-authorize this state; Kelvin's explicit case-owner response (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED) is requested and pending. OC-002 remains a Standalone Condition and OC-007 remains a Measurement/Attribution Constraint, both explicit, bounded outcomes rather than gaps.
 
+## Organizational Understanding Established — DD-015 Case-Owner Decision (25 July 2026)
+
+Kelvin Wong, case owner, issued **ESTABLISHED WITH CONDITIONS** for OU-003 and OU-004 (decisions/DD-015, Case-Owner Decision section), accepting all 10 conditions from the gate verdict verbatim as binding terms. `organizational_understanding_established` is now `true`.
+
+| Relationship | Type | Authoritative Status |
+|---|---|---|
+| UR-001 | Contrast | **Established Relationship** — only the narrowed, post-challenge wording is authoritative |
+| UR-002 | Contrast | **Established Relationship** |
+| UR-003 | Constraint | **Established Relationship** |
+| UR-004 | Coexisting Condition (proposed) | **Rejected** — authoritative use prohibited, preserved in full |
+
+| Understanding | Status | Establishment |
+|---|---|---|
+| OU-003 — Search and Entity Presence Pattern | **Established Organizational Understanding** | Conditional, decisions/DD-015 Case-Owner Decision |
+| OU-004 — Technical Foundation Duality | **Established Organizational Understanding** | Conditional, decisions/DD-015 Case-Owner Decision |
+
+understanding/OU-001…md and understanding/OU-002…md remain unmodified — Draft, Not Authoritative, Historical Draft — Superseded. This establishment does not promote, delete, or rewrite either file. OC-002 remains a standalone, unexplained condition; OC-007 remains a Measurement/Attribution Constraint; CR-006 remains Open; E-03 and E-10 continue to block discovery-trend and seasonal relationships; E-05, E-06, and E-07 remain Partial; CE-06 and CE-07 remain Weakly Supported; CE-12 remains Unassessable. No Understanding artifact authorizes Diagnosis or an intervention — `diagnosis_authorized: false`.
+
 ## Lifecycle Traceability
 
-Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → **Organizational Understanding — Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → **Reconstructed and gated PASSED WITH CONDITIONS** (decisions/DD-015, 24 July 2026) — **this is now the case's current authoritative stage.** Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by the later authorization or reconstruction, both of which rest on independent review (decisions/DD-014, DD-015) rather than on the earlier drafts. `organizational_understanding_established` remains `false` pending Kelvin's explicit response to decisions/DD-015.
+Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) — **this is now the case's current authoritative stage.** Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by the later authorization, reconstruction, or establishment, all three of which rest on independent review and explicit case-owner decision (decisions/DD-014, DD-015) rather than on the earlier drafts. `organizational_understanding_established` is now `true`; `diagnosis_authorized` remains `false`.
 
 Completed: Case Identity, Purpose, Explicit Boundaries, Observed Conditions, Lifecycle Scope declared. Prior-round Observation and Evidence exist (HV-IV-001–007). New-round Observation complete: O-001, O-002, O-003, O-004, O-011, O-012 fully collected; O-005–O-010 informed with explicit limitations where evidence is partial. work-objects/WO-001-search-visibility-baseline.md formalizes this as the case's Active, **Established** baseline work object — see its Baseline Acceptance Criteria Assessment: all nine criteria met, earned incrementally (an initial premature `true` was corrected to `Provisional`/`false`, decisions/DD-008 §6, then two genuine gaps — O-012 tooling, O-003 geo-control — were closed in turn with real evidence, EV-017 and EV-018, before the verdict returned to `true`).
 

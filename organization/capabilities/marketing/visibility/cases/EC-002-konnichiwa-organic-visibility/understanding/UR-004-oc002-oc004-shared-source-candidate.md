@@ -7,7 +7,7 @@
 
 Candidate *(at construction, per this task's default-status rule; superseded by the Challenge outcome below — see final disposition)*
 
-**Final disposition: Rejected**, per the independent Challenge (Role B) below.
+**Final disposition: Rejected**, per the independent Challenge (Role B) below. **Confirmed by decisions/DD-015, Case-Owner Decision (Kelvin Wong, 25 July 2026): status remains Rejected, authoritative use prohibited, preservation required.** OC-002 remains a standalone, unexplained condition as a direct result of this rejection.
 
 ## Relationship Type
 
