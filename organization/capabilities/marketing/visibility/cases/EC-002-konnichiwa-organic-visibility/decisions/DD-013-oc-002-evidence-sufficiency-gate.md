@@ -3,7 +3,19 @@
 
 Date: 24 July 2026. Reviewer: Claude, as HELIX Evidence Investigator for EC-002, executing measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md under Kelvin's Path 1 authorization (decisions/DD-011 amendment). Basis: HV-MP-002 §13 (as instructed in this run's Claude Execution Markup), observations/O-013.md, claims/OC-002-competing-explanations-register.md.
 
-## Verdict
+## Reassessment, 24 July 2026 (blocked-evidence-completion attempt)
+
+A follow-up run attempted to complete the four evidence groups this gate's Conditions named as outstanding (E-05 profile change history, E-06 review development, E-07 photo/post activity, E-11 operational context). **Result: no authenticated, direct read-only Google Business Profile access is available to Claude, and no new data was supplied by Kelvin in that run.** Per the run's own Access Boundary, this gap was not bypassed or guessed around. Instead, measurement/HV-ER-001-oc-002-blocked-evidence-request.md was produced, specifying exactly what Kelvin would need to supply for each of the four items, including the Operational Context Declaration questionnaire for E-11.
+
+**No new evidence was obtained. Per this run's own instruction ("when no evidence is supplied: update blocker status only; do not create a positive or negative observation"), no new EV-### or O-### record was created, and no relationship assessment was performed for any of the four groups** — "Not assessable" / "Insufficient" is the honest status for all four, not because a null result was found, but because no evidence exists yet to assess.
+
+**Reassessment outcome: Evidence Sufficiency Remains PASSED WITH CONDITIONS.** Advancing to PASSED requires at least one bounded relationship to gain sufficient evidence for consideration during Organizational Understanding — none did, since no new evidence arrived. Falling to FAILED is not warranted either — nothing contradicts the existing characterization (observations/O-013.md), and the decline remains reliably characterized as before. The four Conditions from the original verdict below stand unchanged and remain open pending Kelvin's response to HV-ER-001.
+
+This reassessment does not authorize Organizational Understanding, Diagnosis, Design, or Transformation, and does not change OC-002's status as a Justified Organizational Claim.
+
+**Correction, 24 July 2026 (same day, before this reassessment was reported as final):** a case-owner review of this checkpoint's own review-count citation (605, from evidence/HV-IV-001.md) against EV-018 surfaced a second, previously untranscribed figure — 625 reviews, visible on the same screen as the 24 July local-pack observation, now recorded as an Owner Declaration in observations/O-003.md and tracked as an open evidence conflict, Challenge Evidence/CR-register.md CR-006. Both values are preserved with their dates; neither is treated as "the" current count. This does not change the Reassessment outcome above — it corrects a documentation-currency issue found while reviewing this checkpoint, the same category of correction as claims/ES-001-evidence-synthesis-review.md's earlier catch on observations/O-004.md.
+
+## Verdict (original, 24 July 2026 — unchanged by the Reassessment above)
 
 **PASSED WITH CONDITIONS.**
 
