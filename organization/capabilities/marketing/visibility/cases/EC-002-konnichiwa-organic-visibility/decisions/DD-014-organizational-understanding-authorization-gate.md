@@ -179,3 +179,38 @@ Per this task's explicit instruction, `organizational_understanding_authorized` 
 - **NOT AUTHORIZED**
 
 Only after that explicit response, given as a separate, later instruction, may the repository record authorization and Organizational Understanding construction begin.
+
+---
+
+## Case-Owner Decision (recorded 24 July 2026)
+
+**This section records Kelvin Wong's explicit response to the Recommendation above. It does not replace, edit, or overwrite the Recommendation, the Precondition Verdict, the Gate Criterion Matrix, the Partial Evidence Decision Table, the Candidate Draft Review, or the "Pending" state that preceded this decision — all remain intact above, unmodified, as the historical record of the independent gate review.**
+
+```yaml
+decision: AUTHORIZED WITH CONDITIONS
+authorized_phase: Organizational Understanding
+authorized_by: Kelvin Wong
+authorization_date: 2026-07-24
+gate_reference: DD-014
+diagnosis_authorized: false
+design_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Kelvin Wong, as case owner of EC-002 — Konnichiwa Organic Visibility Growth, accepts this gate's recommendation in full and authorizes the Organizational Understanding phase **subject to every Mandatory Condition listed above**, copied verbatim below as the binding terms of this authorization:
+
+1. Organizational Understanding must be **reconstructed** from the seven Justified Claims directly — not simply promoted from understanding/OU-001…md or OU-002…md.
+2. Every relationship constructed receives an **explicit relationship type** (e.g., co-occurrence, shared-evidence, structural, attribution-limiting) — no unlabeled or implied relationship.
+3. Default relationship status is **Candidate** until independently challenged.
+4. **Every relationship must be challenged** (a falsification pass, consistent with this case's existing claim-challenge discipline) before being cited as more than Candidate.
+5. **OC-002 may remain a standalone condition** if no justified relationship to it survives challenge — this is an acceptable, non-deficient outcome, not a gap to be forced shut.
+6. **OC-007 remains a Measurement/Attribution Constraint** — it limits evaluation of every other claim's business-outcome relevance and must not be reframed as a positive finding.
+7. **CE-06 and CE-07 remain Weakly Supported candidate explanations, not causes** — any Understanding-stage reference to profile activity or review behavior must carry this exact status forward.
+8. **CE-12 remains Unassessable** — no relationship may treat the three GBP attribute changes as dated or as explaining the decline.
+9. **CR-006 remains visible** in any Understanding artifact that references Konnichiwa's review count.
+10. **No Understanding artifact may authorize Diagnosis** — Understanding construction and Diagnosis remain separately gated, per EM-001.
+
+**Explicitly not authorized by this decision:** Diagnosis, Design, Transformation, external changes of any kind, promotion of understanding/OU-001…md or OU-002…md as-is, and any relationship not independently reconstructed and challenged per Conditions 1–4 above. This decision authorizes the *phase* — construction and testing of candidate relationships among justified claims — not any specific relationship, conclusion, or outcome.
+
+**Effect on current_stage:** `current_stage` transitions to `Organizational Understanding`. `organizational_understanding_authorized` becomes `true`. `organizational_understanding_established` remains `false` until relationships are actually constructed and challenged under the conditions above. See current.md for the full updated Formal State block.
