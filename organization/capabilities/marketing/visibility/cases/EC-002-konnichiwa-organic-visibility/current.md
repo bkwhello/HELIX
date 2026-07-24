@@ -1,22 +1,34 @@
 # Current State — EC-002
 ---
 
-Last updated: 24 July 2026 (baseline formally **Established** — Kelvin performed a genuinely Utrecht-controlled local-pack observation for "omakase Utrecht," closing the last of nine baseline acceptance criteria).
+Last updated: 24 July 2026 (Lifecycle compliance correction — decisions/DD-012: Organizational Understanding was entered without valid prior authorization; `current_stage` reverted to Justified Organizational Claims; OU-001/OU-002 reclassified Draft — Not Authoritative; Kelvin separately authorized Path 1 evidence collection for OC-002).
 
-## Formal State (per decisions/DD-008 gate verdict, corrected, then Established)
+## Formal State (per decisions/DD-012 lifecycle compliance review)
 
 ```yaml
 status: Open
-current_stage: Observation and Evidence Collection
+current_stage: Justified Organizational Claims
 case_establishment: Completed
 baseline_state: Established
 baseline_established: true
+evidence_synthesis: Completed
+claims_gate: Passed
+justified_claims_established: true
+organizational_understanding_established: false
+organizational_understanding_note: Draft artifacts exist (OU-001, OU-002) but are Not Authoritative — entered without valid authorization, see decisions/DD-012
+oc002_evidence_collection: Authorized (Path 1, decisions/DD-011 amendment, 24 July 2026) — read-only, diagnosis and intervention selection explicitly not authorized
 diagnosis_established: false
 design_authorized: false
 transformation_started: false
 external_changes_authorized: false
-next_action: Begin constructing Justified Organizational Claims from the now-Established baseline (decisions/DD-004 Days 4–7) — see work-objects/WO-001-search-visibility-baseline.md
+next_action: Execute measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md (read-only); separately, obtain explicit unambiguous case-owner authorization before re-entering Organizational Understanding
 ```
+
+**Correction, 24 July 2026 (decisions/DD-012):** the previous version of this record set `current_stage: Organizational Understanding` and `organizational_understanding_established: true` on the basis of Kelvin's message "registratie klopt, de rest kan starten," interpreted as authorization to begin that stage. A lifecycle compliance review found this insufficient: that message confirmed an evidentiary fact (Guestplan no-shows), not a named lifecycle-stage transition, and decisions/DD-010 explicitly states Organizational Understanding was "not yet begun" after the Claims gate passed. No prior decision authorized the transition. OU-001 and OU-002 are preserved, unmodified, but reclassified **Draft — Prematurely Produced, Not Authoritative**. `current_stage` is reverted to `Justified Organizational Claims`, the last validly-gated stage (decisions/DD-010, PASSED).
+
+**Separately, and unaffected by the above:** Kelvin authorized Path 1 of decisions/DD-011's "Two Paths Forward" for OC-002 (a Justified Organizational Claim under DD-010, independent of the Understanding-stage question) — gather additional evidence on the GBP decline before any diagnosis; the decline itself is not to be treated as a diagnosis, and no intervention is to be selected yet. See measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md.
+
+**Prior corrections preserved:**
 
 **Correction accepted, 24 July 2026:** an earlier version of this record set `baseline_established: true` on the reasoning that the underlying HV-BL-001 data was real and complete. That reasoning was insufficiently rigorous — completeness of *data collection* is not the same as satisfying the case's *baseline acceptance criteria*. `baseline_state` was corrected to `Provisional` / `baseline_established: false` until the criteria were actually, verifiably met.
 
@@ -24,7 +36,7 @@ next_action: Begin constructing Justified Organizational Claims from the now-Est
 
 ## Current lifecycle stage
 
-Case Establishment: **Completed** (gate passed with conditions, decisions/DD-008, 24 July 2026). Now in Observation and Evidence Collection (see Lifecycle Scope.md).
+Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. **This is the case's current authoritative stage.** Organizational Understanding: **Attempted without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026); OU-001 and OU-002 exist but do not count as established. Organizational Diagnosis: **Not started.** OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Authorized, read-only, not yet executed** — see measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md.
 
 ## Completed artifacts
 
@@ -52,12 +64,26 @@ Case Establishment: **Completed** (gate passed with conditions, decisions/DD-008
 - **measurement/HV-DB-001.md — regenerated as v5, 24 July 2026.** Per-source status matrix (Measured/Pending/Unavailable/Not Configured) with last-measured dates; no missing data shown as zero. The *published, live* dashboard page has not itself been republished — separate follow-up.
 - **business/Marketing/README.md — created, 24 July 2026.** Points to `organization/capabilities/marketing/` as authoritative for capability engineering; clarifies `business/Marketing/` is an empty structural placeholder, not a competing authority. `capability.md`'s relationship section rewritten to match.
 - **decisions/DD-008 §6–7 — correction and condition resolution recorded, 24 July 2026.**
+- **claims/ES-001-evidence-synthesis-review.md — created, 24 July 2026.** Observation-to-evidence readiness matrix for all 12 O-###; Evidence Integrity Verdict: PASSED. Flagged and separately corrected one documentation-currency issue (O-004.md's stale CR-005 wording).
+- **claims/OC-001 through OC-007 — created, 24 July 2026.** Seven candidate Organizational Claims, each with embedded falsification testing (repository-native pattern from `workspace /cases/EC-001…/claims/OC-001…md`). All seven: Challenge Outcome "Survives with Narrowing," promoted to Justified Organizational Claim. Full list, confidence, and evidence in claims/OC-register.md.
+- **claims/OC-register.md — created, 24 July 2026.** Index of all seven claims; explicit record of why O-009/O-010 were not drafted as standalone claims; confirms zero claims rejected, zero left at "Requires More Evidence" this round.
+- **decisions/DD-010 — Justified Organizational Claims Gate Review, 24 July 2026.** Verdict: PASSED. All seven gate criteria met (evidence synthesis complete, traceability, challenge survival, explicit scope/limitations, no unsupported causal language, rejected/conditional claims preserved, current.md brought into agreement).
+- **observations/O-004.md — corrected, 24 July 2026.** Stale "CR-005 not resolved" / "not yet promoted" wording updated to reflect the actual, already-resolved state and OC-001's promotion.
+- **observations/O-011.md, claims/OC-007…md — no-shows figure confirmed, 24 July 2026.** Kelvin confirmed Guestplan's 0% no-shows over 90 days is an accurate registration, not a tracking gap. OC-007's Limitations/Alternative Interpretations/Boundaries updated accordingly; the 162-reservation discrepancy remains separately open (not addressed by this confirmation).
+- **understanding/OU-001 – Konnichiwa's Search and Entity Presence for Flagship Dining Formats — created, 24 July 2026.** Synthesizes OC-001, OC-003, OC-004: strong, cross-corroborated presence for teppanyaki/omakase; weaker, unexplained presence for broader categories; naming inconsistency coexists with, does not explain, the pattern.
+- **understanding/OU-002 – Sound Technical Foundation With Targeted Content-Accessibility Gaps — created, 24 July 2026.** Synthesizes OC-005, OC-006: page performance is good; content machine-accessibility has three specific, separate gaps.
+- **understanding/README.md — created, 24 July 2026.** Explicitly documents that OC-002 and OC-007 are not integrated into any Understanding, and why — not a silent omission.
+- **decisions/DD-011 — Organizational Understanding Gate Review, 24 July 2026.** Original verdict PASSED WITH CONDITIONS, now **suspended** (see decisions/DD-012). Amended same day with Kelvin's Path 1 authorization for OC-002 evidence collection, which stands independently.
+- **decisions/DD-012 — Lifecycle Compliance Review, 24 July 2026.** Verdict: FAILED. Found that Organizational Understanding was entered without a prior authorizing decision. OU-001/OU-002 reclassified Draft — Not Authoritative; `current_stage` reverted to Justified Organizational Claims; explicit case-owner authorization required before re-entry.
+- **measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md — created, 24 July 2026.** Bounded, 13-item read-only evidence-collection plan for the GBP decline, authorized under Path 1.
+- **claims/OC-007…md — Classification added, 24 July 2026.** Classified as a Measurement/Attribution Constraint limiting evaluation of visibility-to-reservation performance; the unexplained reservation difference is explicitly not represented as lost reservations.
 
 ## Active work
 
+- **Evidence Synthesis and Justified Organizational Claims: Completed, 24 July 2026 (decisions/DD-010, PASSED).** 7 candidate claims (OC-001–OC-007) drafted directly from work-objects/WO-001-search-visibility-baseline.md, each individually challenged against an 8-question falsification test set, all promoted with narrowing applied. None asserts unsupported causation; none generalizes a single observation into a stable trend; the 162-reservation gap, 0% no-shows, and GBP-decline cause are all explicitly preserved as unresolved rather than quietly resolved. The pre-existing legacy candidate register (claims/EC-002-CL-candidate-register.md, CL-001–009, migrated from the original case) was left untouched and has not been re-evaluated against this round's evidence.
 - New O-001–O-012 SEO/local observation round: **6 fully collected (O-001, O-002, O-003, O-004, O-011, O-012)**, 5 informed with explicit limitations (O-005, O-006, O-007, O-008, O-010), 1 partially informed (O-009).
 - **All nine baseline acceptance criteria are now met — `baseline_state: Established`, `baseline_established: true`.** See work-objects/WO-001-search-visibility-baseline.md's Baseline Acceptance Criteria Assessment for the full, criterion-by-criterion basis and the corrected history (an initial premature `true` → `Provisional`/`false` → `Established`, earned incrementally with real evidence at each step, nothing fabricated).
-- **New unresolved item (O-011):** 162-reservation gap between "Reserveringen per bron" (576) and "Service-reserveringen" (414) in Guestplan — plausibly workshop/private-dining/catering/lunch bookings not covered by the two-category service breakdown, not confirmed. Also: 0% no-shows over 90 days is unusually clean and worth confirming with Kelvin rather than trusting at face value; 12.3% cancellation rate flagged with no benchmark to judge it against.
+- **Unresolved item (O-011):** 162-reservation gap between "Reserveringen per bron" (576) and "Service-reserveringen" (414) in Guestplan remains open — plausibly workshop/private-dining/catering/lunch bookings not covered by the two-category service breakdown, not confirmed. **0% no-shows — confirmed accurate by Kelvin, 24 July 2026** (registration is correct, not a tracking gap); no longer an open question. 12.3% cancellation rate still flagged with no benchmark to judge it against.
 - **Two website UX fixes prepared, not yet deployed (HV-INT-004, HV-INT-005):** holiday popup now only shows once per visitor (was showing on every homepage load); the shared page-title component (`pageBanner()`) had no responsive font-size, causing long single-word titles like "Arrangements" to overflow off-screen on mobile — now fixed site-wide. Both sit in the local theme copy at `Local Sites/konnichiwa/app/public/wp-content/themes/konnichiwa/`, awaiting FTP deployment by Kelvin.
 - Weekly Monday 10:00 operating loop (decisions/DD-003) — not yet run once.
 - **HV-INT-003 — GA4 tag published and confirmed working, 23 July 2026 (Provisionally Earned).** Root cause: the GA4 Google-tag (G-C29ZMF288W) was added to the GTM container 2 months ago but never published — sat unpublished in "Wijzigingen in behandeling." Published, then Realtime testing in Safari still showed 0 (Safari's cross-site tracking prevention blocked it) — retested in Chrome, confirmed active users appearing in Realtime. Fix confirmed working. See transformation/HV-IR-001.md, HV-INT-003. Container quality also flagged "3 issues" needing attention — not yet reviewed.
@@ -78,7 +104,12 @@ Case Establishment: **Completed** (gate passed with conditions, decisions/DD-008
 
 ## Next authorized action
 
-**Baseline is Established.** decisions/DD-004 Days 4–7 (diagnose and authorize) formally opens: construct justified claims from the now-complete baseline, challenge feasibility per theme, identify the smallest high-leverage interventions, prepare change records, obtain approval before further website/profile changes. Highest-priority input for that work: the unexplained 6-month GBP decline (observations/O-002.md) — the largest, least-understood finding in the case.
+**Two separate, independent next actions:**
+
+1. **OC-002 evidence collection (authorized, Path 1):** execute measurement/HV-MP-002-oc-002-gbp-decline-evidence-plan.md's read-only items. The GBP decline itself is not a diagnosis and no intervention may be selected from this work.
+2. **Organizational Understanding (not authorized):** OU-001 and OU-002 exist as Draft, Not Authoritative (decisions/DD-012). Re-entering this stage requires an explicit, unambiguous case-owner statement naming the transition — not inferred from confirming an evidentiary fact. Until given, the case's authoritative stage remains Justified Organizational Claims (decisions/DD-010).
+
+No Diagnosis, Design, or Transformation is authorized for any part of the case.
 
 ## Unresolved unknowns
 
@@ -92,8 +123,8 @@ Case Establishment: **Completed** (gate passed with conditions, decisions/DD-008
 - What is "takumi" (1,400 GBP profile-discovery searches, observations/O-002.md) — unexplained.
 - What are the 3 flagged GTM "Container Quality" issues? Not yet reviewed.
 - How large is the Safari/iOS share of Konnichiwa's real visitors — needed to size how much GA4 will structurally undercount going forward (observations/O-002.md showed 85% of GBP discovery is mobile, device OS split unknown).
-- What explains the 162-reservation gap between Guestplan's two reservation reports (observations/O-011.md)?
-- Is Guestplan's 0% no-shows figure accurate, or is no-show tracking incomplete?
+- What explains the 162-reservation gap between Guestplan's two reservation reports (observations/O-011.md)? Still open — Kelvin's 24 July confirmation covered no-show tracking specifically, not this discrepancy.
+- ~~Is Guestplan's 0% no-shows figure accurate, or is no-show tracking incomplete?~~ **Resolved, 24 July 2026** — Kelvin confirmed the registration is accurate.
 - No same-period-last-year comparison exists for the Guestplan baseline — is 576 reservations/90 days typical, growing, or declining?
 - Whether Konnichiwa's #2 local-pack position (EV-018) holds across other Utrecht points, times, and devices — only one point-in-time observation exists so far.
 - The published, live HV-DB-001 dashboard page (and the Command Center artifact) still show the older v4 state — not republished against v5 in this task.
