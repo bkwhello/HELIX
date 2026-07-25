@@ -2,7 +2,7 @@
 
 ## Status
 
-Candidate Organizational Diagnosis
+**Established Organizational Diagnosis.** Establishment: **Conditional**. Authority: decisions/DD-017, Case-Owner Decision (Kelvin Wong, 25 July 2026). *Previously Candidate Organizational Diagnosis, 25 July 2026, then Survives with Narrowing on independent challenge (Phase 8, below) — established with all seven of decisions/DD-017's conditions accepted as binding.* Established **only** for DQ-001, only for the four named query themes, only for the documented 21 Apr–21 Jun 2026 Search Console window, and only for the organic-search surface — see decisions/DD-017's Case-Owner Decision, Diagnosis Scope section, for the full boundary. **Only the narrowed, post-challenge, associative wording below is authoritative** — this establishment does not re-open, edit, or strengthen it.
 
 ## Authorized Question
 

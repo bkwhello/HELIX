@@ -85,3 +85,55 @@ dq_001_establishment_decision: Pending
 Only after that explicit response, given as a separate, later instruction, may `dq_001_diagnosis_established` be set to `true`, and may this diagnosis be cited as case-authoritative. No response should be inferred from permission to continue, commit, or push.
 
 Design, Transformation, and external changes remain unauthorized regardless of this decision's outcome — `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`. DQ-002, DQ-004, DQ-005, and DQ-007 remain not started; DQ-003 and DQ-006 remain unauthorized.
+
+---
+
+## Case-Owner Decision (recorded 25 July 2026)
+
+**This section records Kelvin Wong's explicit response to the Gate Decision above. It does not replace, edit, or overwrite the Precondition Verdict, the Investigation Summary, the Gate Criteria Assessment, the Verdict and its seven conditions, the Constraints and Unresolved Alternatives, or the "Pending" state that preceded this decision — all remain intact above, unmodified, as the historical record of the independent gate review and of diagnosis/DQ-001-investigation.md's original candidate-diagnosis construction and challenge history.**
+
+```yaml
+decision: ESTABLISHED WITH CONDITIONS
+diagnosis_question: DQ-001
+established_diagnosis: OD-001
+established_by: Kelvin Wong
+establishment_date: 2026-07-25
+gate_reference: DD-017
+
+design_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Kelvin Wong, as case owner of EC-002 — Konnichiwa Organic Visibility Growth, issues **ESTABLISHED WITH CONDITIONS** for DQ-001's Candidate Organizational Diagnosis, OD-001. All seven conditions from the Gate Decision's Verdict above are accepted as binding, restated here in full:
+
+1. The Diagnosed Mechanism must remain stated as associative/evidence-consistent, never as a proven causal mechanism — no controlled test exists or is available in this case.
+2. The Competitive Breadth finding must not be cited as confirming the named competitors' actual current SERP positions — O-010/HV-IV-006 is a Medium-reliability, single-dated (22 Jul 2026), search-based register, not an independently verified ranking check.
+3. "Category breadth" (structural difficulty of ranking broad terms) and "named-competitor crowding" must not be presented as two independently confirmed, separable mechanisms — available evidence cannot distinguish them, and OD-001 must continue to state this entanglement explicitly.
+4. No query-to-page causal claim may be made — the absence of a Search Console query×page cross-tabulation means the specific page serving each query is inferred from the page inventory, not confirmed.
+5. Confidence must remain Medium, not upgraded, absent either a fresher, independently-verified competitor check or new query-to-page attribution data.
+6. Conversion, revenue, and reservation effects remain explicitly excluded, per UR-003's Attribution Constraint (OC-007), inherited via OU-003 — this diagnosis may not be read as bearing on business outcomes.
+7. This diagnosis does not authorize, select, or imply any content, page, schema, GBP, or review action — any future Design response requires a separate, later Design Authorization Gate.
+
+### Diagnosis Scope (established)
+
+OD-001 is established **only** for:
+
+- **DQ-001** — no other diagnosis question is affected by this decision.
+- The measured flagship themes ("teppanyaki utrecht," "omakase utrecht") and broad-category themes ("japans restaurant utrecht"/"japanese restaurant utrecht," "sushi utrecht") — no other query theme.
+- The documented Search Console period, 21 Apr–21 Jun 2026 — no claim beyond that window.
+- The documented organic-search surface (Search Console) — the single omakase local-pack point (EV-018) remains adjacent corroboration only, not pooled into the established mechanism.
+- The explicit evidence limitations already recorded in OD-001 (E-03, E-10, competitor-register reliability, missing query×page cross-tabulation, sushi's low click volume).
+
+### Effect on OD-001
+
+OD-001's Status is updated to **Established Organizational Diagnosis**, Establishment: **Conditional**, Authority: this Case-Owner Decision section — see diagnosis/OD-001-flagship-format-competitive-breadth.md. Its narrowed, associative wording (post-Phase-8) is unchanged and remains the only authoritative wording; this decision does not re-open, edit, or strengthen that wording. OD-001 continues to explicitly not claim: that competitive breadth caused the ranking contrast (only that it is associatively consistent with it); that the competitor register is verified SERP-position history; that the diagnosis applies beyond the four named themes, the stated period, devices, or locations; that organic and local-pack positions are equivalent; that the condition caused any conversion, reservation, or revenue outcome; or that any particular intervention will improve performance.
+
+### Effect on Lifecycle State
+
+- `dq_001_diagnosis_established`: `false` → **`true`**
+- `dq_001_establishment_decision`: `Pending` → **`Established With Conditions`**
+- `current_stage` remains `Organizational Diagnosis` — this decision establishes one diagnosis within that stage, it does not advance the case to a new lifecycle stage.
+- `diagnosis_established` (case-wide) becomes `true`, explicitly scoped: `diagnosis_established_scope: DQ-001 only` — DQ-002, DQ-004, DQ-005, and DQ-007 are **not** established, and not started, by this decision.
+- `design_authorized`, `transformation_authorized`, `external_changes_authorized` all remain `false` — this decision does not authorize Design, Transformation, or any external system change. Any future Design response to OD-001 requires a separate, later Design Authorization Gate, not implied or pre-approved here.
+- DQ-003 and DQ-006 remain Not Authorized, unaffected by this decision.

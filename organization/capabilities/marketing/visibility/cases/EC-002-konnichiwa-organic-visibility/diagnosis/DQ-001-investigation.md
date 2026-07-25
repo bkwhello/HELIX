@@ -1,6 +1,8 @@
 # DQ-001 Investigation — Why Flagship Themes Outperform Broad Categories
 ---
 
+**Status: Completed.** Resulting Candidate Organizational Diagnosis (diagnosis/OD-001-flagship-format-competitive-breadth.md) is now **Established Organizational Diagnosis (Conditional)** — decisions/DD-017, Case-Owner Decision, Kelvin Wong, 25 July 2026. This investigation record itself is preserved unmodified as the historical basis for that establishment; it does not change as a result of the establishment decision.
+
 *Executed under decisions/DD-016's Case-Owner Decision (Kelvin Wong, 25 July 2026), which Authorized DQ-001 without conditions, subject to the Phase 5 scope in decisions/DD-016 and the Question-Specific Rules recorded there. Four roles kept explicitly separate: Role A (Evidence Investigator), Role B (Competing Explanation Constructor), Role C (Falsification Challenger), Role D (Diagnosis Gate Reviewer, see decisions/DD-017). No role used a later role's conclusion as evidence for an earlier role — this file is written in execution order (Phase 1 → 6); Phase 7 (diagnosis/OD-001…md) and Phase 8 (the challenge embedded in that file) were only performed after this file's Phase 6 was complete.*
 
 ## Authorized Question
