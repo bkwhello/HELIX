@@ -1,7 +1,7 @@
 # Organizational Diagnosis — Index (EC-002)
 ---
 
-**Two Organizational Diagnoses are established: DQ-001 and DQ-004 (both Conditional).** `diagnosis_established_scope: DQ-001, DQ-004`. **DQ-005 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED, decisions/DD-019 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-005. **DQ-007 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED WITH CONDITIONS, decisions/DD-020 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-007. DQ-002 has not begun. See below.
+**Three Organizational Diagnoses are established: DQ-001, DQ-002, and DQ-004 (all Conditional).** `diagnosis_established_scope: DQ-001, DQ-002, DQ-004`. **DQ-005 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED, decisions/DD-019 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-005. **DQ-007 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED WITH CONDITIONS, decisions/DD-020 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-007. All five authorized/conditionally-authorized diagnosis questions have now been investigated, and every question capable of producing an Organizational Diagnosis is now established. See below.
 
 **Diagnosis Authorization Gate (decisions/DD-016, 25 July 2026):** independent gate review inventoried and reconciled 7 raw candidate diagnosis questions to 5 canonical, admissible ones (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) plus 2 reclassified Not a Diagnosis Question (DQ-003 — monitoring; DQ-006 — intervention-loaded).
 
@@ -19,7 +19,7 @@ Each authorized/conditionally-authorized question carries its own binding contai
 
 **Scope of establishment:** DQ-001 only; the four named query themes only; the documented 21 Apr–21 Jun 2026 Search Console window only; the organic-search surface only. OD-001's narrowed, associative wording is unchanged and remains the sole authoritative version — it does not claim causation, verified competitor SERP positions, generalization beyond the measured themes/period/surface, organic/local-pack equivalence, or any conversion/reservation/revenue effect, and it does not imply or authorize any intervention.
 
-DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-003 and DQ-006 remain **Not Authorized**.
 
 ## DQ-004 — Established With Conditions (25 July 2026)
 
@@ -31,7 +31,7 @@ DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not 
 
 **Scope of establishment:** DQ-004 only; the specific URLs, measurements, and observation period documented in diagnosis/DQ-004-investigation.md only. Missing cache/CDN headers are not proof caching is absent; consistent repeat-request timing is supporting context only, not proof of cache misses; backend processing and cache behaviour remain entangled; the CrUX distribution tail's mechanism remains unresolved; Confidence remains Medium at most; no ranking/conversion/revenue/reservation effect may be inferred; no cache, CDN, hosting, WordPress, code, or production change is authorized by this establishment.
 
-DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-003 and DQ-006 remain **Not Authorized**.
 
 Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No production or external system was changed — DQ-004's investigation used only public, read-only HTTPS requests to the already-published site. No Design Authorization Gate has been created.
 
@@ -41,7 +41,7 @@ Design, Transformation, and external changes remain unauthorized (`design_author
 
 **Diagnosis Outcome: Evidence Insufficient.** No Candidate Organizational Diagnosis was created; no OD-### identifier was consumed. **decisions/DD-019** is the Diagnosis Establishment Gate: **PASSED** (unconditional). Kelvin then issued **ACCEPTED** (decisions/DD-019, Case-Owner Decision, 25 July 2026): the Evidence Insufficient outcome is confirmed as DQ-005's authoritative, closed result. **No Organizational Diagnosis exists for DQ-005 and none may be created or consumed to close this question.** Absence of evidence is not treated as evidence that OC-005 has no AI effect — this closes the investigation as conducted, not the underlying question in the abstract. Reopening DQ-005 requires materially new evidence and a new explicit case-owner decision. `dq_005_diagnosis_established` remains **`false`**; `dq_005_acceptance_decision` is now **`Accepted`**; DQ-005's status is **Completed — Evidence Insufficient** (not Pending, not Established).
 
-DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-003 and DQ-006 remain **Not Authorized**.
 
 Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No new AI-system queries were run — only existing evidence/HV-IV-004.md and evidence/HV-TS-001.md records were compared, per decisions/DD-016's Permitted Evidence Collection for DQ-005. No Design Authorization Gate has been created.
 
@@ -53,6 +53,22 @@ Design, Transformation, and external changes remain unauthorized (`design_author
 
 **Binding conditions carried forward:** the decline remains classified only as a verified GBP profile-engagement decline (never demand, revenue, or reservation); the non-monotonic pattern is preserved; CE-DQ7-B/C/J/L remain Weakly Supported only within their narrow scopes; no candidate may be presented as Associatively Consistent or causal; the Birdeye benchmark and the 13 June 2026 forum report remain non-official/unverified; the GA4-integration finding excludes only that specific mechanism, not other Google reporting changes; E-05/E-06/E-07 remain Partial; E-03/E-10 remain Structurally Unavailable; CR-006 remains Open, 605/625 unreconciled; CE-11 remains Unsupported only within its thirteen declared categories; current snapshots remain unsuitable as complete historical trend evidence; no Design/Transformation/external change is authorized.
 
-DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-003 and DQ-006 remain **Not Authorized**.
 
 Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No GBP configuration was accessed or changed; no post, review response, hours edit, attribute edit, or photo upload occurred. No Design Authorization Gate has been created. OC-002 remains a Standalone Condition; CR-006 remains Open; no GBP interaction is characterized as a completed reservation; the 162-reservation discrepancy is not referenced.
+
+## DQ-002 — Established With Conditions (25 July 2026)
+
+**diagnosis/DQ-002-investigation.md** records the full read-only investigation into the Konnichiwa/Konichiwa naming inconsistency's visibility effect. A full name-variant inventory (Phase 1) distinguished first-party (website, GBP), third-party (Yelp, Tripadvisor, Instagram, Facebook, Eet.nu, Quandoo), and search-snippet evidence classes. The canonical entity baseline (Phase 2) confirmed both primary first-party surfaces (konnichiwa.nl, GBP) use the correct spelling consistently. Two bounded, explicitly non-geo-controlled search checks (Phase 3) found no competing entity for either spelling. A direct, permitted re-analysis of EV-014's raw Search Console export (Phase 4, `Zoekopdrachten.csv`) found the misspelled query family shows **equal-to-better**, not worse, average position in both directly-tested query pairs ("konnichiwa utrecht" 2.68 vs. "konichiwa utrecht" 1.74; "konnichiwa" 5.46 vs. "konichiwa" 3.99) — the only consistent, measurable difference is impression/click volume.
+
+Eight candidate explanations were tested (Phase 5). **diagnosis/OD-003-name-variant-entity-resolution.md** is the resulting diagnosis, independently challenged and **Survives**. **decisions/DD-021** is the Diagnosis Establishment Gate: **PASSED WITH CONDITIONS** (original gate-reviewed confidence: Medium-High). Kelvin then issued **ESTABLISHED WITH CONDITIONS** (decisions/DD-021, Case-Owner Decision, 25 July 2026), narrowing the citable formulation and adding five conditions beyond the gate's own seven (twelve total, verbatim), and separately set OD-003's authoritative confidence to **Medium** — narrower than the gate's own Medium-High, which remains preserved unchanged as historical analysis. `dq_002_diagnosis_established` is now `true`; OD-003's Status is **Established Organizational Diagnosis (Conditional)**, Confidence: **Medium**.
+
+**Authoritative formulation (decisions/DD-021, Case-Owner Decision — the sole citable statement of this diagnosis, superseding the gate-reviewed "functional resolution... structurally evidenced" wording in OD-003's own body text):**
+
+> "Within the EV-014 Search Console dataset and its documented query pairs, both 'Konnichiwa' and 'Konichiwa' generated impressions and clicks for Konnichiwa's own website. In those observations, the misspelled variant did not show a worse average position or CTR than the corresponding correctly spelled variant. This does not establish universal entity resolution or the absence of visibility effects outside the measured queries, period, device, country and search surface."
+
+**Scope of establishment:** DQ-002 only; the EV-014 dataset, its documented date window, and the specific query pairs recorded in diagnosis/DQ-002-investigation.md only. No generalization to all branded searches, users, locations, devices, countries, or time periods; "functional resolution" describes only the observed routing to Konnichiwa's website, not proof of universal Google-side entity merging; the non-geo-controlled search checks remain supporting context only, never Utrecht ranking evidence; the correct-spelling volume advantage is not attributed to search demand without separate evidence; absence of a measured position/CTR penalty is not equivalent to proof of no visibility effect; third-party and first-party-adjacent variants remain documented, not declared harmless; non-branded visibility remains governed by UR-001/OD-001; no conversion, revenue, reservation, customer-confusion, or brand-damage conclusion may be drawn; no name, listing, metadata, social-profile, or website correction is authorized by this establishment.
+
+DQ-003 and DQ-006 remain **Not Authorized**.
+
+Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No listing, GBP, website, schema, or metadata change occurred — all evidence collection was public read-only search snippets or already-collected first-party data. No Design Authorization Gate has been created. No conversion, revenue, or reservation claim appears anywhere in this investigation, per UR-003's Attribution Constraint.
