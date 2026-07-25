@@ -340,3 +340,90 @@ diagnosis_authorization_decision: Pending
 Kelvin may authorize any subset of DQ-001, DQ-002, DQ-004, DQ-005, and DQ-007 — authorization is not required to be all-or-nothing. DQ-003 and DQ-006 are not offered for authorization, since they are not Diagnosis questions; either could be separately reformulated (DQ-003 around a mechanism) or revisited after a later Design stage (DQ-006), but neither is part of this gate.
 
 Only after that explicit response, given as a separate, later instruction, may `diagnosis_authorized` be set to `true` for the named question(s), and may Organizational Diagnosis work begin for those questions specifically.
+
+---
+
+## Case-Owner Decision (recorded 25 July 2026)
+
+**This section records Kelvin Wong's explicit response to the Gate Decision above. It does not replace, edit, or overwrite the Precondition Verdict, the Phase 1–7 analysis, the complete DQ readiness matrix, the Foundation Matrix, the Constraint Map, the per-question Candidate Diagnosis Scope, the per-question Risk Review, the original recommendation, or the "Pending" state that preceded this decision — all remain intact above, unmodified, as the historical record of the independent gate review.**
+
+```yaml
+decision: PARTIALLY AUTHORIZED WITH CONDITIONS
+authorized_by: Kelvin Wong
+authorization_date: 2026-07-25
+
+authorized_questions:
+  - DQ-001
+
+conditionally_authorized_questions:
+  - DQ-002
+  - DQ-004
+  - DQ-005
+  - DQ-007
+
+not_authorized_questions:
+  - DQ-003
+  - DQ-006
+
+design_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Kelvin Wong, as case owner of EC-002 — Konnichiwa Organic Visibility Growth, issues a **question-specific, partial** authorization — not a blanket acceptance of the gate's full recommendation. Literal decision:
+
+> AUTHORIZED FOR: DQ-001
+> AUTHORIZED WITH CONDITIONS FOR: DQ-002, DQ-004, DQ-005, DQ-007
+> NOT AUTHORIZED FOR: DQ-003, DQ-006
+
+### Question-Specific Rules (binding terms of this authorization)
+
+**DQ-001 — Authorized.**
+- Preserve its bounded target condition (the established contrast: teppanyaki/omakase outperform japans restaurant/sushi in non-branded search position) exactly as scoped in Phase 5 above.
+- Do not assume content is the cause — content relevance is one candidate explanation among several, not the presumed answer.
+- Test the competing explanations already identified (competitive crowding, content relevance, category breadth) — do not substitute new ones without separate scope approval.
+- Require falsification per the method already defined in Phase 5; no conclusion may be asserted without it surviving that test.
+
+**DQ-002 — Authorized With Conditions.**
+- Visibility scope only, exactly as narrowed in Phase 5 (position/CTR comparison between the correct and misspelled entity-name forms).
+- Conversion and business-outcome effects remain excluded, per OC-007's Measurement/Attribution Constraint (UR-003) — this exclusion is not lifted by this authorization.
+- Do not presume the naming inconsistency has an effect — "no supported effect" is an explicitly acceptable, non-failure result.
+- CR-006 remains Open and unreconciled; this question does not depend on or resolve it.
+
+**DQ-003 — Not Authorized.**
+- Classification: Monitoring, not Diagnosis, unchanged from decisions/DD-016's Phase 1/2 finding.
+- May not enter the Diagnosis work queue in its current form. Reformulation around a mechanism (per Phase 2's own note) would require a separate, future gate review — not granted by this decision.
+
+**DQ-004 — Authorized With Conditions.**
+- Diagnose only the mobile TTFB *mechanism* (which component of response time is implicated) — exactly as scoped in Phase 5.
+- Do not infer user impact, ranking impact, or reservation impact without separate, independently-collected evidence — none of those is established or authorized for testing here.
+- Preserve the field-data (CrUX, EV-017) vs. lab-data (Lighthouse, unobtained per O-012) distinction — this diagnosis may use only the former.
+- Investigation remains strictly read-only, per Phase 5's exclusions; no hosting, server, or caching configuration access beyond what Kelvin voluntarily supplies, and no configuration change under any circumstance.
+
+**DQ-005 — Authorized With Conditions.**
+- This diagnosis must first confirm that the AI-representation errors it examines are independently observed (evidence/HV-IV-004.md, evidence/HV-TS-001.md) — it may not presuppose that OC-005's gaps caused them.
+- Do not presume OC-005's gaps caused those errors — the fact-by-fact correspondence test defined in Phase 5 must actually be run, not assumed.
+- If the target error condition (a specific, checkable AI error tied to a specific missing/unreadable data point) cannot be established from existing evidence, **stop with Evidence Insufficient** rather than proceed on inference.
+- Scope remains limited to the single AI scenario CR-003 already flags (Open, mitigated) — no generalization to "AI understanding" broadly.
+
+**DQ-006 — Not Authorized.**
+- Classification: intervention-loaded question, unchanged from decisions/DD-016's Phase 1/2 finding.
+- Prohibited from Diagnosis entirely under this decision.
+- May be reconsidered only in a later Design or Transformation context, contingent on DQ-005's outcome, and only after a separate authorization — not implied or pre-approved by this decision.
+
+**DQ-007 — Authorized With Conditions.**
+- OC-002 remains a standalone target condition — this authorization does not require or invent any relationship to OU-003 or OU-004.
+- E-05, E-06, and E-07's Partial limitations remain binding exactly as recorded in decisions/DD-013 and observations/O-013.md — this diagnosis may not treat any of them as complete.
+- E-03 and E-10 remain fully Blocking for any seasonality- or discovery-composition-trend-based candidate explanation (CE-01, CE-04) — these remain Unassessable and may not be inferred from proxy data.
+- CR-006 remains Open and unreconciled — no single review-count figure may be asserted.
+- The twelve already-registered competing explanations (claims/OC-002-competing-explanations-register.md) must be tested per Phase 5's falsification method — no new candidate without separate scope approval.
+- **"Evidence Insufficient" is an explicitly acceptable outcome** for this question, given the concentration of Unassessable candidates in access-blocked categories — this is not to be treated as investigation failure.
+- The 162-reservation discrepancy (O-011) may not be characterized as lost reservations under any circumstance, regardless of this diagnosis's findings.
+
+### Explicitly Not Authorized by This Decision
+
+Design, Transformation, and external changes of any kind (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`) — none of the five authorized/conditionally-authorized questions may be answered by proposing or implementing an intervention. DQ-003 and DQ-006 remain outside the Diagnosis work queue entirely. No Organizational Diagnosis has been created, started, or answered by this decision — it authorizes the *opening* of separate, bounded investigations for DQ-001, DQ-002, DQ-004, DQ-005, and DQ-007, each still subject to its own containment conditions above and in the Candidate Diagnosis Scope (Phase 5) sections of this gate.
+
+### Effect on Lifecycle State
+
+`current_stage` transitions to `Organizational Diagnosis`. `diagnosis_authorized` becomes `true`, scoped to the five named questions. `diagnosis_established` remains `false` — no diagnosis has been performed for any question. `design_authorized`, `transformation_authorized`, `transformation_started`, and `external_changes_authorized` all remain `false`. See current.md for the full updated Formal State block.

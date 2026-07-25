@@ -1,13 +1,13 @@
 # Current State — EC-002
 ---
 
-Last updated: 25 July 2026 (Diagnosis Authorization Gate reviewed, decisions/DD-016: RECOMMEND AUTHORIZED WITH CONDITIONS, question-specific. Canonical diagnosis-question inventory reconciled — 7 raw items (the "6+1"), 5 admissible (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007), 2 reclassified Not a Diagnosis Question (DQ-003 monitoring; DQ-006 intervention-loaded). DQ-001 READY; DQ-002/DQ-004/DQ-005/DQ-007 CONDITIONALLY READY under explicit scope containment. `diagnosis_authorized` remains `false` pending Kelvin's explicit, question-specific case-owner response. Design, Transformation, and external changes remain unauthorized.).
+Last updated: 25 July 2026 (Case-owner diagnosis decision recorded, decisions/DD-016: Kelvin Wong issued **PARTIALLY AUTHORIZED WITH CONDITIONS** — DQ-001 Authorized; DQ-002, DQ-004, DQ-005, DQ-007 Authorized With Conditions (each with binding, question-specific containment); DQ-003, DQ-006 Not Authorized. `current_stage` transitions to Organizational Diagnosis; `diagnosis_authorized` becomes `true`, scoped to the five named questions. `diagnosis_established` remains `false` — no investigation has begun for any question. Design, Transformation, and external changes remain unauthorized.).
 
-## Formal State (per decisions/DD-012 lifecycle compliance review; evidence-collection fields per decisions/DD-013; authorization fields per decisions/DD-014; establishment fields per decisions/DD-015; diagnosis-gate fields per decisions/DD-016)
+## Formal State (per decisions/DD-012 lifecycle compliance review; evidence-collection fields per decisions/DD-013; authorization fields per decisions/DD-014; establishment fields per decisions/DD-015; diagnosis fields per decisions/DD-016)
 
 ```yaml
 status: Open
-current_stage: Organizational Understanding
+current_stage: Organizational Diagnosis
 case_establishment: Completed
 baseline_state: Established
 baseline_established: true
@@ -41,14 +41,25 @@ diagnosis_authorization_gate:
   recommended_authorized: [DQ-001]
   recommended_conditionally_authorized: [DQ-002, DQ-004, DQ-005, DQ-007]
   non_diagnosis_questions: [DQ-003, DQ-006]
-  case_owner_decision: Pending
+  case_owner_decision: Partially Authorized With Conditions (Kelvin Wong, 25 July 2026, decisions/DD-016 Case-Owner Decision section)
+diagnosis_authorization_decision: Partially Authorized With Conditions
+authorized_diagnosis_questions:
+  - DQ-001
+conditionally_authorized_diagnosis_questions:
+  - DQ-002
+  - DQ-004
+  - DQ-005
+  - DQ-007
+not_authorized_diagnosis_questions:
+  - DQ-003
+  - DQ-006
+diagnosis_authorized: true
 diagnosis_established: false
-diagnosis_authorized: false
 design_authorized: false
 transformation_started: false
 transformation_authorized: false
 external_changes_authorized: false
-next_action: Await Kelvin's explicit, question-specific case-owner response to decisions/DD-016 (AUTHORIZED FOR / AUTHORIZED WITH CONDITIONS FOR / NOT AUTHORIZED)
+next_action: Establish separate bounded diagnosis investigations for the five authorized questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007), each under its own containment conditions per decisions/DD-016
 ```
 
 **Correction, 24 July 2026 (decisions/DD-012):** the previous version of this record set `current_stage: Organizational Understanding` and `organizational_understanding_established: true` on the basis of Kelvin's message "registratie klopt, de rest kan starten," interpreted as authorization to begin that stage. A lifecycle compliance review found this insufficient: that message confirmed an evidentiary fact (Guestplan no-shows), not a named lifecycle-stage transition, and decisions/DD-010 explicitly states Organizational Understanding was "not yet begun" after the Claims gate passed. No prior decision authorized the transition. OU-001 and OU-002 are preserved, unmodified, but reclassified **Draft — Prematurely Produced, Not Authoritative**. `current_stage` is reverted to `Justified Organizational Claims`, the last validly-gated stage (decisions/DD-010, PASSED).
@@ -63,7 +74,7 @@ next_action: Await Kelvin's explicit, question-specific case-owner response to d
 
 ## Current lifecycle stage
 
-Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. Organizational Understanding: **first attempt was without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026) — OU-001 and OU-002 remain in that state, unmodified, now additionally Historical Draft — Superseded. **Authorization Gate reviewed** (decisions/DD-014, 24 July 2026), then Kelvin authorized. **Reconstructed** (decisions/DD-015, 24 July 2026) directly from OC-001–OC-007: four candidate relationships constructed and independently challenged (three survive — UR-001, UR-002, UR-003; one Rejected and preserved — UR-004); two new candidate Understanding records survive challenge (OU-003, OU-004). **Established** (decisions/DD-015 Case-Owner Decision, Kelvin Wong, 25 July 2026) — **ESTABLISHED WITH CONDITIONS.** OU-003 and OU-004 are now **Established Organizational Understanding** (Conditional); UR-001 (narrowed wording only), UR-002, UR-003 are **Established Relationships**; UR-004 remains **Rejected**, authoritative use prohibited. OC-002 remains a Standalone Condition; OC-007 remains a Measurement/Attribution Constraint. **This is now the case's current authoritative stage** — `current_stage: Organizational Understanding`, `organizational_understanding_authorized: true`, `organizational_understanding_established: true`. Organizational Diagnosis: **Not started, not authorized** — `diagnosis_authorized: false`. **Diagnosis Authorization Gate reviewed** (decisions/DD-016, 25 July 2026) — canonical inventory reconciled to 5 admissible diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) plus 2 reclassified Not a Diagnosis Question (DQ-003, DQ-006); recommendation **AUTHORIZED WITH CONDITIONS**, question-specific — DQ-001 READY, DQ-002/DQ-004/DQ-005/DQ-007 CONDITIONALLY READY under explicit scope. `diagnosis_authorized` remains `false` pending Kelvin's question-specific response. OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Executed, Partially Completed** (observations/O-013.md, decisions/DD-013, 24 July 2026) — Evidence Sufficiency Gate **PASSED WITH CONDITIONS**.
+Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence Collection: **Completed**, baseline Established. Evidence Synthesis and Justified Organizational Claims: **Completed** (decisions/DD-010, PASSED, 24 July 2026) — 7 of 7 candidate claims promoted. Organizational Understanding: **first attempt was without valid authorization, reclassified Draft — Not Authoritative** (decisions/DD-012, 24 July 2026) — OU-001 and OU-002 remain in that state, unmodified, now additionally Historical Draft — Superseded. **Authorization Gate reviewed** (decisions/DD-014, 24 July 2026), then Kelvin authorized. **Reconstructed** (decisions/DD-015, 24 July 2026) directly from OC-001–OC-007: four candidate relationships constructed and independently challenged (three survive — UR-001, UR-002, UR-003; one Rejected and preserved — UR-004); two new candidate Understanding records survive challenge (OU-003, OU-004). **Established** (decisions/DD-015 Case-Owner Decision, Kelvin Wong, 25 July 2026) — **ESTABLISHED WITH CONDITIONS.** OU-003 and OU-004 are now **Established Organizational Understanding** (Conditional); UR-001 (narrowed wording only), UR-002, UR-003 are **Established Relationships**; UR-004 remains **Rejected**, authoritative use prohibited. OC-002 remains a Standalone Condition; OC-007 remains a Measurement/Attribution Constraint. **This is now the case's current authoritative stage** — `current_stage: Organizational Understanding`, `organizational_understanding_authorized: true`, `organizational_understanding_established: true`. Organizational Diagnosis: **Not started, not authorized** — `diagnosis_authorized: false`. **Diagnosis Authorization Gate reviewed** (decisions/DD-016, 25 July 2026) — canonical inventory reconciled to 5 admissible diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) plus 2 reclassified Not a Diagnosis Question (DQ-003, DQ-006); recommendation **AUTHORIZED WITH CONDITIONS**, question-specific — DQ-001 READY, DQ-002/DQ-004/DQ-005/DQ-007 CONDITIONALLY READY under explicit scope. Kelvin then issued **PARTIALLY AUTHORIZED WITH CONDITIONS** (decisions/DD-016, Case-Owner Decision, 25 July 2026): DQ-001 **Authorized**; DQ-002, DQ-004, DQ-005, DQ-007 **Authorized With Conditions**, each bound by its own question-specific rules recorded in full in that section; DQ-003 and DQ-006 remain **Not Authorized** (Not a Diagnosis Question). `current_stage` is now **Organizational Diagnosis**, `diagnosis_authorized: true`. **Organizational Diagnosis itself remains not started and not established** — `diagnosis_established: false` — this authorization opens the possibility of separate, bounded investigations for the five named questions; none has begun. OC-002 evidence collection (Path 1, decisions/DD-011 amendment): **Executed, Partially Completed** (observations/O-013.md, decisions/DD-013, 24 July 2026) — Evidence Sufficiency Gate **PASSED WITH CONDITIONS**.
 
 ## Completed artifacts
 
@@ -160,13 +171,22 @@ Case Establishment: **Completed** (decisions/DD-008). Observation and Evidence C
 
 ## Next authorized action
 
-**Primary next action:** **Await Kelvin's explicit, question-specific case-owner response to decisions/DD-016** — AUTHORIZED FOR / AUTHORIZED WITH CONDITIONS FOR / NOT AUTHORIZED, naming which of DQ-001 (READY), DQ-002, DQ-004, DQ-005, or DQ-007 (all CONDITIONALLY READY, each with its own explicit scope) he authorizes. Kelvin may authorize any subset — this is not all-or-nothing. DQ-003 (local-pack generalization) and DQ-006 ("would closing OC-005's gaps help") are not offered, since Phase 1's admissibility review reclassified both as Not a Diagnosis Question (monitoring and intervention-loaded, respectively). `diagnosis_authorized` remains `false` for every question until that response.
+**Primary next action:** Kelvin has issued **PARTIALLY AUTHORIZED WITH CONDITIONS** (decisions/DD-016, Case-Owner Decision, 25 July 2026). `diagnosis_authorized` is now `true`, scoped to five questions; `diagnosis_established` remains `false` — no investigation has begun for any of them. The next authorized action is to **establish separate, bounded Diagnosis investigations**, one at a time, for:
+- **DQ-001** (Authorized) — why the broader search categories underperform versus the flagship dining formats, per its Candidate Diagnosis Scope and Question-Specific Rules in decisions/DD-016.
+- **DQ-002** (Authorized With Conditions) — naming inconsistency's visibility effect only; conversion/reservation effects explicitly excluded.
+- **DQ-004** (Authorized With Conditions) — mobile TTFB mechanism only; read-only investigation, no code or config change.
+- **DQ-005** (Authorized With Conditions) — OC-005/AI-representation-error correspondence, scoped to the single tested AI scenario; must first independently confirm the target error condition or stop with Evidence Insufficient.
+- **DQ-007** (Authorized With Conditions) — the six-month GBP engagement decline; OC-002 remains standalone, E-05/E-06/E-07 Partial limitations and E-03/E-10/CR-006 constraints are binding, Evidence Insufficient is an acceptable outcome, no invented relation to OU-003/OU-004, the 162-reservation discrepancy is never characterized as "lost reservations."
 
-**Secondary, independent next action:** OC-002 evidence collection (Path 1) remains **Partial across E-05/E-06/E-07, Completed for E-11 — 10 of 13 items done.** E-05 would benefit from a GBP edit-history log or Kelvin's recollection of when the 3 confirmed attribute changes occurred; E-06 would benefit from a fuller review export beyond the current 8-review sample; E-07 would benefit from the Photos tab and confirmation the visible post list is complete. E-03 and E-10 remain structurally unavailable regardless. This work would directly support DQ-007 if authorized.
+Each investigation must open under its own containment conditions as recorded in decisions/DD-016 (Phase 5 Candidate Diagnosis Scope and the Case-Owner Decision's Question-Specific Rules) and must be separately authorized to proceed to conclusions.
 
-**Not authorized by this decision:** Organizational Diagnosis for any question, Design, Transformation, any SEO or marketing intervention, or any external system change — all remain separately gated and `false`.
+**DQ-003** (local-pack generalization) and **DQ-006** ("would closing OC-005's gaps help") remain **Not Authorized** — reclassified Not a Diagnosis Question (monitoring and intervention-loaded, respectively).
 
-No Diagnosis, Design, or Transformation is authorized for any part of the case.
+**Secondary, independent next action:** OC-002 evidence collection (Path 1) remains **Partial across E-05/E-06/E-07, Completed for E-11 — 10 of 13 items done.** E-05 would benefit from a GBP edit-history log or Kelvin's recollection of when the 3 confirmed attribute changes occurred; E-06 would benefit from a fuller review export beyond the current 8-review sample; E-07 would benefit from the Photos tab and confirmation the visible post list is complete. E-03 and E-10 remain structurally unavailable regardless. This work would directly support DQ-007.
+
+**Not authorized by this decision:** Organizational Diagnosis *conclusions* or findings for any question (only investigation *scope* is authorized), Design, Transformation, any SEO or marketing intervention, or any external system change — all remain separately gated and `false`.
+
+No Design or Transformation is authorized for any part of the case.
 
 ## Unresolved unknowns
 
