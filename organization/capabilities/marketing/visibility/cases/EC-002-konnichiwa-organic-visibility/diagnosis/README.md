@@ -1,7 +1,7 @@
 # Organizational Diagnosis — Index (EC-002)
 ---
 
-**Two Organizational Diagnoses are established: DQ-001 and DQ-004 (both Conditional).** `diagnosis_established_scope: DQ-001, DQ-004`. DQ-002, DQ-005, and DQ-007 have not begun. See below.
+**Two Organizational Diagnoses are established: DQ-001 and DQ-004 (both Conditional).** `diagnosis_established_scope: DQ-001, DQ-004`. **DQ-005 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED, decisions/DD-019 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-005. DQ-002 and DQ-007 have not begun. See below.
 
 **Diagnosis Authorization Gate (decisions/DD-016, 25 July 2026):** independent gate review inventoried and reconciled 7 raw candidate diagnosis questions to 5 canonical, admissible ones (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) plus 2 reclassified Not a Diagnosis Question (DQ-003 — monitoring; DQ-006 — intervention-loaded).
 
@@ -31,6 +31,16 @@ DQ-002, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and D
 
 **Scope of establishment:** DQ-004 only; the specific URLs, measurements, and observation period documented in diagnosis/DQ-004-investigation.md only. Missing cache/CDN headers are not proof caching is absent; consistent repeat-request timing is supporting context only, not proof of cache misses; backend processing and cache behaviour remain entangled; the CrUX distribution tail's mechanism remains unresolved; Confidence remains Medium at most; no ranking/conversion/revenue/reservation effect may be inferred; no cache, CDN, hosting, WordPress, code, or production change is authorized by this establishment.
 
-DQ-002, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-002 and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
 
 Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No production or external system was changed — DQ-004's investigation used only public, read-only HTTPS requests to the already-published site. No Design Authorization Gate has been created.
+
+## DQ-005 — Completed, Evidence Insufficient (25 July 2026)
+
+**diagnosis/DQ-005-investigation.md** records the full read-only investigation: ground-truth facts (opening hours, closure period, chef roles) were registered first, directly from evidence/HV-IV-002.md, independent of any AI output; five pre-existing AI outputs (evidence/HV-IV-004.md, evidence/HV-TS-001.md — DeepSeek, ChatGPT, Gemini, Perplexity, and the low-reliability Claude cold self-test) were checked against that ground truth; a chef-name discrepancy was verified and confirmed **not** to be an error. A fact-by-fact correspondence test (decisions/DD-016's own required method) was run against OC-005's three specific conditions (no structured data; non-crawlable menus; duplicate page): DeepSeek's error was falsified (its source was external, not konnichiwa.nl); ChatGPT's partial score was falsified (it successfully read the correct hours from plain text, without structured data); Gemini and Perplexity could not be tested (source attribution unconfirmed in existing evidence); conditions 2 and 3 had no corresponding AI-observed error to test against at all; the closure-notice year gap and omakase completeness gap both trace to unrelated content-completeness causes, not OC-005.
+
+**Diagnosis Outcome: Evidence Insufficient.** No Candidate Organizational Diagnosis was created; no OD-### identifier was consumed. **decisions/DD-019** is the Diagnosis Establishment Gate: **PASSED** (unconditional). Kelvin then issued **ACCEPTED** (decisions/DD-019, Case-Owner Decision, 25 July 2026): the Evidence Insufficient outcome is confirmed as DQ-005's authoritative, closed result. **No Organizational Diagnosis exists for DQ-005 and none may be created or consumed to close this question.** Absence of evidence is not treated as evidence that OC-005 has no AI effect — this closes the investigation as conducted, not the underlying question in the abstract. Reopening DQ-005 requires materially new evidence and a new explicit case-owner decision. `dq_005_diagnosis_established` remains **`false`**; `dq_005_acceptance_decision` is now **`Accepted`**; DQ-005's status is **Completed — Evidence Insufficient** (not Pending, not Established).
+
+DQ-002 and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+
+Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No new AI-system queries were run — only existing evidence/HV-IV-004.md and evidence/HV-TS-001.md records were compared, per decisions/DD-016's Permitted Evidence Collection for DQ-005. No Design Authorization Gate has been created.
