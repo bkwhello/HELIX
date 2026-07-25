@@ -1,7 +1,7 @@
 # Organizational Diagnosis — Index (EC-002)
 ---
 
-**Two Organizational Diagnoses are established: DQ-001 and DQ-004 (both Conditional).** `diagnosis_established_scope: DQ-001, DQ-004`. **DQ-005 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED, decisions/DD-019 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-005. DQ-002 and DQ-007 have not begun. See below.
+**Two Organizational Diagnoses are established: DQ-001 and DQ-004 (both Conditional).** `diagnosis_established_scope: DQ-001, DQ-004`. **DQ-005 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED, decisions/DD-019 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-005. **DQ-007 is Completed — Evidence Insufficient** (Kelvin Wong, ACCEPTED WITH CONDITIONS, decisions/DD-020 Case-Owner Decision, 25 July 2026) — no Organizational Diagnosis exists or was ever created for DQ-007. DQ-002 has not begun. See below.
 
 **Diagnosis Authorization Gate (decisions/DD-016, 25 July 2026):** independent gate review inventoried and reconciled 7 raw candidate diagnosis questions to 5 canonical, admissible ones (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) plus 2 reclassified Not a Diagnosis Question (DQ-003 — monitoring; DQ-006 — intervention-loaded).
 
@@ -19,7 +19,7 @@ Each authorized/conditionally-authorized question carries its own binding contai
 
 **Scope of establishment:** DQ-001 only; the four named query themes only; the documented 21 Apr–21 Jun 2026 Search Console window only; the organic-search surface only. OD-001's narrowed, associative wording is unchanged and remains the sole authoritative version — it does not claim causation, verified competitor SERP positions, generalization beyond the measured themes/period/surface, organic/local-pack equivalence, or any conversion/reservation/revenue effect, and it does not imply or authorize any intervention.
 
-DQ-002, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
 
 ## DQ-004 — Established With Conditions (25 July 2026)
 
@@ -31,7 +31,7 @@ DQ-002, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and D
 
 **Scope of establishment:** DQ-004 only; the specific URLs, measurements, and observation period documented in diagnosis/DQ-004-investigation.md only. Missing cache/CDN headers are not proof caching is absent; consistent repeat-request timing is supporting context only, not proof of cache misses; backend processing and cache behaviour remain entangled; the CrUX distribution tail's mechanism remains unresolved; Confidence remains Medium at most; no ranking/conversion/revenue/reservation effect may be inferred; no cache, CDN, hosting, WordPress, code, or production change is authorized by this establishment.
 
-DQ-002 and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
 
 Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No production or external system was changed — DQ-004's investigation used only public, read-only HTTPS requests to the already-published site. No Design Authorization Gate has been created.
 
@@ -41,6 +41,18 @@ Design, Transformation, and external changes remain unauthorized (`design_author
 
 **Diagnosis Outcome: Evidence Insufficient.** No Candidate Organizational Diagnosis was created; no OD-### identifier was consumed. **decisions/DD-019** is the Diagnosis Establishment Gate: **PASSED** (unconditional). Kelvin then issued **ACCEPTED** (decisions/DD-019, Case-Owner Decision, 25 July 2026): the Evidence Insufficient outcome is confirmed as DQ-005's authoritative, closed result. **No Organizational Diagnosis exists for DQ-005 and none may be created or consumed to close this question.** Absence of evidence is not treated as evidence that OC-005 has no AI effect — this closes the investigation as conducted, not the underlying question in the abstract. Reopening DQ-005 requires materially new evidence and a new explicit case-owner decision. `dq_005_diagnosis_established` remains **`false`**; `dq_005_acceptance_decision` is now **`Accepted`**; DQ-005's status is **Completed — Evidence Insufficient** (not Pending, not Established).
 
-DQ-002 and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
 
 Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No new AI-system queries were run — only existing evidence/HV-IV-004.md and evidence/HV-TS-001.md records were compared, per decisions/DD-016's Permitted Evidence Collection for DQ-005. No Design Authorization Gate has been created.
+
+## DQ-007 — Completed, Evidence Insufficient (25 July 2026)
+
+**diagnosis/DQ-007-investigation.md** records the full read-only investigation into the six-month, six-metric GBP engagement decline (OC-002). The non-monotonic, three-phase shape (Feb–Apr decline, Apr–May plateau/partial recovery, Jun–Jul resumed and steepened decline) was re-verified directly against O-013's EV-019 and explicitly preserved — not rewritten as continuous or recovery-free. Twelve candidate explanations (CE-DQ7-A through L, cross-referenced to the prior CE-01–12 register) were tested against a twelve-domain evidence-sufficiency matrix. Three new, bounded, public, read-only sources were researched (Phase 4): a dated GA4/GBP integration (~8–10 June 2026) was confirmed **not** to affect the native GBP dashboard, directly falsifying that specific mechanism; a vendor industry benchmark was explicitly not adopted as Google-official evidence; an unconfirmed 13 June 2026 community forum report of a GBP data-refresh issue was left as an open, unverified lead.
+
+**Diagnosis Outcome: Evidence Insufficient.** No Candidate Organizational Diagnosis was created; no OD-### identifier was consumed — CE-DQ7-B, C, J, and L each reach Weakly Supported only for a narrow sub-scope (a pre-existing gap, a sparse sample, one of six metrics, or one of six months), none individually or combined accounting for the full pattern. **decisions/DD-020** is the Diagnosis Establishment Gate: **PASSED WITH CONDITIONS**. Kelvin then issued **ACCEPTED WITH CONDITIONS** (decisions/DD-020, Case-Owner Decision, 25 July 2026), copying all seven original gate conditions plus six additional case-owner conditions (thirteen total) verbatim. **No Organizational Diagnosis exists for DQ-007 and none may be created or consumed to close this question.** `dq_007_diagnosis_established` remains **`false`**; `dq_007_acceptance_decision` is now **`Accepted With Conditions`**; DQ-007's status is **Completed — Evidence Insufficient** (not Pending, not Established). Reopening requires materially new evidence and a new explicit case-owner decision.
+
+**Binding conditions carried forward:** the decline remains classified only as a verified GBP profile-engagement decline (never demand, revenue, or reservation); the non-monotonic pattern is preserved; CE-DQ7-B/C/J/L remain Weakly Supported only within their narrow scopes; no candidate may be presented as Associatively Consistent or causal; the Birdeye benchmark and the 13 June 2026 forum report remain non-official/unverified; the GA4-integration finding excludes only that specific mechanism, not other Google reporting changes; E-05/E-06/E-07 remain Partial; E-03/E-10 remain Structurally Unavailable; CR-006 remains Open, 605/625 unreconciled; CE-11 remains Unsupported only within its thirteen declared categories; current snapshots remain unsuitable as complete historical trend evidence; no Design/Transformation/external change is authorized.
+
+DQ-002 remains **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+
+Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No GBP configuration was accessed or changed; no post, review response, hours edit, attribute edit, or photo upload occurred. No Design Authorization Gate has been created. OC-002 remains a Standalone Condition; CR-006 remains Open; no GBP interaction is characterized as a completed reservation; the 162-reservation discrepancy is not referenced.
