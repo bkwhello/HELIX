@@ -1,7 +1,7 @@
 # Organizational Diagnosis — Index (EC-002)
 ---
 
-**One Organizational Diagnosis is established: DQ-001 (Conditional).** No other diagnosis question is established, and none besides DQ-001 has begun — `diagnosis_established_scope: DQ-001 only`. See below.
+**Two Organizational Diagnoses are established: DQ-001 and DQ-004 (both Conditional).** `diagnosis_established_scope: DQ-001, DQ-004`. DQ-002, DQ-005, and DQ-007 have not begun. See below.
 
 **Diagnosis Authorization Gate (decisions/DD-016, 25 July 2026):** independent gate review inventoried and reconciled 7 raw candidate diagnosis questions to 5 canonical, admissible ones (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) plus 2 reclassified Not a Diagnosis Question (DQ-003 — monitoring; DQ-006 — intervention-loaded).
 
@@ -19,6 +19,18 @@ Each authorized/conditionally-authorized question carries its own binding contai
 
 **Scope of establishment:** DQ-001 only; the four named query themes only; the documented 21 Apr–21 Jun 2026 Search Console window only; the organic-search surface only. OD-001's narrowed, associative wording is unchanged and remains the sole authoritative version — it does not claim causation, verified competitor SERP positions, generalization beyond the measured themes/period/surface, organic/local-pack equivalence, or any conversion/reservation/revenue effect, and it does not imply or authorize any intervention.
 
-DQ-002, DQ-004, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+DQ-002, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
 
-Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`).
+## DQ-004 — Established With Conditions (25 July 2026)
+
+**diagnosis/DQ-004-investigation.md** records the full read-only investigation (target-condition re-verification against EV-017/O-012, a read-only evidence collection plan, and testing of seven candidate mechanisms CE-DQ4-A through G using directly measured, dated technical signals — DNS/connect/TLS timing, redirect chains, response headers, and repeat-request/cross-page/cross-User-Agent comparison). Redirect/DNS/TLS overhead (CE-DQ4-D) was directly falsified. Four candidates (geographic distance, page-mix effect, real mobile-network conditions, load/time-of-day variability) remain open, unresolved alternatives. Independently challenged: **Survives with Narrowing**. **decisions/DD-018** is the Diagnosis Establishment Gate: **PASSED WITH CONDITIONS**. Kelvin then issued **ESTABLISHED WITH CONDITIONS** (decisions/DD-018, Case-Owner Decision, 25 July 2026), accepting eleven conditions verbatim — narrower than the gate's own framing. `dq_004_diagnosis_established` is now `true`; OD-002's Status is **Established Organizational Diagnosis (Conditional)**.
+
+**Authoritative formulation (decisions/DD-018, Case-Owner Decision, Condition 2 — the sole citable statement of this diagnosis, superseding any stronger "no caching layer" phrasing in OD-002's own body text):**
+
+> "No observable public evidence of HTML cache delivery was found in the bounded measurements. This condition is associatively consistent with the elevated response-time baseline, but does not establish the mechanism behind the 26% poor mobile TTFB tail."
+
+**Scope of establishment:** DQ-004 only; the specific URLs, measurements, and observation period documented in diagnosis/DQ-004-investigation.md only. Missing cache/CDN headers are not proof caching is absent; consistent repeat-request timing is supporting context only, not proof of cache misses; backend processing and cache behaviour remain entangled; the CrUX distribution tail's mechanism remains unresolved; Confidence remains Medium at most; no ranking/conversion/revenue/reservation effect may be inferred; no cache, CDN, hosting, WordPress, code, or production change is authorized by this establishment.
+
+DQ-002, DQ-005, and DQ-007 remain **not started, not established**. DQ-003 and DQ-006 remain **Not Authorized**.
+
+Design, Transformation, and external changes remain unauthorized (`design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false`). No production or external system was changed — DQ-004's investigation used only public, read-only HTTPS requests to the already-published site. No Design Authorization Gate has been created.
