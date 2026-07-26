@@ -20,7 +20,62 @@ Date: 26 July 2026. Author: Claude, acting as an **independent HELIX Design Cons
 od_001_design_established: false
 ```
 
-`od_001_design_established` remains **false** — this selection chooses which candidate proceeds to further specification; it does not itself constitute an established Organizational Design. **Candidate D's Re-Measurement Schedule/Protocol has not yet been created or executed.** `transformation_authorized` and `external_changes_authorized` remain **false**, unconditionally — this selection authorizes neither. See decisions/DD-023's Case-Owner Selection section for the complete decision record, including all eighteen conditions binding Candidate D's selection.
+`od_001_design_established` remains **false** — this selection chooses which candidate proceeds to further specification; it does not itself constitute an established Organizational Design. `transformation_authorized` and `external_changes_authorized` remain **false**, unconditionally — this selection authorizes neither. See decisions/DD-023's Case-Owner Selection section for the complete decision record, including all eighteen conditions binding Candidate D's selection. *(Note: at the time this status was first recorded, Candidate D's Re-Measurement Schedule/Protocol had not yet been created — see the status block immediately below for its current state.)*
+
+---
+
+## Status — Candidate D Re-Measurement Protocol (recorded 26 July 2026)
+
+*Status/reference-only addendum. It does not alter any requirement, candidate formulation, attack, or comparison in Phases 1–5 below, and does not change Candidate A/B/C's statuses recorded above — those remain exactly as stated in the "Status — Case-Owner Selection" section.*
+
+| Field | Value |
+|---|---|
+| Candidate D protocol identifier | design/OD-001-candidate-d-measurement-protocol.md |
+| Protocol status | **Prepared — Execution Pending** |
+| Protocol executed? | **No** — no Search Console access has occurred |
+| Case-owner execution decision | **Pending** (decisions/DD-024, Candidate D Protocol Readiness Gate) |
+| Candidate A status | Retained — Unselected Alternative (unchanged) |
+| Candidate B status | Retained — Unselected Alternative (unchanged) |
+| Candidate C status | Retained — Unselected Alternative (unchanged) |
+
+```yaml
+od_001_candidate_d_protocol_status: Prepared — Execution Pending
+od_001_candidate_d_protocol_executed: false
+od_001_candidate_d_protocol_execution_decision: Pending
+```
+
+See design/OD-001-candidate-d-measurement-protocol.md for the complete protocol, and decisions/DD-024 for its independent readiness-gate review.
+
+### Status Update — Execution Approved With Conditions (recorded 26 July 2026, decisions/DD-024 Case-Owner Decision)
+
+*This update supersedes the "Pending" case-owner execution decision recorded in the table above chronologically; it does not rewrite that table. Candidate A/B/C statuses remain unchanged.*
+
+Kelvin Wong issued **APPROVED WITH CONDITIONS FOR READ-ONLY EXECUTION** for design/OD-001-candidate-d-measurement-protocol.md (decisions/DD-024, Case-Owner Decision section), subject to twenty-one binding conditions recorded verbatim there.
+
+| Field | Updated value |
+|---|---|
+| Protocol status | **Approved With Conditions — Awaiting Execution Window** |
+| Protocol executed? | **No** — execution not permitted before 21 September 2026; no Search Console access has occurred |
+| Case-owner execution decision | **Approved With Conditions For Read-Only Execution** (no longer Pending) |
+| Candidate A status | Retained — Unselected Alternative (unchanged) |
+| Candidate B status | Retained — Unselected Alternative (unchanged) |
+| Candidate C status | Retained — Unselected Alternative (unchanged) |
+
+```yaml
+candidate_d_protocol_execution_authorized: true
+candidate_d_protocol_execution_mode: Read-Only
+candidate_d_protocol_not_before: 2026-09-21
+candidate_d_protocol_authorization_expires: 2026-12-31
+candidate_d_protocol_executed: false
+candidate_d_timezone_basis: Pending Pre-Execution Confirmation
+candidate_d_account_context: Pending Pre-Execution Confirmation
+od_001_design_established: false
+od_002_design_started: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Approval is **not** execution. No Search Console access has occurred. See decisions/DD-024's Case-Owner Decision section for the complete twenty-one-condition record.
 
 ---
 
