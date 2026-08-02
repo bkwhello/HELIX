@@ -18,14 +18,23 @@ Date: 2 August 2026. Author: Claude, acting as an **independent HELIX Design Con
 | OD2-CAND-2 — Origin/Backend-Processing Observability | **Selected Conditionally — Stage 2 Pending Stage 1 Review** |
 | OD2-CAND-1 — No-Change/Measurement-Continuation | Retained — Unselected Alternative |
 | OD2-CAND-4 — Expanded Multi-Mechanism Measurement Program | Retained — Unselected Alternative |
-| Next authorized artifact | OD2-CAND-3 Cache-State Evidence Request/Verification Specification |
+| Stage 1 specification | design/OD2-CAND-3-cache-state-evidence-specification.md — **Prepared, 3 August 2026, not executed** |
+| Stage 1 specification readiness gate | decisions/DD-026 — **Passed With Conditions, 3 August 2026**, corrected twice (Bounded Correction 1: two-dimensional Configured/Delivered-State model, CSE-5A/5B split; Bounded Correction 2: narrow same-layer/scope/time contradiction definition, layer-first aggregation) — 8 conditions total folded directly into the specification |
+| Stage 1 evidence-collection decision | decisions/DD-026, Case-Owner Decision — **APPROVED WITH CONDITIONS FOR BOUNDED EVIDENCE COLLECTION**, 3 August 2026, 27 binding conditions — collection not yet started |
 
 ```yaml
 od_002_design_established: false
 od_002_stage_2_authorized: false
+od_002_cand3_specification_status: Prepared — Evidence Collection Approved With Conditions
+od_002_cand3_specification_readiness_gate: Passed With Conditions (decisions/DD-026, 3 August 2026)
+od_002_cand3_evidence_collection_approved: true
+od_002_cand3_evidence_collection_decision: Approved With Conditions (decisions/DD-026, Case-Owner Decision, 3 August 2026)
+od_002_cand3_collection_mode: Owner-Supplied Redacted Evidence Only
+od_002_cand3_direct_authenticated_access_authorized: false
+od_002_cand3_collection_started: false
 ```
 
-The Stage 1 specification has not been created. No evidence collection or authenticated access has occurred. Stage 2 has not started. Transformation and external changes remain unauthorized. All DD-018, DD-022, and DD-025 conditions remain binding. See decisions/DD-025's Case-Owner Selection section for the complete decision record, including all twenty-one binding conditions.
+The Stage 1 specification (design/OD2-CAND-3-cache-state-evidence-specification.md) has been prepared, independently gate-reviewed (decisions/DD-026, Passed With Conditions, corrected twice), and **APPROVED WITH CONDITIONS FOR BOUNDED EVIDENCE COLLECTION** (decisions/DD-026, Case-Owner Decision, Kelvin Wong, 3 August 2026) — subject to twenty-seven binding conditions. This approval does not itself constitute evidence collection: no CSE item has been collected, no account or system has been accessed, and `od_002_cand3_collection_started` remains `false`. Collection begins only when Kelvin personally accesses the applicable accounts and supplies evidence — Claude is not authorized for direct authenticated access (`od_002_cand3_direct_authenticated_access_authorized: false`). Stage 2 has not started and requires its own new, separate case-owner authorization regardless of Stage 1's eventual outcome (CS-1, CS-3, "Configured Cache Confirmed — Delivered Miss Observed for Bounded Request(s)," "Configured Cache Confirmed — Delivery Unconfirmed," CS-2, or CS-4). Transformation and external changes remain unauthorized. All DD-018, DD-022, DD-025, and DD-026 conditions remain binding. See decisions/DD-025's Case-Owner Selection section and decisions/DD-026's Gate Verdict and Case-Owner Decision for the complete decision record.
 
 ---
 

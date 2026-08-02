@@ -557,6 +557,134 @@ Kelvin Wong, case owner, issued a **staged, partial selection** in response to d
 
 **This is selection for further Design only** — it does not authorize evidence collection, authenticated access, configuration inspection, implementation, Transformation, or external changes. `od_002_stage_2_authorized: false` — naming Stage 2 in the same decision as Stage 1 does not authorize it; Condition 8 requires a new, later, explicit case-owner authorization after Stage 1's result is reviewed. `od_002_design_established` remains `false`. No credential, password, API key, or unrestricted account access was requested or stored; no hosting, WordPress, cache, or CDN system was inspected; the OD2-CAND-3 Cache-State Evidence Request/Verification Specification was **not** created by this decision — that remains the next, separately-performed action. OD-001 Candidate D and decisions/DD-024 remain untouched and unexecuted; OD-003 remains unauthorized for Design; Transformation and external changes remain unauthorized.
 
+## OD2-CAND-3 Stage 1 Specification (3 August 2026)
+
+Under decisions/DD-025's Case-Owner Selection (OD2-CAND-3 Selected — Stage 1), design/OD2-CAND-3-cache-state-evidence-specification.md was prepared, not executed. HTML page-cache delivery is defined narrowly and split into three separate in-scope categories (CDN/edge cache, host/reverse-proxy page cache, WordPress full-page cache), with browser cache, static-asset cache, object cache, and PHP OPcache explicitly excluded from being conflated with any of them. Configured cache state and delivered cache state are kept as two distinct, separately-evidenced dimensions — the latter already partially informed by diagnosis/DQ-004-investigation.md Phase 2B's existing read-only header/timing observations.
+
+### Evidence Request → Outcome Routing
+
+| Evidence Item (CSE) | Category | Collected? |
+|---|---|---|
+| CSE-1 — WordPress Plugins page screenshot | WordPress full-page cache (screening) | Not collected |
+| CSE-2 — Caching plugin settings screenshot | WordPress full-page cache | Not collected |
+| CSE-3 — Hosting control panel performance/cache tab screenshot | Host/reverse-proxy page cache | Not collected |
+| CSE-4 — CDN dashboard screenshot | CDN/edge cache | Not collected |
+| CSE-5 — Cache-purge/hit-ratio log export (redacted) | Delivered-state, cross-cutting | Not collected |
+| CSE-6 — Provider written confirmation | Configured-state, provider-attested | Not collected |
+
+| Outcome | Routing |
+|---|---|
+| CS-1 — Active Cache Confirmed | Pauses the OD-002 workstream for lifecycle/case-owner review (decisions/DD-025 Condition 6); does not auto-start Stage 2 |
+| CS-2 — No Cache Found Within Inspected Scope | Bounded, scope-limited negative finding only; does not auto-start Stage 2 |
+| CS-3 — Conflicting Evidence | Recorded unresolved, flagged for case-owner review; does not auto-start Stage 2 |
+| CS-4 — Insufficient Evidence | Legitimate closed-for-now outcome, consistent with DQ-005/DQ-007 precedent; does not auto-start Stage 2 |
+
+No credential, password, API key, token, cookie, or FTP/SSH credential was requested or is requested by this specification. No hosting, WordPress, CDN, or cache system was inspected; no evidence item was collected; no configuration was changed. `od_002_cand3_specification_status: Prepared — Evidence Collection Not Approved`; `od_002_cand3_evidence_collection_approved: false`; `od_002_stage_2_authorized: false`; `od_002_design_established: false`. OD2-CAND-2 (Stage 2) remains unstarted regardless of any future Stage 1 outcome, per decisions/DD-025 Condition 8 — a new, separate case-owner authorization is required. Transformation and external changes remain unauthorized.
+
+## OD2-CAND-3 Specification Readiness Gate — DD-026 (3 August 2026)
+
+An independent gate review (decisions/DD-026) assessed design/OD2-CAND-3-cache-state-evidence-specification.md across twelve dimensions. Seven passed cleanly (authorization compliance, target precision, HTML cache-layer separation, configured/delivered-state separation, CSE-1–6 request specificity, conflicting-evidence handling, lifecycle containment). Five required a correction, each applied directly to the specification rather than left as an outstanding gap:
+
+| Dimension | Correction Applied |
+|---|---|
+| Evidence-source hierarchy | Three-tier hierarchy added (Tier 1 delivered-state/CSE-5; Tier 2 direct configuration screenshots/CSE-2,3,4; Tier 3 CSE-1 plugin-list-only; CSE-6 corroborating only) |
+| CS-1/CS-2 sufficiency asymmetry | Exact minimum criteria added — CS-1: one sufficient Tier-1 or uncontradicted Tier-2 item; CS-2: demonstrated negative coverage across all three categories, any uninspected category routes to CS-4 |
+| Privacy/secret-redaction controls | Shared-hosting sibling-domain/unrelated-client identifiers added to redaction discipline, same care as a credential field |
+| Public-verification limits | Explicit statement added: no additional public HTTP probing authorized beyond diagnosis/DQ-004-investigation.md's existing record |
+| Stop/escalation rules | Scope-creep escalation rule added: any evidence need outside CSE-1–6 routes to a specification amendment and fresh case-owner approval |
+
+**Gate Verdict: PASSED WITH CONDITIONS.** Six binding conditions recorded in full in decisions/DD-026 (the five corrections above as ongoing governing rules, plus reaffirmation that all DD-018/DD-022/DD-025 conditions remain independently binding). No credential, password, API key, token, cookie, or FTP/SSH access was requested or accessed; no hosting, WordPress, CDN, or cache system was inspected; no CSE item was collected. `od_002_cand3_specification_readiness_gate: Passed With Conditions`; `od_002_cand3_evidence_collection_approved` remains `false`; `od_002_cand3_evidence_collection_decision: Pending` — Kelvin's explicit response (APPROVED FOR BOUNDED EVIDENCE COLLECTION / APPROVED WITH CONDITIONS FOR BOUNDED EVIDENCE COLLECTION / NOT APPROVED FOR EVIDENCE COLLECTION) is requested and pending. `od_002_stage_2_authorized`, `od_002_design_established`, `transformation_authorized`, and `external_changes_authorized` all remain `false`.
+
+## DD-026 Bounded Correction — Two-Dimensional Cache-State Model (3 August 2026)
+
+The Stage 1 outcome model in design/OD2-CAND-3-cache-state-evidence-specification.md was corrected from a single flattened cache-state test to a genuine two-dimensional model, per Kelvin's explicit instruction that configured state and delivered state must never be conflated.
+
+### Configured-State Axis (five values) × Delivered-State Axis (four values)
+
+| Configured-State | Delivered-State | Per-Category Result |
+|---|---|---|
+| Confirmed Enabled | Confirmed HTML Cache Hit | CS-1 contribution |
+| Confirmed Enabled | Confirmed HTML Cache Miss for Bounded Requests | Contradiction → CS-3 |
+| Confirmed Enabled | Unconfirmed | "Configured Cache Confirmed — Delivery Unconfirmed" |
+| Confirmed Enabled | Conflicting | Contradiction → CS-3 |
+| Confirmed Disabled | Confirmed HTML Cache Hit | Contradiction → CS-3 |
+| Confirmed Disabled | Miss / Unconfirmed | CS-2 contribution |
+| Confirmed Disabled | Conflicting | Contradiction → CS-3 |
+| Not Present Within Inspected Layer | Confirmed HTML Cache Hit | Contradiction → CS-3 |
+| Not Present Within Inspected Layer | Miss / Unconfirmed | CS-2 contribution |
+| Not Present Within Inspected Layer | Conflicting | Contradiction → CS-3 |
+| Unconfirmed | Confirmed HTML Cache Hit | CS-1 contribution (Tier-1 evidence dispositive) |
+| Unconfirmed | anything else | CS-4 contribution |
+| Conflicting | anything | Contradiction → CS-3 |
+
+**Case-level aggregation, priority order:** any Contradiction → CS-3; else any CS-1 contribution → CS-1; else any "Configured Cache Confirmed — Delivery Unconfirmed" → that named state (pause for review, not CS-1); else all three categories reach CS-2 contribution → CS-2; else → CS-4.
+
+### CSE-5 Split
+
+- **CSE-5A** — HTML-specific cache hit/miss evidence; must identify konnichiwa.nl, the eligible HTML document(s), the evidence period, and an explicit hit/miss state or HTML-specific hit ratio. The only item able to set Delivered-State. A generic hit ratio blending HTML with assets, other domains, or unidentified traffic does not satisfy CSE-5A and is classified Unconfirmed.
+- **CSE-5B** — a purge log; configured-state-adjacent evidence only, never delivered-cache-hit evidence.
+
+### Renamed / New Outcomes
+
+- CS-1 renamed **"Active HTML Cache Delivery Confirmed"** — reachable only via a Confirmed HTML Cache Hit; a Configured-Enabled reading alone no longer reaches it.
+- New named intermediate state: **"Configured Cache Confirmed — Delivery Unconfirmed"** — distinct from, never merged with, CS-1; pauses for case-owner review.
+- CS-2 renamed **"No Configured HTML Cache Found Within Inspected Scope"** — explicit that it describes the configured-state finding only; the specification states directly this must never become "Konnichiwa has no caching."
+- CS-3 renamed **"Contradictory Evidence"**, now explicitly covering any per-category configured/delivered contradiction, not only same-tier disagreement.
+
+**Gate Verdict remains PASSED WITH CONDITIONS** (decisions/DD-026), with a seventh binding condition added verbatim: "Configured cache state and delivered cache state must be reported independently; neither may substitute for the other." No CSE item was collected; no hosting, WordPress, CDN, or cache system was accessed; no configuration was changed. `od_002_cand3_evidence_collection_approved` remains `false`; `od_002_cand3_evidence_collection_decision: Pending`, unchanged by this correction. `od_002_stage_2_authorized`, `od_002_design_established`, `transformation_authorized`, and `external_changes_authorized` all remain `false`.
+
+## DD-026 Bounded Correction 2 — Layer-First Aggregation (3 August 2026)
+
+Bounded Correction 1's aggregation logic was itself corrected, per Kelvin's explicit instruction that different cache layers legitimately differing from each other must never be treated as a contradiction, and that a configured-enabled cache genuinely missing a specific bounded/tested request is ordinary cache behavior, not a conflict requiring escalation.
+
+### Corrected Matrix Row
+
+| Configured-State | Delivered-State | Old Result (Bounded Correction 1) | Corrected Result (Bounded Correction 2) |
+|---|---|---|---|
+| Confirmed Enabled | Confirmed HTML Cache Miss for Bounded Requests | Contradiction → CS-3 | **"Configured Cache Confirmed — Delivered Miss Observed for Bounded Request(s)"** — not CS-3, not CS-1; exact URL/request/time evidence preserved verbatim; pauses for case-owner review |
+
+### Narrow Contradiction Definition (new Section 6.4)
+
+**CS-3 (now "Contradictory Evidence") applies only when evidence conflicts for the same cache layer, the same relevant configuration scope, and a materially comparable time period.** Explicitly **not** a contradiction: different layers differing from each other (CDN active while WordPress page cache disabled; host cache active while no cache plugin exists; WordPress cache active while CDN caches static assets only) — these are layered configurations, normal and expected in a multi-layer delivery path.
+
+### Layer-First Aggregation (new Section 6.6)
+
+1. Evaluate each of the three in-scope categories (WordPress full-page cache, host/reverse-proxy page cache, CDN/edge cache) **independently first**.
+2. Preserve and report **all three** layer-level results — none discarded.
+3. Derive the single bounded overall outcome only afterward, in priority order:
+   - Any layer reaches a CS-1 contribution (Confirmed HTML Cache Hit, no same-layer contradiction) → **CS-1**, regardless of other layers' states.
+   - Else any layer reaches a Layer Contradiction (narrow definition) → **CS-3**, naming the specific layer(s).
+   - Else any layer reaches "Configured Enabled + Confirmed Miss" → **"Configured Cache Confirmed — Delivered Miss Observed for Bounded Request(s)"**, pause for review.
+   - Else any layer reaches "Configured Enabled + Delivered Unconfirmed" → **"Configured Cache Confirmed — Delivery Unconfirmed"**, pause for review.
+   - Else all three layers reach a CS-2 contribution (Confirmed Disabled/Not Present) → **CS-2 — No Configured HTML Cache Found Within Inspected Scope**.
+   - Otherwise → **CS-4 — Insufficient Evidence**.
+
+**A confirmed hit at one layer is never canceled by a different layer's negative or disabled result** (Section 6.6, rule 1) — this is the specific fix: one confirmed HTML cache hit is sufficient for CS-1 regardless of what the other two layers show.
+
+**Gate Verdict remains PASSED WITH CONDITIONS** (decisions/DD-026), with an eighth binding condition added verbatim: "Evidence from different cache layers must not be treated as contradictory merely because their configured or delivered states differ." All seven prior conditions (including Bounded Correction 1's) remain independently binding, unchanged. No CSE item was collected; no hosting, WordPress, CDN, or cache system was accessed; no configuration was changed. `od_002_cand3_evidence_collection_approved` remains `false`; `od_002_cand3_evidence_collection_decision: Pending`, unchanged. `od_002_stage_2_authorized`, `od_002_design_established`, `transformation_authorized`, and `external_changes_authorized` all remain `false`.
+
+## OD2-CAND-3 Evidence Collection Approved — DD-026 Case-Owner Decision (3 August 2026)
+
+Kelvin Wong, case owner, issued **APPROVED WITH CONDITIONS FOR BOUNDED EVIDENCE COLLECTION** (decisions/DD-026, Case-Owner Decision section), subject to twenty-seven binding conditions recorded verbatim there — layering on top of, not replacing, this gate's own eight conditions (Gate Verdict plus Bounded Corrections 1–2) and DD-018's eleven, DD-022's twenty, and DD-025's twenty-one conditions, all independently binding.
+
+### Approved Collection Scope
+
+| Item | Approved Scope |
+|---|---|
+| CSE-1 | WordPress cache/performance plugin screening |
+| CSE-2 | Relevant plugin settings, only when CSE-1 identifies an applicable active plugin |
+| CSE-3 | Hosting page-cache/performance status |
+| CSE-4 | CDN/edge-cache status and HTML/static scope |
+| CSE-5A | Existing HTML-specific hit/miss evidence, only when already available through bounded read-only access |
+| CSE-5B | Existing purge history, as configured-state context only |
+| CSE-6 | Existing provider-support confirmation, only when already available |
+
+### Key Binding Conditions (of twenty-seven, full text in decisions/DD-026)
+
+Kelvin personally accesses accounts and supplies evidence; Claude is not authorized for direct authenticated access; no credential of any kind (username, password, API key, token, cookie, recovery code, SSH/SFTP/FTP, database) may be supplied; screenshots/exports reviewed and redacted before ingestion (unrelated domains/customers/account IDs/billing/personal/private-IP data removed when not essential); capture date/timezone/source/domain recorded where safely possible; no plugin install/activate/deactivate/configure; no cache enable/disable/purge/clear/bypass/warm/test; no mutation-control clicks; no hosting/CDN/DNS/WordPress/server setting change; unavailable evidence recorded as Unavailable, never disabled/absent; CSE-5A limited to HTML-specific evidence, generic ratios insufficient; CSE-5B never proves delivered hits; CSE-6 does not authorize a new support ticket; no additional public probing; evidence outside CSE-1–6 requires a specification amendment and new decision; configured/delivered state classified separately; different-layer differences never treated as contradictory; contradiction requires same layer/scope/materially comparable time; missing evidence never proves absence; CS-1 requires a confirmed eligible anonymous HTML cache hit; CS-2 requires negative configured-state coverage across all three categories; any CS-1/intermediate-state/CS-3/CS-4 result returns to case-owner review; no result auto-authorizes Stage 2; Transformation and external changes remain unauthorized.
+
+**This approval does not constitute evidence collection.** No CSE item has been collected; no account or system has been accessed; no support request has been sent. `od_002_cand3_evidence_collection_approved` is now `true`; `od_002_cand3_evidence_collection_decision: Approved With Conditions`; `od_002_cand3_collection_mode: Owner-Supplied Redacted Evidence Only`; `od_002_cand3_direct_authenticated_access_authorized: false`; `od_002_cand3_collection_started: false`. `od_002_stage_2_authorized`, `od_002_design_established`, `transformation_authorized`, and `external_changes_authorized` all remain `false`. Next action: Kelvin supplies any available, safely redacted CSE evidence within the approved scope — not yet supplied.
+
 ## Lifecycle Traceability
 
 Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) → Diagnosis Authorization Gate reviewed and recommended AUTHORIZED WITH CONDITIONS, question-specific (decisions/DD-016, 25 July 2026) → **Organizational Diagnosis — Partially Authorized With Conditions** (decisions/DD-016, case-owner decision 25 July 2026), `current_stage: Organizational Diagnosis` → **DQ-001 investigated and gated** (decisions/DD-017, 25 July 2026) → **DQ-001 — Established With Conditions** (decisions/DD-017, case-owner decision 25 July 2026), `dq_001_diagnosis_established: true`, `diagnosis_established_scope: DQ-001 only` → **DQ-004 investigated and gated** (decisions/DD-018, 25 July 2026) → **DQ-004 — Established With Conditions** (decisions/DD-018, case-owner decision 25 July 2026), `dq_004_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-004` — the authoritative formulation for OD-002 is narrowed per the case-owner's Condition 2 (see above) → **DQ-005 investigated and gated** (decisions/DD-019, 25 July 2026): ground-truth facts registered first, fact-by-fact correspondence test run against OC-005's three conditions and every AI-observed discrepancy, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED** (unconditional) → **DQ-005 — Completed, Evidence Insufficient, ACCEPTED** (decisions/DD-019, case-owner decision 25 July 2026), `dq_005_acceptance_decision: Accepted`, `dq_005_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-005) → **DQ-007 investigated and gated** (decisions/DD-020, 25 July 2026): twelve candidate explanations tested against a twelve-domain evidence-sufficiency matrix, new bounded public research directly falsified a GA4-integration mechanism and left one 13-June community-report lead unconfirmed, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED WITH CONDITIONS** → **DQ-007 — Completed, Evidence Insufficient, ACCEPTED WITH CONDITIONS** (decisions/DD-020, case-owner decision 25 July 2026), `dq_007_acceptance_decision: Accepted With Conditions`, `dq_007_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-007) → **DQ-002 investigated and gated** (decisions/DD-021, 25 July 2026): name-variant inventory and canonical entity baseline established, direct re-analysis of EV-014's raw Search Console export found the misspelled query family shows equal-to-better average position than the correct spelling in both directly-tested pairs, eight candidate explanations tested, Candidate Organizational Diagnosis diagnosis/OD-003-name-variant-entity-resolution.md produced and independently challenged (Survives), Gate Verdict **PASSED WITH CONDITIONS** → **DQ-002 — Established With Conditions** (decisions/DD-021, case-owner decision 25 July 2026): the authoritative formulation is narrowed to a single sentence and twelve binding conditions apply verbatim, `dq_002_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-002, DQ-004` → **DQ-002 confidence corrected** (decisions/DD-021 Confidence Decision, case-owner decision 25 July 2026): OD-003's authoritative confidence set to **Medium**, narrower than the gate's original Medium-High assessment, which remains preserved unchanged as historical analysis — **this remains the case's current authoritative stage**, `current_stage: Organizational Diagnosis`. **All five of DD-016's authorized/conditionally-authorized diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) have now been investigated, and every question capable of producing an Organizational Diagnosis (DQ-001, DQ-002, DQ-004) is now established.** DQ-003 and DQ-006 remain Not Authorized (Not a Diagnosis Question). `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false` — unaffected by any diagnosis gate to date; no cache, CDN, hosting, WordPress, code, GBP, listing, or production change is authorized; no Design Authorization Gate exists. DQ-005 and DQ-007 may only be reopened with materially new evidence and a new explicit case-owner decision. Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by any later authorization, reconstruction, establishment, or gate review, all of which rest on independent review and explicit case-owner decision rather than on the earlier drafts.
