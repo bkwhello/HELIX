@@ -98,6 +98,26 @@ external_changes_authorized: false
 
 Next action: prepare a bounded BE-01–BE-08 Evidence Intake request/package under decisions/DD-030 — not created by this task; evidence collection does not begin until that intake task is separately started.
 
+### Status Update — Evidence Intake Request Package Prepared (13 August 2026)
+
+*Fifth status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+design/OD2-CAND-2-stage-2-evidence-intake-request.md has been prepared under decisions/DD-030's Case-Owner Decision — a checklist/request package only, offering Kelvin a safe, concrete way to supply any already-available, redacted BE-01–BE-08 evidence, or record Not Available/Unknown/Declined for any item. No BE item is marked Essential. phpMyAdmin remains excluded, with no navigation instructions or SQL content anywhere in the package. No evidence has been collected, no evidence ID assigned, and no classification performed.
+
+```yaml
+od_002_stage_2_evidence_intake_package_created: true
+od_002_stage_2_evidence_intake_package_status: Prepared — Awaiting Owner-Supplied Evidence
+od_002_stage_2_collection_started: false
+od_002_stage_2_evidence_received: false
+od_002_stage_2_evidence_classified: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: Kelvin supplies any available, redacted BE-01–BE-08 evidence or records Not Available/Unknown; no direct agent access.
+
 ---
 
 ## Precondition Verdict
