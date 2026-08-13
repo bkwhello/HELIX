@@ -78,6 +78,43 @@ external_changes_authorized: false
 
 Next action: Kelvin's explicit response to decisions/DD-030's requested case-owner response (APPROVED FOR BOUNDED STAGE 2 EVIDENCE COLLECTION / WITH CONDITIONS / NOT APPROVED) — not recorded by this task.
 
+### Status Update — OD-002 Design Establishment Gate Reviewed (13 August 2026)
+
+*Sixth status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+decisions/DD-032 independently reviewed whether OD-002's Organizational Design may be established, given OD2-CAND-3 Stage 1 (complete, accepted CS-4) and OD2-CAND-2 Stage 2 Round 1 (complete, accepted Evidence Insufficient). All twenty preconditions passed. All seventeen OD2-REQ items and all nine OD2-AS items were independently reviewed — no requirement failed (five Conditional Pass, future-facing and untested rather than violated); no assumption was promoted from Needs More Evidence/Unassessed/Unassessable/Aging to fact. A twenty-item G-01–G-20 matrix found no failures (three Pass With Conditions: Stage 1/Stage 2 completion integrity, measurement/observability completeness). An eighteen-item independent challenge found **all eighteen Survive, none Rejected, none requiring narrowing**.
+
+**Gate Verdict: PASSED WITH CONDITIONS. Recommendation: RECOMMEND ESTABLISHED WITH CONDITIONS**, with one sole authoritative Design statement (Confidence: Medium-Low) — a bounded measurement-and-observability Design that explicitly does not establish caching absence, Varnish activity, backend slowness, the TTFB tail's cause, any required intervention, or any ranking/conversion/revenue/reservation benefit. Ten binding conditions recorded if established. **This recommendation is not the case-owner decision.**
+
+```yaml
+od_002_design_establishment_gate: DD-032 — Passed With Conditions
+od_002_design_establishment_recommendation: Recommend Established With Conditions
+od_002_design_establishment_decision: Pending
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: Kelvin's explicit response to decisions/DD-032 (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED) — not recorded by this task.
+
+### Status Update — OD-002 Design Established With Conditions (13 August 2026)
+
+*Seventh and final status-only addendum for this milestone. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+decisions/DD-032's Case-Owner Decision: Kelvin Wong issued **ESTABLISHED WITH CONDITIONS**. **OD-002 now has an Established Organizational Design (Conditional), Authority: decisions/DD-032 Case-Owner Decision, Confidence: Medium-Low** — the sole authoritative Design statement is decisions/DD-032's own (preserved verbatim there): a bounded measurement-and-observability Design targeting the 26% CrUX poor-mobile-TTFB share, which does not establish caching absence, Varnish activity, backend slowness, the TTFB tail's cause, any required intervention, or any ranking/conversion/revenue/reservation benefit. **CE-DQ4-C/E/F/G remain uninvestigated** (canonical phrasing, decisions/DD-032). Ten original plus sixteen additional binding conditions apply, verbatim, separately provenanced.
+
+```yaml
+od_002_design_establishment_decision: Established With Conditions
+od_002_design_established: true
+od_002_design_establishment: Conditional
+od_002_design_authority: DD-032 Case-Owner Decision
+od_002_design_confidence: Medium-Low
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This establishment does not authorize Transformation, external changes, or any technical intervention.** Next action: prepare an independent Transformation Authorization Readiness Gate for the established OD-002 Design **only if explicitly instructed by the case owner** — not created by this task.
+
 ### Status Update — Bounded Stage 2 Evidence Collection Authorized (13 August 2026)
 
 *Fourth status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
