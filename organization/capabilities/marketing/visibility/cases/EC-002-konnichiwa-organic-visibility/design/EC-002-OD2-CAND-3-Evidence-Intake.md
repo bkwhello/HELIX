@@ -4,9 +4,9 @@
 
 **Status:** Historical Evidence Intake Record
 
-**Authoritative Classification:** decisions/DD-027-cache-state-evidence-classification-gate.md
+**Authoritative Classification:** decisions/DD-027-cache-state-evidence-classification-gate.md (Round 1 + Round 2); decisions/DD-028 (Round 3, adds CDN/edge layer resolution)
 
-**Correction Notice:** Round 2's "Confirmed Disabled" Varnish classification is preserved below as historical analysis but is **not authoritative**. decisions/DD-027 corrects the configured state for the domain-correct konnichiwa.nl Varnish screenshot to `Unconfirmed`, because the visible "Activeer" control is insufficient to establish an explicit disabled state. Nothing below this notice has been rewritten, reworded, or deleted to produce that correction — Round 1 and Round 2 remain exactly as originally recorded.
+**Correction Notice:** Round 2's "Confirmed Disabled" Varnish classification is preserved below as historical analysis but is **not authoritative**. decisions/DD-027 corrects the configured state for the domain-correct konnichiwa.nl Varnish screenshot to `Unconfirmed`, because the visible "Activeer" control is insufficient to establish an explicit disabled state. Nothing below this notice has been rewritten, reworded, or deleted to produce that correction — Round 1, Round 2, and Round 3 remain exactly as originally recorded.
 
 ---
 
@@ -216,3 +216,87 @@ external_changes_authorized: false
 ```
 
 **Note on repository state (unchanged):** `current.md` and `Traceability.md` remain not updated by this task. Round 1's yaml block above is preserved unchanged as historical context; this block reflects the current, combined state after both rounds.
+
+---
+
+## Round 3 — 13 August 2026 — Account-Level Feature Status and CDN Re-Check (konnichiwa.nl-Scoped)
+
+Continues this same Evidence Intake record, same scope and boundaries as Round 1 and Round 2 (design/OD2-CAND-3-cache-state-evidence-specification.md; decisions/DD-026's approved bounded collection; decisions/DD-027's twenty-one binding acceptance conditions, notably Condition 16 — Stage 1 may reopen only for further owner-supplied, safely redacted evidence within the existing CSE scope — and Condition 17 — new evidence is processed as a new round, Round 1 and Round 2 left unchanged). Items supplied by Kelvin Wong in direct response to the step-by-step collection instructions given after decisions/DD-027's acceptance.
+
+### R3.1 Input Manifest
+
+| # | Item | Outcome |
+|---|---|---|
+| R3-A | Screenshot: DirectAdmin dashboard/home page, right-hand panel reading "Current domain: konnichiwa.nl" | Confirms domain context for this session's subsequent screenshots. Not itself cache evidence. |
+| R3-B | Screenshot: "Varnish setup voor konnichiwa.nl" | Duplicate of Round 2's R2-G — same content (only an "Activeer" control, no status label). Reconfirms, adds no new fact. |
+| R3-C, R3-D | Screenshot (two, continuous): "Site Summary / Statistics / Logs" → "Details for user u190930p323210" — an **account-wide** feature/settings table | **New, material evidence.** Explicit feature toggles include **Varnish: ON** and **CDN: OFF**, among many unrelated account features (SSH, SSL, CGI-Bin, PHP, SpamAssassin, Catch-All Email, Cron Jobs, GitLab, Mijn Website Maker, SpamRelay, PerlActivate, MalwareScan, etc.) |
+| R3-E | Screenshot: CDN screen, re-attempted | "This plugin is temporarily disabled." — identical result to Round 2's R2-I, same breadcrumb (`u190930p323210 » Plugins`). No new information; now explained, not contradicted, by R3-C/D's "CDN: OFF." |
+| R3-F | Kelvin's statement: no HTML-specific hit/miss evidence (CSE-5A) found anywhere in the dashboard, after searching | **Not Supplied — searched, not found.** Per Spec §5, this is not converted into a negative finding of any kind. |
+
+### R3.2 Privacy Review
+
+R3-C/D's account-summary screen contains several items **excluded from the extracted record below**, none needed for the cache-state question: the server IP address (185.104.29.164), both name servers, the account email `info@konnichiwa.nl`, account resource totals (bandwidth, disk, email/FTP/database counts), and the domain list's third entry, **jatosushi.nl** — plausibly Kelvin's second business (per his profile), not a third-party unrelated client, but out of scope for EC-002 regardless and not used for anything here. No password, API key, token, cookie, or credential appears in any Round 3 image.
+
+### R3.3 CSE Mapping
+
+This account-wide feature table is not literally "the hosting control panel's performance/caching tab" (CSE-3's original framing) or "a CDN provider dashboard" (CSE-4's original framing) — it is the account's own settings/status summary. It is mapped here to CSE-3 (Varnish row) and CSE-4 (CDN row) **by evidentiary substance, not literal screen type** — both rows are explicit, hosting-panel-sourced, feature-level enabled/disabled statements for exactly the two in-scope categories those items exist to evidence. This is treated as within the already-approved CSE-3/CSE-4 scope, not a new evidence category requiring a specification amendment (Spec §3.2) — the categories evidenced are unchanged; only the specific screen supplying them differs from the original worked example.
+
+| ID | Round 2 status | Round 3 status |
+|---|---|---|
+| CSE-3 | Collected/Partial — domain-correct Varnish configured-state evidence | Unchanged in substance; account-level "Varnish: ON" added as corroborating context (R3.4) |
+| CSE-4 | Attempted — Unavailable | **Collected — Confirmed Disabled** (R3-C/D's explicit "CDN: OFF," account-level) |
+| CSE-5A | Not Supplied | Not Supplied — searched, not found (R3-F) |
+
+### R3.4 Updated Layer-by-Layer Matrix (Spec §6.1, §6.2, §6.5)
+
+| Layer | Configured-State | Basis | Delivered-State | §6.5 Layer Result |
+|---|---|---|---|---|
+| WordPress full-page cache (plugin) | Not Present Within Inspected Plugin List | Unchanged (Round 1) | Unconfirmed | CS-2 contribution |
+| Host/reverse-proxy page cache (Varnish, konnichiwa.nl) | **Unconfirmed — unchanged** | R3-C/D's account-level "Varnish: ON" is corroborating context (explains why the per-domain option exists at all) but does **not** by itself establish an explicit, domain-specific enabled/disabled state for konnichiwa.nl (Spec §6.1/CSE-3's own "for konnichiwa.nl specifically" framing); R3-B reconfirms the per-domain screen still shows only an unclicked "Activeer" control | Unconfirmed | CS-4 contribution (incomplete layer coverage) |
+| CDN/edge cache | **Confirmed Disabled** — upgraded from Round 2's "Unavailable" | R3-C/D: explicit account-level "CDN: OFF" — an explicit disabled state per Spec §6.1; directly explains, does not contradict, R2-I/R3-E's "temporarily disabled" screen | Unconfirmed | **CS-2 contribution** (negative, consistent) |
+
+**Case-level aggregation (Spec §6.6):** now **two of three** layers (WordPress, CDN) reach a CS-2 contribution — Rule 5 still requires **all three**; the host/reverse-proxy layer alone remains Unconfirmed. Rule 6 applies.
+
+**Bounded overall outcome: still CS-4 — Insufficient Evidence** — narrower than Round 2 again: only the host/reverse-proxy (Varnish, domain-specific) layer now prevents a case-level CS-2.
+
+### R3.5 Independent Challenge
+
+1. **Could account-level "Varnish: ON" reasonably be read as applying automatically to every domain on the account, including konnichiwa.nl** — making it Confirmed Enabled rather than Unconfirmed? Plausible, not established. The existence of a separate, per-domain "Varnish setup" page with its own unclicked "Activeer" control suggests a genuine additional per-domain step exists; if the account flag alone were sufficient, that page's purpose would be unclear. Left open, narrowest reading kept.
+2. **Does "CDN: OFF" really meet Spec §6.1's Confirmed Disabled bar**, given it may reflect "not purchased" rather than "explicitly toggled off by choice"? Functionally equivalent for classification purposes — Spec's criterion is an explicit disabled/inactive state for the category, which this is, regardless of the commercial reason behind it.
+3. **Does "CDN: OFF" contradict R2-I/R3-E's "This plugin is temporarily disabled" message**, triggering a Layer Contradiction (CS-3)? No — both indicate the same underlying fact (CDN is not active) at different levels of explicitness; they corroborate, not conflict.
+4. **Does R3-F's "searched, found nothing" change CSE-5A's status from Not Supplied to something stronger?** No — per Spec §5, an unsupplied item is never converted into a negative finding regardless of how thoroughly it was searched for; it remains Not Supplied.
+
+### R3.6 Remaining Evidence
+
+None requested further at this time. Kelvin has confirmed CSE-5A does not appear to exist anywhere in this dashboard; CSE-4 is now resolved (Confirmed Disabled); only the host/reverse-proxy layer's domain-specific state remains genuinely open, and no further avenue for resolving it within this dashboard has been identified. This round is treated as a natural, current plateau for Stage 1 evidence collection — not a request for anything new.
+
+### R3.7 Classification Gate
+
+A new classification gate (decisions/DD-028) independently assesses this round's evidence and the updated layer matrix, per decisions/DD-027 Condition 17.
+
+---
+
+## Current Combined State (After Round 3)
+
+```yaml
+od_002_cand3_evidence_intake_round: 3
+od_002_cand3_evidence_intake_status: Interim — CS-4 Insufficient Evidence (2 of 3 layers now CS-2 contribution; host/reverse-proxy layer remains open)
+od_002_cand3_items_received: [CSE-1, CSE-3, CSE-4]
+od_002_cand3_items_partial: []
+od_002_cand3_items_attempted_unavailable: []
+od_002_cand3_items_not_supplied: [CSE-2 — Not Applicable, CSE-5A — searched not found, CSE-5B, CSE-6]
+od_002_cand3_layer_wordpress_configured: Not Present Within Inspected Plugin List
+od_002_cand3_layer_wordpress_delivered: Unconfirmed
+od_002_cand3_layer_host_configured: Unconfirmed
+od_002_cand3_layer_host_delivered: Unconfirmed
+od_002_cand3_layer_cdn_configured: Confirmed Disabled
+od_002_cand3_layer_cdn_delivered: Unconfirmed
+od_002_cand3_bounded_overall_outcome: CS-4 — Insufficient Evidence
+od_002_cand3_classification_gate: decisions/DD-028
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**Note on repository state:** `current.md` and `Traceability.md` are updated alongside this round, per repository convention. Round 1 and Round 2 above remain exactly as recorded — nothing in either was rewritten, reworded, or deleted to produce this round.
