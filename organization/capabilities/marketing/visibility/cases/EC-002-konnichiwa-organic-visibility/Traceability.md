@@ -835,6 +835,98 @@ external_changes_authorized: false
 
 **Next action:** prepare the OD2-CAND-2 Origin/Backend Evidence Request and Observability Specification — not created by this decision, remains a distinct, later, separately-performed task. No evidence was collected; no system was accessed; nothing was committed or pushed.
 
+## OD2-CAND-2 Origin/Backend Evidence Request and Observability Specification — Prepared (13 August 2026)
+
+Under decisions/DD-029's Case-Owner Decision (Authorized With Conditions to Prepare Stage 2 Specification), design/OD2-CAND-2-origin-backend-evidence-observability-specification.md was prepared, not executed. All fifteen preconditions passed; all nine decisions/DD-029 binding conditions carried forward verbatim.
+
+**Question tested:** what observable evidence, if any, distinguishes origin/backend processing from cache-layer delivery, network conditions, CrUX aggregation effects, page mix, and time/load variability — framed explicitly as mechanism discrimination within Design, not new Diagnosis, with Evidence Insufficient pre-registered as legitimate.
+
+**Evidence manifest:** BE-01 through BE-08 individually specified (question, source, evidence class, collection method, minimum/prohibited fields, redaction requirements, owner, access requirement, sufficiency rule, limitation, missing-evidence classification, CE-DQ4-A/B discriminating power, separate-approval requirement) — every decisions/DD-029 classification carried forward unmodified: none Essential; most Conditional or Useful-but-Non-Blocking; **phpMyAdmin explicitly `Unsafe Without New Authorization`**, with no SQL, table name, or database-browsing content anywhere in the document.
+
+**Evidence classes kept structurally separate:** CrUX field; lab; public-request timing; restricted origin/backend; Owner Declaration; provider-attested — lab never substitutes for field, public timing never establishes internal mechanisms, configured state never substitutes for delivered state, account-level evidence never automatically establishes domain-specific state, missing evidence never becomes zero/disabled/absent/healthy.
+
+**Privacy and access:** prohibits collecting/storing passwords, API keys, tokens, cookies, session identifiers, FTP/SSH/database credentials, customer names/emails/phones, reservation content, raw visitor IPs, payment/billing data, and neighbouring-domain data. Collection mode fixed to Owner-Supplied Redacted Evidence Only; twelve agent-prohibited actions listed (login to any system, credential handling, debug/profiling activation, plugin installation, PHP/SQL execution, cache/server changes, provider support contact, new public probes, direct log access) — any evidence needing one of these is classified Blocked and routed to case-owner review.
+
+**Outcome routing:** six pre-registered outcomes (Backend Signal Confirmed / Not Found / Mechanisms Remain Entangled / Contradictory Evidence / Evidence Insufficient / Unsafe or Unauthorized Evidence Requirement), each with its own minimum threshold and permitted/forbidden conclusions — no outcome auto-establishes OD-002 Design, auto-authorizes a technical solution, auto-extends collection scope, or auto-authorizes Transformation/external changes.
+
+**Independent falsification (twelve attacks):** all twelve **Survive**. One (credential/privacy leakage, via an implicit phpMyAdmin route considered during BE-03's drafting) required a correction — phpMyAdmin explicitly excluded and flagged Unsafe Without New Authorization — preserved in the specification's own record rather than silently absorbed.
+
+design/OD-002-design-workstream.md and design/README.md were updated with status-only addenda; no requirement, candidate, attack, or comparison content in either file's own original phases was altered.
+
+```yaml
+od_002_stage_2_specification_created: true
+od_002_stage_2_specification_status: Prepared — Evidence Collection Not Authorized
+od_002_stage_2_specification_readiness_gate: Not Yet Created
+od_002_stage_2_evidence_collection_authorized: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**Preparation of this specification is not approval to collect evidence.** Next action: an independent readiness review of this specification — not created by this task. No evidence was collected; no hosting, WordPress, DirectAdmin, database, or CDN system was accessed; no HTTP probing performed; nothing was committed or pushed.
+
+## OD2-CAND-2 Specification Readiness Gate — DD-030 (13 August 2026)
+
+An independent gate (decisions/DD-030) reviewed design/OD2-CAND-2-origin-backend-evidence-observability-specification.md across authority/scope (Part A), the BE-01–BE-08 manifest (Part B), evidence-class separation (Part C), privacy/security (Part D), outcome routing (Part E), mechanism-discrimination usefulness (Part F), a fifteen-attack independent challenge (Part G), and a twelve-item G-01–G-12 matrix (Part H). All thirteen preconditions passed; all nine decisions/DD-029 conditions were verified word-for-word against the specification's own Phase 1 restatement.
+
+### BE-01–BE-08 Readiness
+
+Six items **Ready**; the remainder **Ready With Conditions** (profiling/debug exclusion for BE-02; phpMyAdmin exclusion for BE-03; aggregation-verification for BE-05; low-expected-yield/BE-08-overlap for BE-06; no-new-ticket for BE-07). **No BE item found Essential** — independently confirmed, not merely repeated from decisions/DD-029. phpMyAdmin remains `Unsafe Without New Authorization`.
+
+### Three Bounded Corrections (applied directly to the specification, preserved inline with dated attribution)
+
+1. **BE-07 Class 4/6 cross-reference** — Phase 4 originally listed BE-07 under both Class 4 (Restricted origin/backend) and Class 6 (Provider-attested), contradicting BE-07's own Phase 3 definition. Corrected to Class 6 only.
+2. **Mechanism-discrimination scope boundary** — Phase 2's question named six mechanisms (backend, cache, network, CrUX aggregation, page mix, time/load); the BE-01–BE-08 manifest addresses only two (CE-DQ4-A/CE-DQ4-B). An explicit disclaimer was added: CE-DQ4-C, CE-DQ4-E, CE-DQ4-F, and CE-DQ4-G remain entirely outside this specification's manifest — OD2-CAND-4's separate, unselected remit.
+3. **Server-file-path redaction gap** — Phase 5's privacy list was missing "internal server file paths," already named as a risk in decisions/DD-029's own G-08 table. Added.
+
+### Independent Challenge and Gate Matrix
+
+Fifteen attacks tested (distinct from the specification's own internal twelve-attack pass): **fourteen Survive cleanly; one (raw-log privacy leakage) Survives with Narrowing**, corrected as above. The G-01–G-12 matrix found **no failures** — five criteria (G-03 BE manifest completeness, G-04 evidence-class integrity, G-05 privacy/security safety, G-07 mechanism-discrimination usefulness, G-11 falsifiability) carry **Pass With Conditions**, each tied directly to the corrections above.
+
+### Gate Verdict
+
+**PASSED WITH CONDITIONS** — kept explicitly separate from any future case-owner decision. Seven binding conditions recorded (the three corrections; no-BE-item-Essential confirmation; phpMyAdmin's continued Unsafe status; all prior DD-018/DD-022/DD-025/DD-026/DD-027/DD-028/DD-029 conditions independently binding; no authorization of Stage 2 execution, Design establishment, Transformation, or external changes regardless of case-owner response).
+
+```yaml
+od_002_stage_2_specification_created: true
+od_002_stage_2_specification_status: Prepared — Readiness Reviewed, Decision Pending
+od_002_stage_2_specification_readiness_gate: DD-030 — Passed With Conditions
+od_002_stage_2_evidence_collection_authorized: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Requested response (first pass): `APPROVED FOR BOUNDED STAGE 2 EVIDENCE COLLECTION` / `APPROVED WITH CONDITIONS FOR BOUNDED STAGE 2 EVIDENCE COLLECTION` / `NOT APPROVED FOR STAGE 2 EVIDENCE COLLECTION`. Stage 1's CS-4 classification and the domain-specific Varnish Unconfirmed/Unconfirmed state are unchanged. **Answered below** (Case-Owner Decision, same date) — this paragraph and the matrices above remain unedited as the historical basis for that decision.
+
+## Bounded Stage 2 Evidence Collection Authorized — DD-030 Case-Owner Decision (13 August 2026)
+
+Kelvin Wong, case owner, issued **APPROVED WITH CONDITIONS FOR BOUNDED STAGE 2 EVIDENCE COLLECTION** (decisions/DD-030, Case-Owner Decision section). **Authorizes preparation and intake of owner-supplied, redacted evidence for BE-01–BE-08 only**, exactly as defined in the readiness-reviewed specification — **not** unrestricted Stage 2 execution; the intake and its classification must remain a bounded round followed by an independent classification gate, mirroring Stage 1's own decisions/DD-026→DD-027/DD-028 pattern.
+
+**Two condition sets recorded verbatim, separately provenanced, neither merged nor renumbered:**
+
+- **Set A** — all nine decisions/DD-029 binding conditions (CE-DQ4-A/B entanglement justification; Not Available for BE-02/BE-03; Insufficient Evidence pre-registered; BE classifications unmodified; G-01 routing table; G-05–G-09 rules; Gates 2–5 each separate; no credentials; all prior DD conditions binding).
+- **Set B** — all seven decisions/DD-030 binding conditions (BE-07 Class 4/6 correction; CE-DQ4-C/E/F/G scope-boundary disclaimer; server-file-path redaction; no BE item Essential; phpMyAdmin Unsafe; all prior conditions binding; no auto-authorization of Stage 2/Design/Transformation/external changes).
+
+**Seventeen additional binding conditions, new to this decision:** collection restricted to BE-01–BE-08 exactly as specified; collection mode remains Owner-Supplied Redacted Evidence Only; no BE item Essential; missing/unavailable evidence never encoded as zero/absent/disabled/healthy/disproven; phpMyAdmin remains Unsafe Without New Authorization; no SQL/database-browsing/profiler/debug-mode/plugin-installation/configuration-change/server-mutation; no direct authenticated access by any agent; no passwords/keys/tokens/cookies/sessions/customer information/reservation content/raw IPs/internal server paths/unrelated domain-account data may enter the repository; evidence must arrive already cropped/redacted/aggregated; CrUX/lab/public-timing/restricted-backend/Owner-Declaration/provider-attested evidence stay separately classified; configured state stays separate from delivered state; account-level evidence must not be applied to konnichiwa.nl without domain-specific support; collection may assess CE-DQ4-A/B only, never CE-DQ4-C/E/F/G; no new public HTTP probing; no new provider-support request; no outcome may auto-establish a diagnosis/Design/technical intervention/Transformation/external change; material contradiction or scope expansion requires an immediate stop and a new case-owner decision.
+
+```yaml
+od_002_stage_2_specification_status: Approved With Conditions — Bounded Evidence Collection Authorized
+od_002_stage_2_evidence_collection_authorized: true
+od_002_stage_2_evidence_collection_decision: Approved With Conditions
+od_002_stage_2_collection_mode: Owner-Supplied Redacted Evidence Only
+od_002_stage_2_direct_authenticated_access_authorized: false
+od_002_stage_2_collection_started: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**Next action:** prepare a bounded BE-01–BE-08 Evidence Intake request/package under this decision — not created by this decision; evidence collection does not begin until that intake task is separately started. Stage 1's CS-4 classification and the domain-specific Varnish Unconfirmed/Unconfirmed state remain preserved without reinterpretation. No evidence was collected; no hosting, WordPress, DirectAdmin, database, or CDN system was accessed; nothing was committed or pushed.
+
 ## Lifecycle Traceability
 
 Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) → Diagnosis Authorization Gate reviewed and recommended AUTHORIZED WITH CONDITIONS, question-specific (decisions/DD-016, 25 July 2026) → **Organizational Diagnosis — Partially Authorized With Conditions** (decisions/DD-016, case-owner decision 25 July 2026), `current_stage: Organizational Diagnosis` → **DQ-001 investigated and gated** (decisions/DD-017, 25 July 2026) → **DQ-001 — Established With Conditions** (decisions/DD-017, case-owner decision 25 July 2026), `dq_001_diagnosis_established: true`, `diagnosis_established_scope: DQ-001 only` → **DQ-004 investigated and gated** (decisions/DD-018, 25 July 2026) → **DQ-004 — Established With Conditions** (decisions/DD-018, case-owner decision 25 July 2026), `dq_004_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-004` — the authoritative formulation for OD-002 is narrowed per the case-owner's Condition 2 (see above) → **DQ-005 investigated and gated** (decisions/DD-019, 25 July 2026): ground-truth facts registered first, fact-by-fact correspondence test run against OC-005's three conditions and every AI-observed discrepancy, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED** (unconditional) → **DQ-005 — Completed, Evidence Insufficient, ACCEPTED** (decisions/DD-019, case-owner decision 25 July 2026), `dq_005_acceptance_decision: Accepted`, `dq_005_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-005) → **DQ-007 investigated and gated** (decisions/DD-020, 25 July 2026): twelve candidate explanations tested against a twelve-domain evidence-sufficiency matrix, new bounded public research directly falsified a GA4-integration mechanism and left one 13-June community-report lead unconfirmed, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED WITH CONDITIONS** → **DQ-007 — Completed, Evidence Insufficient, ACCEPTED WITH CONDITIONS** (decisions/DD-020, case-owner decision 25 July 2026), `dq_007_acceptance_decision: Accepted With Conditions`, `dq_007_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-007) → **DQ-002 investigated and gated** (decisions/DD-021, 25 July 2026): name-variant inventory and canonical entity baseline established, direct re-analysis of EV-014's raw Search Console export found the misspelled query family shows equal-to-better average position than the correct spelling in both directly-tested pairs, eight candidate explanations tested, Candidate Organizational Diagnosis diagnosis/OD-003-name-variant-entity-resolution.md produced and independently challenged (Survives), Gate Verdict **PASSED WITH CONDITIONS** → **DQ-002 — Established With Conditions** (decisions/DD-021, case-owner decision 25 July 2026): the authoritative formulation is narrowed to a single sentence and twelve binding conditions apply verbatim, `dq_002_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-002, DQ-004` → **DQ-002 confidence corrected** (decisions/DD-021 Confidence Decision, case-owner decision 25 July 2026): OD-003's authoritative confidence set to **Medium**, narrower than the gate's original Medium-High assessment, which remains preserved unchanged as historical analysis — **this remains the case's current authoritative stage**, `current_stage: Organizational Diagnosis`. **All five of DD-016's authorized/conditionally-authorized diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) have now been investigated, and every question capable of producing an Organizational Diagnosis (DQ-001, DQ-002, DQ-004) is now established.** DQ-003 and DQ-006 remain Not Authorized (Not a Diagnosis Question). `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false` — unaffected by any diagnosis gate to date; no cache, CDN, hosting, WordPress, code, GBP, listing, or production change is authorized; no Design Authorization Gate exists. DQ-005 and DQ-007 may only be reopened with materially new evidence and a new explicit case-owner decision. Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by any later authorization, reconstruction, establishment, or gate review, all of which rest on independent review and explicit case-owner decision rather than on the earlier drafts.
