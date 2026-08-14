@@ -1132,6 +1132,116 @@ external_changes_authorized: false
 
 **This decision authorizes Transformation preparation only — it does not authorize Organizational Transformation execution**, under any circumstance. **Next action:** create a bounded OD-002 Implementation Candidate Construction Workstream containing at least three materially different candidates, including a credible no-change candidate — **not constructed by this decision-recording task.** No candidate or workstream was created; no evidence was collected; no hosting, WordPress, DirectAdmin, database, or CDN system was accessed; nothing was committed or pushed.
 
+## OD-002 Implementation Candidate Construction Workstream (13 August 2026)
+
+Under decisions/DD-033's Level 1 authorization, transformation/OD-002-implementation-candidate-construction-workstream.md was constructed — bounded, repository-only construction, falsification, and comparison of implementation candidates. No candidate selected; no readiness gate created; no feasibility work performed; no evidence collected; no external or authenticated system accessed.
+
+**Phase 1 (Authority and Boundaries):** all four condition/boundary sets carried forward without merging or weakening — DD-033 Set A (fifteen), DD-033 Set B (twenty-two), DD-032's ten establishment conditions, DD-032's sixteen additional boundaries.
+
+**Phase 2 (Problem Boundary):** eight non-assumptions recorded — no candidate may assume caching absent, Varnish active, backend slow, backend caused the tail, PHP 8.4 as a performance result, "no issues" as backend health, a technical intervention required, or performance implying SEO/business benefit.
+
+**Phase 3 (ICR-001–ICR-020):** twenty mandatory construction requirements registered, mapped directly to decisions/DD-033 Part 6, before any candidate was constructed.
+
+**Phase 4/5 (Candidate Set):** five materially different candidates constructed, each satisfying all twenty ICR requirements in full — **IC-OD2-001** (No-Change/Measurement Continuation — the no-change comparator itself, refreshing the aging CrUX baseline only); **IC-OD2-002** (Observability-Only Preparation — mechanism-neutral instrumentation, log/monitoring access named Blocked); **IC-OD2-003** (Cache-Delivery Verification/Feasibility Preparation — reuses decisions/DD-026's Configured/Delivered-State model, does not assume Varnish active or caching absent); **IC-OD2-004** (Backend/Origin Feasibility Preparation — excludes phpMyAdmin/SQL/PHP/profiling/logs entirely, does not assume backend delay); **IC-OD2-005** (Combined Staged Verification — sequences the other candidates with explicit per-stage gating and "no automatic escalation"). No hosting migration, CDN activation, cache-plugin installation, or code-optimization candidate was constructed as an assumed solution.
+
+**Phase 6 (Assumption Registers):** nineteen candidate-specific assumptions across the five candidates, each classified Established/Supported/Weakly Supported/Needs More Evidence/Unassessed/Unassessable/Contradicted — none promoted beyond what its evidence supports; one (Stage 2 Round 1 read as backend-health evidence) explicitly marked **Contradicted** per decisions/DD-031. All nine topics required by this task (Varnish status, delivered cache state, backend contribution, CrUX freshness, page-mix, network effects, time/load variability, safe-observability availability, no-change acceptability) covered across the set.
+
+**Phase 7 (Falsification and Attack):** twenty dimensions applied independently to all five candidates (100 attacks total) — 96 Survive outright, 4 Survive with Narrowing (each resolved directly within the affected candidate's own fields, no deletion), **zero Rejected**.
+
+**Phase 8 (Comparative Evaluation):** qualitative matrix across twelve dimensions for all five candidates — **no winner chosen, no candidate recommended, no ranking**. Unresolved trade-offs stated explicitly, including that CE-DQ4-C/E/F/G remain outside every candidate's scope — a disclosed gap, not an oversight, consistent with decisions/DD-032 Additional Boundary 7 and decisions/DD-033 Set A Condition 12.
+
+**Phase 9 (Whole-Workstream Challenge):** twelve items tested — eleven Survive outright, one Survives with Narrowing (CE-DQ4-C/E/F/G's absence from every candidate, resolved by the explicit Phase 8 disclosure), **zero Rejected**.
+
+**Phase 10 (Conclusion):** all five candidates remain **Candidate — Unselected**. Candidate construction completed. Independent Candidate Readiness Gate required. Candidate selection remains unauthorized. No feasibility work, implementation, Transformation execution, or external change has been authorized or performed.
+
+```yaml
+current_stage: Organizational Design
+od_002_implementation_candidate_construction_authorized: true
+od_002_implementation_candidate_construction_started: true
+od_002_implementation_candidate_construction_status: Completed — Independent Review Pending
+od_002_implementation_candidate_set_created: true
+od_002_implementation_candidate_selection_authorized: false
+od_002_implementation_candidate_selection_decision: Not Requested
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**Next action:** perform an independent Candidate Readiness Gate for the OD-002 implementation candidate set; do not select a candidate in the construction task — none is created by this task. No commit or push occurred.
+
+## OD-002 Implementation Candidate Readiness Gate (14 August 2026)
+
+decisions/DD-034 independently reviewed the already-existing, uncommitted transformation/OD-002-implementation-candidate-construction-workstream.md — the workstream was not reconstructed or replaced. All twenty-two preconditions passed, including the expected dirty-tree state.
+
+**Part 1 (Authority/Scope):** confirmed Level 1 boundary maintained, Design-derivation correct, Medium-Low confidence preserved, all four DD-032/DD-033 condition sets carried correctly.
+
+**Part 2 (ICR-001–ICR-020):** nineteen requirements PASS; ICR-013 (rollback plan, defined at construction time) CONDITIONAL PASS — IC-OD2-003 (feasibility-test sub-class), IC-OD2-004, and IC-OD2-005 (Stage 3) each state their rollback plan is "explicitly deferred as a precondition," which literally matches ICR-013's own failure condition for those sub-paths. The register itself was independently judged to genuinely precede candidate construction (generic, non-candidate-specific wording).
+
+**Part 3 (Candidate Inventory):** IC-OD2-001 and IC-OD2-002 assessed **Ready for Case-Owner Consideration**; IC-OD2-003, IC-OD2-004, and IC-OD2-005 assessed **Ready With Conditions**, tied to the ICR-013 finding. None Rejected — a more differentiated result than the workstream's own uniform "Candidate — Unselected" status.
+
+**Part 4 (Material Diversity):** all five candidates independently confirmed materially distinct, each with its own future decision consequence; IC-OD2-005's distinction from IC-OD2-003 is the narrowest of the five, consistent with — not contradicting — the workstream's own Phase 8 disclosure.
+
+**Part 5 (Assumption Register):** all nineteen candidate-specific assumptions independently reviewed; the one Contradicted assumption (Stage 2 Round 1 as backend-health evidence, decisions/DD-031) confirmed correctly isolated and never reintroduced.
+
+**Part 6 (Falsification):** all 100 reported attacks independently re-derived (not sampled) — 96 Survive/4 Survive with Narrowing/0 Rejected confirmed accurate; all four reported narrowings verified present in the active candidate text. One additional narrowing found independently (Attack 16, rollback specificity for IC-OD2-003/004/005), tied to the same ICR-013 finding.
+
+**Part 7 (No-Change Review):** IC-OD2-001 independently confirmed genuinely non-symbolic under heightened scrutiny.
+
+**Part 8 (Comparative Neutrality):** no preference-leakage found in Phase 8's qualitative comparison.
+
+**Part 9 (Lifecycle/Safety):** confirmed by direct text search — no candidate selection, feasibility execution, authenticated access, evidence collection, profiling/debugging, SQL/PHP/database inspection, plugin installation, configuration change, or production/implementation language anywhere in the workstream.
+
+**Part 10 (Independent Challenge):** twenty-four items tested — twenty Survive outright, four Survive with Narrowing, zero Rejected. Attack 14 (rollback impossible before mechanism is known) is the one genuinely new defect this gate surfaces, resolved by a new binding condition.
+
+**Part 11 (G-01–G-20):** eighteen PASS, two CONDITIONAL PASS (G-04, G-14, both tied to the single ICR-013 finding), zero FAIL.
+
+**Part 12 (Gate Verdict):** **PASSED WITH CONDITIONS. Recommendation: RECOMMEND ELIGIBLE WITH CONDITIONS FOR CASE-OWNER SELECTION** — ten binding conditions, including a new condition requiring any future proposal naming a specific technical mechanism under IC-OD2-003's feasibility-test sub-class, IC-OD2-004, or IC-OD2-005's Stage 3 to define a concrete, mechanism-specific rollback plan at that proposal's own construction time before it could pass a future feasibility-readiness gate.
+
+```yaml
+current_stage: Organizational Design
+od_002_implementation_candidate_readiness_gate: DD-034 — Passed With Conditions
+od_002_implementation_candidate_readiness_recommendation: Recommend Eligible With Conditions For Case-Owner Selection
+od_002_implementation_candidate_construction_status: Completed — Independently Reviewed, Selection Decision Pending
+od_002_implementation_candidate_selection_authorized: false
+od_002_implementation_candidate_selection_decision: Pending
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**No candidate was selected or ranked. The workstream's candidate content was not modified — the ICR-013 finding is contained by a binding condition, not a rewrite.** No evidence was collected; no external or authenticated system was accessed; no technical or production change occurred. **Next action:** Kelvin's explicit selection response (SELECT FOR FURTHER FEASIBILITY PREPARATION / SELECT STAGED COMBINATION FOR FURTHER FEASIBILITY PREPARATION / REQUEST FURTHER CANDIDATE ITERATION / DECLINE ALL CANDIDATES) — not recorded by this task. No commit or push occurred.
+
+## OD-002 Implementation Candidate Case-Owner Selection (14 August 2026)
+
+decisions/DD-034's Case-Owner Selection section: Kelvin Wong issued **SELECT STAGED COMBINATION FOR FURTHER FEASIBILITY PREPARATION** — Stage 1: IC-OD2-001 (No-Change / Measurement Continuation), **Selected — Stage 1, Execution Not Authorized**; Stage 2: IC-OD2-002 (Observability-Only Preparation), **Selected Conditionally — Stage 2 Pending Stage 1 Review**, eligible only after Stage 1 review confirms the measured mobile poor-TTFB condition remains materially present. IC-OD2-003, IC-OD2-004, and IC-OD2-005 remain **Retained — Unselected Alternative**; none is marked Established, Implemented, or Rejected.
+
+**Rationale:** the 26% poor-mobile-TTFB baseline is aging; cache absence, domain-specific Varnish delivery, and backend delay all remain unestablished; Stage 1 (OD2-CAND-3) and Stage 2 (OD2-CAND-2) evidence attempts both ended in insufficient evidence (decisions/DD-028, DD-031); renewed like-for-like measurement therefore precedes additional mechanism preparation; observability preparation becomes relevant only if the condition remains materially present. This selection does not imply IC-OD2-001 or IC-OD2-002 is technically superior, and does not reject IC-OD2-003, IC-OD2-004, or IC-OD2-005.
+
+All ten decisions/DD-034 gate conditions (Set A) were copied verbatim with their original provenance; twenty-two new selection-specific boundaries (Set B) were recorded separately — notably: Stage 1 is measurement continuation only and does not reopen OD-002 Diagnosis; the future protocol must be a separately prepared, like-for-like CrUX remeasurement preserving origin-level/mobile/TTFB/28-day aggregation; the existing 26% value stays historical baseline evidence; no invented numerical improvement threshold; "no measurable change" stays a valid Stage 1 outcome; a shifted share does not establish a cache or backend mechanism; Stage 1 execution and Stage 2 preparation each require their own separate readiness gate and explicit case-owner authorization; Stage 2 may prepare observability only — no monitoring/logging/profiling/debugging activation, no credentials/customer/reservation/IP/server-path data; IC-OD2-003/004/005 stay preserved as alternatives; the DD-034 ICR-013 rollback condition stays binding for any future use of them; no selection authorizes feasibility execution, implementation, or production testing; OD-002's Design statement and Medium-Low confidence stay unchanged; no ranking/conversion/revenue/reservation benefit permitted; OD-001 Candidate D stays separate from this TTFB-measurement protocol; `transformation_authorized`/`external_changes_authorized` stay `false`.
+
+transformation/OD-002-implementation-candidate-construction-workstream.md received a status-only addendum ("Status Update — Case-Owner Staged Selection"), mirroring design/OD-002-design-workstream.md's own Case-Owner Staged Selection precedent — no precondition, requirement, candidate formulation, assumption register, attack, comparison, or challenge content in the workstream's own Phases 1–10 was altered. transformation/README.md updated with the same status.
+
+```yaml
+current_stage: Organizational Design
+od_002_implementation_candidate_readiness_gate: DD-034 — Passed With Conditions
+od_002_implementation_candidate_selection_decision: Staged Selection — IC-OD2-001 then Conditional IC-OD2-002
+od_002_selected_stage_1_candidate: IC-OD2-001
+od_002_stage_1_candidate_status: Selected — Execution Not Authorized
+od_002_selected_stage_2_candidate: IC-OD2-002
+od_002_stage_2_candidate_status: Selected Conditionally — Pending Stage 1 Review
+od_002_candidate_selection_completed: true
+od_002_stage_1_execution_authorized: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This selection names which candidates will be prepared further — it does not authorize preparing, executing, or accessing anything.** No protocol was created or executed; no CrUX data was retrieved; no feasibility work was performed; no evidence was collected; no external or authenticated system was accessed; no technical or production change occurred. **Next action:** prepare an IC-OD2-001 Like-for-Like CrUX Remeasurement Protocol Readiness Gate — not created by this task. No commit or push occurred.
+
 ## Lifecycle Traceability
 
 Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) → Diagnosis Authorization Gate reviewed and recommended AUTHORIZED WITH CONDITIONS, question-specific (decisions/DD-016, 25 July 2026) → **Organizational Diagnosis — Partially Authorized With Conditions** (decisions/DD-016, case-owner decision 25 July 2026), `current_stage: Organizational Diagnosis` → **DQ-001 investigated and gated** (decisions/DD-017, 25 July 2026) → **DQ-001 — Established With Conditions** (decisions/DD-017, case-owner decision 25 July 2026), `dq_001_diagnosis_established: true`, `diagnosis_established_scope: DQ-001 only` → **DQ-004 investigated and gated** (decisions/DD-018, 25 July 2026) → **DQ-004 — Established With Conditions** (decisions/DD-018, case-owner decision 25 July 2026), `dq_004_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-004` — the authoritative formulation for OD-002 is narrowed per the case-owner's Condition 2 (see above) → **DQ-005 investigated and gated** (decisions/DD-019, 25 July 2026): ground-truth facts registered first, fact-by-fact correspondence test run against OC-005's three conditions and every AI-observed discrepancy, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED** (unconditional) → **DQ-005 — Completed, Evidence Insufficient, ACCEPTED** (decisions/DD-019, case-owner decision 25 July 2026), `dq_005_acceptance_decision: Accepted`, `dq_005_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-005) → **DQ-007 investigated and gated** (decisions/DD-020, 25 July 2026): twelve candidate explanations tested against a twelve-domain evidence-sufficiency matrix, new bounded public research directly falsified a GA4-integration mechanism and left one 13-June community-report lead unconfirmed, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED WITH CONDITIONS** → **DQ-007 — Completed, Evidence Insufficient, ACCEPTED WITH CONDITIONS** (decisions/DD-020, case-owner decision 25 July 2026), `dq_007_acceptance_decision: Accepted With Conditions`, `dq_007_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-007) → **DQ-002 investigated and gated** (decisions/DD-021, 25 July 2026): name-variant inventory and canonical entity baseline established, direct re-analysis of EV-014's raw Search Console export found the misspelled query family shows equal-to-better average position than the correct spelling in both directly-tested pairs, eight candidate explanations tested, Candidate Organizational Diagnosis diagnosis/OD-003-name-variant-entity-resolution.md produced and independently challenged (Survives), Gate Verdict **PASSED WITH CONDITIONS** → **DQ-002 — Established With Conditions** (decisions/DD-021, case-owner decision 25 July 2026): the authoritative formulation is narrowed to a single sentence and twelve binding conditions apply verbatim, `dq_002_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-002, DQ-004` → **DQ-002 confidence corrected** (decisions/DD-021 Confidence Decision, case-owner decision 25 July 2026): OD-003's authoritative confidence set to **Medium**, narrower than the gate's original Medium-High assessment, which remains preserved unchanged as historical analysis — **this remains the case's current authoritative stage**, `current_stage: Organizational Diagnosis`. **All five of DD-016's authorized/conditionally-authorized diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) have now been investigated, and every question capable of producing an Organizational Diagnosis (DQ-001, DQ-002, DQ-004) is now established.** DQ-003 and DQ-006 remain Not Authorized (Not a Diagnosis Question). `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false` — unaffected by any diagnosis gate to date; no cache, CDN, hosting, WordPress, code, GBP, listing, or production change is authorized; no Design Authorization Gate exists. DQ-005 and DQ-007 may only be reopened with materially new evidence and a new explicit case-owner decision. Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by any later authorization, reconstruction, establishment, or gate review, all of which rest on independent review and explicit case-owner decision rather than on the earlier drafts.
