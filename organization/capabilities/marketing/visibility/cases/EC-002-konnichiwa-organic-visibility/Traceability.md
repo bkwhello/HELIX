@@ -1308,6 +1308,134 @@ external_changes_authorized: false
 
 **This decision authorizes repository-only protocol preparation only — it does not create the protocol, retrieve data, or authorize execution.** decisions/DD-034 and transformation/OD-002-implementation-candidate-construction-workstream.md were **not** modified. No protocol was created; no CrUX or PageSpeed data was accessed; no evidence was collected; no future measurement window or numerical threshold was set. **Next action:** prepare the IC-OD2-001 Like-for-Like CrUX Remeasurement Protocol in a separate task — not created by this task. No commit or push occurred.
 
+## IC-OD2-001 CrUX Mobile TTFB Remeasurement Protocol Prepared (14 August 2026)
+
+transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md was prepared under decisions/DD-035's authorization (AUTHORIZED WITH CONDITIONS TO PREPARE IC-OD2-001 CRUX REMEASUREMENT PROTOCOL) — a repository-only, like-for-like CrUX mobile TTFB remeasurement protocol for IC-OD2-001. No CrUX/PageSpeed access occurred; no data was retrieved; no evidence was created.
+
+**Phase 1 (Authority/Purpose):** all fifteen DD-035 Set A conditions and all thirty-two DD-035 Set B boundaries carried forward verbatim, separately provenanced; purpose scoped to a poor-share direction (lower/unchanged/higher), explicitly excluding cache/Varnish/backend mechanism diagnosis, page-specific conclusions, and ranking/conversion/revenue/reservation conclusions.
+
+**Phase 2 (Baseline, Locked):** origin-level, mobile, TTFB, rolling 28-day window, 2026-06-24 through 2026-07-21, 26% poor (historical, not current), Core Web Vitals Passed (kept structurally separate), report generated 2026-07-24 06:19:15, PageSpeed interactive report after two API HTTP-429 failures — reconstructed with no undocumented setting added.
+
+**Phase 3 (Unresolved-Method Register):** UMF-001 through UMF-007 carried forward from decisions/DD-035, none resolved by this task — percentile basis and PageSpeed interface/version conditions to resolve; release cadence and timezone Non-Blocking; country/connection segmentation Structurally Unavailable; report reproducibility a condition to resolve before execution.
+
+**Phase 4 (Target Window):** proposed 2026-07-22 through 2026-08-18 — exactly 28 days, zero overlap with the historical window, labelled Proposed — Subject to Readiness Gate and Source Availability Confirmation; earliest retrieval requires source-side confirmation, not an assumed lag; proposed lapse date 2026-10-31, labelled Operational Choice.
+
+**Phase 5/6 (Execution Manifest/Metadata):** fourteen future read-only steps defined, no automation/API key/authenticated access; eighteen required metadata fields specified for any future execution record.
+
+**Phase 7 (Calculation Rules):** displayed percentages only, no invented decimals, no significance/materiality/causality claims, no mobile/desktop or origin/URL or lab/field mixing, explicit rounding-difference recording without silent normalization.
+
+**Phase 8 (Pre-Registered Outcomes):** OUT-01 through OUT-07 defined, each with permitted/prohibited conclusions — no outcome may automatically start IC-OD2-002; "materially lower/higher" and "broadly stable" excluded as terms absent a separately approved threshold.
+
+**Phase 9 (Confounder Register):** CF-001 through CF-012 registered, default status Unknown, never "No Change" without evidence.
+
+**Phase 10 (Stop Conditions):** fourteen conditions requiring execution to halt with no classification made.
+
+**Phase 11 (Evidence/Classification Boundary):** future execution must produce a new input manifest, privacy review, evidence record, and independent classification gate before any case-owner acceptance — execution alone never classifies an outcome, reopens Diagnosis, starts Stage 2, or authorizes implementation/Transformation/external changes.
+
+**Phase 12 (OD-001 Separation):** confirmed full separation from OD-001 Candidate D — different metric, source, window, and decision chain; neither substitutes for or classifies the other.
+
+**Phase 13 (Falsification):** twenty-two attacks tested — twenty-one Survive outright, one Survives with Narrowing (protocol preparation vs. execution), resolved by restating the access/execution boundary in the document's own top-level status block rather than only at its close.
+
+**Phase 14 (Approval Boundary):** requests an Independent Protocol Readiness Gate before any execution; **preparation is not execution authorization.**
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_preparation_authorized: true
+od_002_stage_1_protocol_created: true
+od_002_stage_1_protocol_status: Prepared — Independent Readiness Review Required
+od_002_stage_1_protocol_target_window: Proposed 2026-07-22 through 2026-08-18
+od_002_stage_1_protocol_lapse_date: Proposed 2026-10-31 — Operational Choice
+od_002_stage_1_execution_authorized: false
+od_002_stage_1_execution_started: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+transformation/README.md updated with a new index row; transformation/OD-002-implementation-candidate-construction-workstream.md received a status/reference-only addendum — no Phase 1–10 content in the workstream was altered. decisions/DD-035 was **not** modified. **Next action:** perform an independent readiness review of the IC-OD2-001 CrUX protocol; do not execute it — not performed by this task. No commit or push occurred.
+
+## IC-OD2-001 CrUX Protocol Readiness Gate (14 August 2026)
+
+decisions/DD-036 independently reviewed transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md — the protocol was not executed; no CrUX/PageSpeed/Search Console system was accessed. All twenty-seven preconditions passed, including the expected dirty-tree state, verified directly (4 modified + 1 untracked, nothing staged).
+
+**Part 1 (Authority/Scope):** confirmed preparation-only authority, execution non-authorization, CrUX/mobile/TTFB scope, OD-001 separation, no automatic Stage 2 start, no mechanism/business-outcome implication.
+
+**Part 2 (Baseline Review):** every historical field independently re-verified against observations/O-012.md and diagnosis/DQ-004-investigation.md Phase 1 directly — all Confirmed except the report timezone (Confirmed With Limitation; the original source states no timezone). No field found Incorrect.
+
+**Part 3 (UMF-001–007 Review):** six of seven transferred cleanly from decisions/DD-035; UMF-001 (TTFB percentile basis) required an interpretive ruling — disclosed deferral to execution time satisfies DD-035's original "resolve before approval" condition, since premature assertion would itself violate the resolve-nothing-by-assumption rule.
+
+**Part 4 (Target Window):** mathematics independently re-derived — 2026-07-22 through 2026-08-18 is exactly 28 days with zero overlap against the historical 2026-06-24–2026-07-21 window, confirmed by direct calculation. Operational feasibility classified **Ready With Source-Availability Condition**.
+
+**Part 5 (Retrieval/Lapse):** confirmed no fixed retrieval date, no invented reporting lag, and correct source-availability gating. **Genuine gap found:** the lapse date lacked an explicit expiry/renewal rule — closed by a bounded correction to Phase 4 (execution after lapse requires a new, separate case-owner decision).
+
+**Part 6 (Execution Manifest):** all fourteen steps independently confirmed read-only, reproducible, authentication-free, and correctly authorization-gated (Step 1 precedes all access steps).
+
+**Part 7 (Calculation Review):** five sample values (20%, 26%, 31%, rounding-anomaly sums, missing data) independently tested against the protocol's own written rules — all routed correctly to OUT-01/02/03/05 respectively.
+
+**Part 8 (Outcome Review):** all seven pre-registered outcomes independently confirmed to bar mechanism-proof, no-problem, and automatic-Stage-2 conclusions.
+
+**Part 9 (Confounder Review):** all twelve confounders (CF-001–012) confirmed present and matched 1:1 against the required list; default-Unknown discipline upheld.
+
+**Part 10 (Stop-Condition Review):** fourteen original conditions matched 1:1 against the required list. **Second genuine gap found:** no condition covered a source window displayed without determinable exact dates — closed by adding a fifteenth stop condition.
+
+**Part 11 (Privacy/Access):** confirmed public-read-only-only future access; all ten prohibited categories covered, several by reference to the DD-029/030 checklist.
+
+**Part 12 (OD-001 Separation):** confirmed full separation — distinct metric, source, window, and governing decision chain.
+
+**Part 13 (Independent Challenge):** twenty-four items tested — twenty-two Survive outright, one Survives with Narrowing (lapse-date governance, resolved by the Part 5 correction); the two additional gaps found in Parts 3 and 10 are recorded as this gate's own original findings, not hidden inside the challenge table.
+
+**Part 14 (G-01–G-22):** no failures — eighteen PASS, four Conditional Pass (G-03, G-05, G-07, G-13), three resolved by bounded correction and one (G-05, target-window availability) inherently conditional on future source confirmation.
+
+**Part 15 (Gate Verdict):** **PASSED WITH CONDITIONS. Recommendation: RECOMMEND APPROVED WITH CONDITIONS FOR READ-ONLY CRUX REMEASUREMENT EXECUTION** — eleven binding conditions, including the UMF-001 interpretive ruling, the new lapse-expiry rule, and the new fifteenth stop condition, all now binding on the protocol.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_created: true
+od_002_stage_1_protocol_status: Prepared — Readiness Reviewed, Execution Decision Pending
+od_002_stage_1_protocol_readiness_gate: DD-036 — Passed With Conditions
+od_002_stage_1_execution_decision: Pending
+od_002_stage_1_execution_authorized: false
+od_002_stage_1_execution_started: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This recommendation is not authorization.** Three bounded corrections were applied directly to the protocol document (timezone-assumption flag, lapse-expiry rule, fifteenth stop condition), each dated and attributed inline within the protocol itself — no other Phase 1–14 content was altered. transformation/README.md and transformation/OD-002-implementation-candidate-construction-workstream.md updated with reference/status-only content. decisions/DD-018 through DD-035 were **not** modified. No CrUX/PageSpeed system was accessed; no data was retrieved; no evidence was created; this gate did not authorize itself. **Next action:** Kelvin's explicit response (APPROVED FOR READ-ONLY CRUX REMEASUREMENT EXECUTION / APPROVED WITH CONDITIONS FOR READ-ONLY CRUX REMEASUREMENT EXECUTION / NOT APPROVED FOR EXECUTION) — not recorded by this task. No commit or push occurred.
+
+## IC-OD2-001 CrUX Remeasurement Execution — Case-Owner Decision (14 August 2026)
+
+decisions/DD-036's Case-Owner Decision section: Kelvin Wong issued **APPROVED WITH CONDITIONS FOR READ-ONLY CRUX REMEASUREMENT EXECUTION** — one bounded, public, read-only execution attempt of transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md authorized, limited to retrieving and recording comparable origin-level mobile CrUX TTFB field data for konnichiwa.nl. Explicitly excludes classification acceptance, Stage 2 activation, technical investigation, implementation, Transformation execution, and external changes.
+
+All eleven decisions/DD-036 gate conditions (Set A) were copied verbatim with their original provenance; thirty-eight new execution conditions (Set B) were recorded separately — notably: execution prohibited on or before 18 August 2026, earliest possible 19 August 2026 (not a guaranteed availability date); execution only when the source visibly confirms a complete, comparable field-data period matching the intended 22 Jul–18 Aug 2026 target window; a differently-dated or undated displayed window must route to Method Not Comparable/Data Unavailable or a new case-owner decision, never silent equivalence; the 26% historical comparator (24 Jun–21 Jul 2026) stays historical; authorization expires 31 October 2026, execution after that requires a new decision; exactly one attempt permitted, a stopped attempt does not authorize retries; access limited to public read-only PageSpeed/CrUX, no credentials/automation; lab/field, mobile/desktop, origin/URL, and public-timing/CrUX all stay separate; displayed precision preserved, rounding differences recorded not normalized; no statistical-significance/materiality claim; no result establishes a cache/Varnish/backend mechanism; OUT-01–OUT-07 remain the only pre-registered outcomes; missing data never zero; all twelve confounders remain Unknown unless separately evidenced; execution creates evidence but does not itself classify or accept the outcome — a separate independent classification gate is mandatory; no outcome auto-starts IC-OD2-002; Stage 2 preparation stays unauthorized; OD-001 Candidate D stays separate and unexecuted; no ranking/conversion/revenue/reservation benefit; no technical/production change; implementation/`transformation_authorized`/`external_changes_authorized` stay `false`.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_readiness_gate: DD-036 — Passed With Conditions
+od_002_stage_1_execution_decision: Approved With Conditions — One Public Read-Only Attempt
+od_002_stage_1_execution_authorized: true
+od_002_stage_1_execution_mode: Public Read-Only CrUX/PageSpeed
+od_002_stage_1_execution_not_before: 2026-08-19
+od_002_stage_1_execution_target_window: 2026-07-22 through 2026-08-18
+od_002_stage_1_execution_authorization_expires: 2026-10-31
+od_002_stage_1_execution_attempt_limit: 1
+od_002_stage_1_execution_started: false
+od_002_stage_1_execution_completed: false
+od_002_stage_1_evidence_created: false
+od_002_stage_1_classification_status: Not Started
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This decision authorizes one bounded execution attempt — it does not itself execute the protocol, create evidence, or start Stage 2.** transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md and the candidate workstream received status-only addenda; decisions/DD-018 through DD-035 were **not** modified. No CrUX/PageSpeed system was accessed; no evidence was created. **Next action:** wait until at least 2026-08-19, then perform at most one public read-only execution only if the source visibly confirms a complete comparable field-data window — not performed by this task. No commit or push occurred.
+
 ## Lifecycle Traceability
 
 Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) → Diagnosis Authorization Gate reviewed and recommended AUTHORIZED WITH CONDITIONS, question-specific (decisions/DD-016, 25 July 2026) → **Organizational Diagnosis — Partially Authorized With Conditions** (decisions/DD-016, case-owner decision 25 July 2026), `current_stage: Organizational Diagnosis` → **DQ-001 investigated and gated** (decisions/DD-017, 25 July 2026) → **DQ-001 — Established With Conditions** (decisions/DD-017, case-owner decision 25 July 2026), `dq_001_diagnosis_established: true`, `diagnosis_established_scope: DQ-001 only` → **DQ-004 investigated and gated** (decisions/DD-018, 25 July 2026) → **DQ-004 — Established With Conditions** (decisions/DD-018, case-owner decision 25 July 2026), `dq_004_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-004` — the authoritative formulation for OD-002 is narrowed per the case-owner's Condition 2 (see above) → **DQ-005 investigated and gated** (decisions/DD-019, 25 July 2026): ground-truth facts registered first, fact-by-fact correspondence test run against OC-005's three conditions and every AI-observed discrepancy, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED** (unconditional) → **DQ-005 — Completed, Evidence Insufficient, ACCEPTED** (decisions/DD-019, case-owner decision 25 July 2026), `dq_005_acceptance_decision: Accepted`, `dq_005_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-005) → **DQ-007 investigated and gated** (decisions/DD-020, 25 July 2026): twelve candidate explanations tested against a twelve-domain evidence-sufficiency matrix, new bounded public research directly falsified a GA4-integration mechanism and left one 13-June community-report lead unconfirmed, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED WITH CONDITIONS** → **DQ-007 — Completed, Evidence Insufficient, ACCEPTED WITH CONDITIONS** (decisions/DD-020, case-owner decision 25 July 2026), `dq_007_acceptance_decision: Accepted With Conditions`, `dq_007_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-007) → **DQ-002 investigated and gated** (decisions/DD-021, 25 July 2026): name-variant inventory and canonical entity baseline established, direct re-analysis of EV-014's raw Search Console export found the misspelled query family shows equal-to-better average position than the correct spelling in both directly-tested pairs, eight candidate explanations tested, Candidate Organizational Diagnosis diagnosis/OD-003-name-variant-entity-resolution.md produced and independently challenged (Survives), Gate Verdict **PASSED WITH CONDITIONS** → **DQ-002 — Established With Conditions** (decisions/DD-021, case-owner decision 25 July 2026): the authoritative formulation is narrowed to a single sentence and twelve binding conditions apply verbatim, `dq_002_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-002, DQ-004` → **DQ-002 confidence corrected** (decisions/DD-021 Confidence Decision, case-owner decision 25 July 2026): OD-003's authoritative confidence set to **Medium**, narrower than the gate's original Medium-High assessment, which remains preserved unchanged as historical analysis — **this remains the case's current authoritative stage**, `current_stage: Organizational Diagnosis`. **All five of DD-016's authorized/conditionally-authorized diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) have now been investigated, and every question capable of producing an Organizational Diagnosis (DQ-001, DQ-002, DQ-004) is now established.** DQ-003 and DQ-006 remain Not Authorized (Not a Diagnosis Question). `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false` — unaffected by any diagnosis gate to date; no cache, CDN, hosting, WordPress, code, GBP, listing, or production change is authorized; no Design Authorization Gate exists. DQ-005 and DQ-007 may only be reopened with materially new evidence and a new explicit case-owner decision. Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by any later authorization, reconstruction, establishment, or gate review, all of which rest on independent review and explicit case-owner decision rather than on the earlier drafts.

@@ -53,6 +53,82 @@ No candidate above is marked Established, Implemented, or Rejected. Stage 1 exec
 
 ---
 
+## Status Update — IC-OD2-001 Protocol Prepared (14 August 2026)
+
+*Status/reference-only addendum. It does not alter any precondition, requirement, candidate formulation, assumption register, attack, comparison, or challenge content in the Precondition Check or Phases 1 through 10 above — all remain exactly as originally constructed. Authority: decisions/DD-035, Case-Owner Decision, Kelvin Wong, 14 August 2026.*
+
+Under decisions/DD-035's authorization (AUTHORIZED WITH CONDITIONS TO PREPARE IC-OD2-001 CRUX REMEASUREMENT PROTOCOL), `transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md` has been prepared — a repository-only, like-for-like CrUX mobile TTFB remeasurement protocol for IC-OD2-001, satisfying its Field 8 (Measurement/Observability Plan) and Field 20 (Later-Gate Requirement) as originally constructed above. IC-OD2-001's own Metadata line and Phase 4/5 fields are unchanged — this addendum adds a pointer, not a rewrite.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_authorization_gate: DD-035 — Passed With Conditions
+od_002_stage_1_protocol_created: true
+od_002_stage_1_protocol_status: Prepared — Independent Readiness Review Required
+od_002_stage_1_execution_authorized: false
+od_002_stage_1_execution_started: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+No CrUX/PageSpeed access occurred; no data was retrieved; no evidence was created. Next action: an independent readiness review of the IC-OD2-001 CrUX protocol — **not performed by this task.**
+
+---
+
+## Status Update — IC-OD2-001 Protocol Independently Reviewed (14 August 2026)
+
+*Status/reference-only addendum. It does not alter any precondition, requirement, candidate formulation, assumption register, attack, comparison, or challenge content in the Precondition Check or Phases 1 through 10 above — all remain exactly as originally constructed. Authority: decisions/DD-036, Independent Protocol Readiness Gate, 14 August 2026.*
+
+decisions/DD-036 independently reviewed `transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md` in full — re-verifying the historical baseline, re-deriving the target-window mathematics, testing calculation/outcome routing against five sample values, and independently attacking the protocol across twenty-four dimensions. Three bounded corrections were applied directly to the protocol (a timezone-assumption flag, a lapse-expiry rule, and a fifteenth stop condition for source-window-date ambiguity), each dated and attributed inline, with no other Phase 1–14 content altered. **Gate Verdict: PASSED WITH CONDITIONS. Recommendation: RECOMMEND APPROVED WITH CONDITIONS FOR READ-ONLY CRUX REMEASUREMENT EXECUTION.** This recommendation is not execution authorization.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_created: true
+od_002_stage_1_protocol_status: Prepared — Readiness Reviewed, Execution Decision Pending
+od_002_stage_1_protocol_readiness_gate: DD-036 — Passed With Conditions
+od_002_stage_1_execution_decision: Pending
+od_002_stage_1_execution_authorized: false
+od_002_stage_1_execution_started: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+No CrUX/PageSpeed access occurred; no data was retrieved; no evidence was created. Next action: Kelvin's explicit execution-decision response to decisions/DD-036 — **not recorded by this task.**
+
+---
+
+## Status Update — IC-OD2-001 Execution Authorized With Conditions (14 August 2026)
+
+*Status/reference-only addendum. It does not alter any precondition, requirement, candidate formulation, assumption register, attack, comparison, or challenge content in the Precondition Check or Phases 1 through 10 above — all remain exactly as originally constructed. Authority: decisions/DD-036, Case-Owner Decision, Kelvin Wong, 14 August 2026.*
+
+Kelvin Wong issued **APPROVED WITH CONDITIONS FOR READ-ONLY CRUX REMEASUREMENT EXECUTION** (decisions/DD-036, Case-Owner Decision). One bounded, public, read-only execution attempt of `transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md` is now authorized — not before 2026-08-19, expiring 2026-10-31 if unused, limited to one attempt, subject to eleven DD-036 Set A conditions and thirty-eight new Set B execution conditions recorded verbatim in decisions/DD-036.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_readiness_gate: DD-036 — Passed With Conditions
+od_002_stage_1_execution_decision: Approved With Conditions — One Public Read-Only Attempt
+od_002_stage_1_execution_authorized: true
+od_002_stage_1_execution_not_before: 2026-08-19
+od_002_stage_1_execution_authorization_expires: 2026-10-31
+od_002_stage_1_execution_attempt_limit: 1
+od_002_stage_1_execution_started: false
+od_002_stage_1_evidence_created: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This decision does not itself execute the protocol.** No CrUX/PageSpeed access occurred; no data was retrieved; no evidence was created. Next action: wait until at least 2026-08-19, then perform at most one public read-only execution only if the source visibly confirms a complete comparable field-data window — **not performed by this task.**
+
+---
+
 ## Precondition Check
 
 | # | Precondition | Result |
