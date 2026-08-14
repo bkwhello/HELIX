@@ -1242,6 +1242,72 @@ external_changes_authorized: false
 
 **This selection names which candidates will be prepared further — it does not authorize preparing, executing, or accessing anything.** No protocol was created or executed; no CrUX data was retrieved; no feasibility work was performed; no evidence was collected; no external or authenticated system was accessed; no technical or production change occurred. **Next action:** prepare an IC-OD2-001 Like-for-Like CrUX Remeasurement Protocol Readiness Gate — not created by this task. No commit or push occurred.
 
+## IC-OD2-001 CrUX Remeasurement Protocol Authorization Gate (14 August 2026)
+
+decisions/DD-035 independently assessed whether preparation of an IC-OD2-001 Like-for-Like CrUX Remeasurement Protocol is authorized and methodologically ready — the protocol itself was not created; no CrUX/PageSpeed/Search Console system was accessed. All thirty preconditions passed.
+
+**Part 1 (Authority Chain):** chained through observations/O-012.md, diagnosis/DQ-004-investigation.md, diagnosis/OD-002-absence-of-html-caching-layer.md, decisions/DD-018, design/OD-002-design-workstream.md, decisions/DD-032/DD-033/DD-034, and the candidate workstream, recording each artifact's exact authority, contribution, and limitation.
+
+**Part 2 (Baseline Reconstruction):** the historical baseline reconstructed directly from O-012/EV-017 — origin-level, mobile, TTFB, 28-day rolling window, 24 Jun–21 Jul 2026, 26% poor, Core Web Vitals Passed, report generated 24 Jul 2026 06:19:15 via the PageSpeed interactive tool (two prior API attempts failed with HTTP 429). Eight unresolved-method fields registered without inferring any undocumented setting — TTFB percentile basis and PSI interface version classified Condition to Resolve; CrUX release cadence and timezone basis Non-Blocking Limitation; country/connection segmentation Structurally Unavailable; report reproducibility Condition to Resolve Before Execution.
+
+**Part 3 (Like-for-Like Requirements):** all twenty requirements independently assessed Ready or Ready With Conditions.
+
+**Part 4 (Window/Schedule):** no final measurement window selected. The only available reporting-lag data point (EV-017's own ~3-day window-end-to-generation gap) explicitly identified as a single observation, not a documented SLA, and not adopted as a rule — closing a genuine risk (Part 9 Attack 3) rather than silently assuming a lag.
+
+**Part 5 (Outcome Pre-Registration):** the seven qualitative outcome categories found Ready; a new requirement added that "broadly stable" be labeled a measurement classification only, never a no-impact claim (Part 9 Attack 9); no numeric threshold approved.
+
+**Part 6 (Confounder Register):** required in full, with absence of evidence recorded as Unknown, never "no change."
+
+**Part 7 (Privacy/Access):** confirmed this gate itself performed no external or authenticated access.
+
+**Part 8 (OD-001 Separation):** confirmed OD-001 Candidate D (Search Console, query themes, 61-day window, decisions/DD-023/DD-024) and IC-OD2-001 (CrUX, mobile TTFB, 28-day window) remain fully distinct in metric, source, window, and governing decision chain — neither may substitute for or classify the other.
+
+**Part 9 (Independent Challenge):** twenty items tested — eighteen Survive outright, two Survive with Narrowing (reporting-lag single-data-point risk; stable-TTFB-as-no-problem risk), zero Rejected.
+
+**Part 10 (G-01–G-20):** no failures — seventeen PASS, three CONDITIONAL PASS (G-03, G-05, G-06), all tied to the same disclosed baseline-reconstruction gaps.
+
+**Part 11 (Gate Verdict):** **PASSED WITH CONDITIONS. Recommendation: RECOMMEND AUTHORIZED WITH CONDITIONS TO PREPARE CRUX REMEASUREMENT PROTOCOL** — fifteen binding conditions, including that no final window or numeric threshold may be set during preparation, that the unresolved-method-field register must be carried into the protocol unresolved, and that preparing the protocol never authorizes executing it.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_authorization_gate: DD-035 — Passed With Conditions
+od_002_stage_1_protocol_preparation_recommendation: Recommend Authorized With Conditions To Prepare CrUX Remeasurement Protocol
+od_002_stage_1_protocol_preparation_decision: Pending
+od_002_stage_1_protocol_created: false
+od_002_stage_1_execution_authorized: false
+od_002_stage_1_execution_started: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This recommendation is not authorization.** decisions/DD-034 and transformation/OD-002-implementation-candidate-construction-workstream.md were **not** modified. No protocol was created; no evidence was collected; no external or authenticated system was accessed; no technical or production change occurred. **Next action:** Kelvin's explicit response (AUTHORIZED TO PREPARE IC-OD2-001 CRUX REMEASUREMENT PROTOCOL / AUTHORIZED WITH CONDITIONS TO PREPARE IC-OD2-001 CRUX REMEASUREMENT PROTOCOL / NOT AUTHORIZED TO PREPARE PROTOCOL) — not recorded by this task. No commit or push occurred.
+
+## IC-OD2-001 CrUX Remeasurement Protocol — Case-Owner Decision (14 August 2026)
+
+decisions/DD-035's Case-Owner Decision section: Kelvin Wong issued **AUTHORIZED WITH CONDITIONS TO PREPARE IC-OD2-001 CRUX REMEASUREMENT PROTOCOL** — authorization limited to repository-only preparation of a like-for-like CrUX mobile TTFB remeasurement protocol; explicitly does not authorize PageSpeed/CrUX access, data retrieval, protocol execution, evidence creation, automated monitoring, Stage 2 preparation, feasibility execution, implementation, Transformation execution, or external changes.
+
+All fifteen decisions/DD-035 gate conditions (Set A) were copied verbatim with their original provenance; thirty-two new protocol-preparation boundaries (Set B) were recorded separately — notably: the historical baseline stays origin-level/mobile/TTFB/rolling 28-day/24 Jun–21 Jul 2026/26%-poor, never represented as current; Core Web Vitals Passed stays separate from the TTFB issue; lab data and public HTTP timing may not substitute for CrUX field data; desktop stays separate from mobile, origin-level from page-specific; all twenty like-for-like requirements must be preserved; TTFB percentile basis and PageSpeed interface/version stay unresolved until verified; CrUX release cadence and timezone basis stay Non-Blocking Limitations unless separately verified; country/connection segmentation stays Structurally Unavailable; historical report reproducibility must be resolved before execution; no future window selected by this decision; any overlap with the historical baseline must be disclosed; no reporting lag invented or generalized from EV-017's single observed delay; any earliest retrieval date must be justified by actual source availability; a lapse date is required, labelled an operational choice; no numerical threshold becomes binding without Kelvin's separate approval; "broadly stable" stays a measurement classification only, never proof of no problem; "no measurable change" stays a valid outcome; missing data never encoded as zero; a shifted TTFB distribution does not establish a cache, Varnish, or backend mechanism; the confounder register is mandatory, absence stays Unknown; Stage 2 does not start automatically; the protocol must end with its own separate execution-authorization request; OD-001 Candidate D stays separate and unexecuted; no ranking/conversion/revenue/reservation benefit; `transformation_authorized`/`external_changes_authorized` stay `false`.
+
+```yaml
+current_stage: Organizational Design
+od_002_stage_1_protocol_authorization_gate: DD-035 — Passed With Conditions
+od_002_stage_1_protocol_preparation_decision: Authorized With Conditions — Protocol Preparation Only
+od_002_stage_1_protocol_preparation_authorized: true
+od_002_stage_1_protocol_created: false
+od_002_stage_1_execution_authorized: false
+od_002_stage_1_execution_started: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This decision authorizes repository-only protocol preparation only — it does not create the protocol, retrieve data, or authorize execution.** decisions/DD-034 and transformation/OD-002-implementation-candidate-construction-workstream.md were **not** modified. No protocol was created; no CrUX or PageSpeed data was accessed; no evidence was collected; no future measurement window or numerical threshold was set. **Next action:** prepare the IC-OD2-001 Like-for-Like CrUX Remeasurement Protocol in a separate task — not created by this task. No commit or push occurred.
+
 ## Lifecycle Traceability
 
 Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) → Diagnosis Authorization Gate reviewed and recommended AUTHORIZED WITH CONDITIONS, question-specific (decisions/DD-016, 25 July 2026) → **Organizational Diagnosis — Partially Authorized With Conditions** (decisions/DD-016, case-owner decision 25 July 2026), `current_stage: Organizational Diagnosis` → **DQ-001 investigated and gated** (decisions/DD-017, 25 July 2026) → **DQ-001 — Established With Conditions** (decisions/DD-017, case-owner decision 25 July 2026), `dq_001_diagnosis_established: true`, `diagnosis_established_scope: DQ-001 only` → **DQ-004 investigated and gated** (decisions/DD-018, 25 July 2026) → **DQ-004 — Established With Conditions** (decisions/DD-018, case-owner decision 25 July 2026), `dq_004_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-004` — the authoritative formulation for OD-002 is narrowed per the case-owner's Condition 2 (see above) → **DQ-005 investigated and gated** (decisions/DD-019, 25 July 2026): ground-truth facts registered first, fact-by-fact correspondence test run against OC-005's three conditions and every AI-observed discrepancy, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED** (unconditional) → **DQ-005 — Completed, Evidence Insufficient, ACCEPTED** (decisions/DD-019, case-owner decision 25 July 2026), `dq_005_acceptance_decision: Accepted`, `dq_005_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-005) → **DQ-007 investigated and gated** (decisions/DD-020, 25 July 2026): twelve candidate explanations tested against a twelve-domain evidence-sufficiency matrix, new bounded public research directly falsified a GA4-integration mechanism and left one 13-June community-report lead unconfirmed, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED WITH CONDITIONS** → **DQ-007 — Completed, Evidence Insufficient, ACCEPTED WITH CONDITIONS** (decisions/DD-020, case-owner decision 25 July 2026), `dq_007_acceptance_decision: Accepted With Conditions`, `dq_007_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-007) → **DQ-002 investigated and gated** (decisions/DD-021, 25 July 2026): name-variant inventory and canonical entity baseline established, direct re-analysis of EV-014's raw Search Console export found the misspelled query family shows equal-to-better average position than the correct spelling in both directly-tested pairs, eight candidate explanations tested, Candidate Organizational Diagnosis diagnosis/OD-003-name-variant-entity-resolution.md produced and independently challenged (Survives), Gate Verdict **PASSED WITH CONDITIONS** → **DQ-002 — Established With Conditions** (decisions/DD-021, case-owner decision 25 July 2026): the authoritative formulation is narrowed to a single sentence and twelve binding conditions apply verbatim, `dq_002_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-002, DQ-004` → **DQ-002 confidence corrected** (decisions/DD-021 Confidence Decision, case-owner decision 25 July 2026): OD-003's authoritative confidence set to **Medium**, narrower than the gate's original Medium-High assessment, which remains preserved unchanged as historical analysis — **this remains the case's current authoritative stage**, `current_stage: Organizational Diagnosis`. **All five of DD-016's authorized/conditionally-authorized diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) have now been investigated, and every question capable of producing an Organizational Diagnosis (DQ-001, DQ-002, DQ-004) is now established.** DQ-003 and DQ-006 remain Not Authorized (Not a Diagnosis Question). `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false` — unaffected by any diagnosis gate to date; no cache, CDN, hosting, WordPress, code, GBP, listing, or production change is authorized; no Design Authorization Gate exists. DQ-005 and DQ-007 may only be reopened with materially new evidence and a new explicit case-owner decision. Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by any later authorization, reconstruction, establishment, or gate review, all of which rest on independent review and explicit case-owner decision rather than on the earlier drafts.
