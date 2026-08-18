@@ -4,6 +4,7 @@ import { buildHarness, resetDatabase } from "./support/testHarness.js";
 import { ContactReader } from "../../application/ports/ContactReader.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
+import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
 
 /**
  * CAP-D02.03 §"failure-injection tests" — both mandatory scenarios,
@@ -144,5 +145,111 @@ describe("Failure injection — fail AFTER reservation mutation, BEFORE the idem
     } finally {
       await prisma.$executeRawUnsafe(`ALTER TABLE "reservation_events" DROP CONSTRAINT IF EXISTS "${POISON_CONSTRAINT}"`);
     }
+  });
+});
+
+/**
+ * R1.1 P0 fix — failure injection around the corrected modifyWithCapacity
+ * flow (§13 of the fix assignment). Both prove full rollback: the
+ * original commitment must still be Committed, exactly as it was before
+ * the call, with no orphaned Superseded/duplicate rows.
+ */
+async function seedModifiableReservation(prismaClient: PrismaClient, now: Date): Promise<string> {
+  const { orchestrator } = buildHarness(prismaClient, now);
+  const request: CreateReservationRequest = {
+    commandId: `mm-fi-seed-${Math.random().toString(36).slice(2)}`,
+    servicePeriodId: "sp-dinner",
+    contactId: "contact-1",
+    reservationDate: new Date("2026-08-20T18:00:00Z"),
+    partySize: 4,
+    source: { category: ReservationSourceCategory.Telephone },
+    preferredArea: "Sushi",
+    actor: staffActor,
+  };
+  const created = await orchestrator.createWithCapacity(request);
+  if (created.type !== "CREATED") throw new Error(`seed failed: ${created.type}`);
+  return created.outcome.reservationId;
+}
+
+describe("Failure injection — Modify: fail AFTER active-commitment re-read, BEFORE supersession", () => {
+  // A real (deliberately non-production) temporary CHECK constraint that
+  // forbids the "Superseded" status value, so the orchestrator's own
+  // updateStatus(...) call — which runs immediately after the
+  // in-transaction re-read of the active commitment — hits a genuine
+  // Postgres constraint violation at exactly that point.
+  const POISON_CONSTRAINT = "test_only_forbid_superseded_status";
+
+  it("rolls back the whole transaction: the original commitment remains Committed, unchanged", async () => {
+    const reservationId = await seedModifiableReservation(prisma, NOW);
+    const before = await prisma.capacityCommitment.findFirst({ where: { reservationId } });
+    if (!before) throw new Error("test setup failed");
+
+    await prisma.$executeRawUnsafe(`ALTER TABLE "capacity_commitments" ADD CONSTRAINT "${POISON_CONSTRAINT}" CHECK ("status" <> 'Superseded')`);
+    try {
+      const { orchestrator } = buildHarness(prisma, NOW);
+      await expect(
+        orchestrator.modifyWithCapacity({
+          commandId: "mm-fi-supersede-cmd",
+          reservationId,
+          actor: staffActor,
+          changes: { partySize: 5 },
+        })
+      ).rejects.toThrow();
+
+      const rows = await prisma.capacityCommitment.findMany({ where: { reservationId } });
+      expect(rows).toHaveLength(1); // no new row created, nothing else touched
+      expect(rows[0]?.commitmentId).toBe(before.commitmentId);
+      expect(rows[0]?.status).toBe("Committed"); // never actually transitioned, despite the update being attempted
+      expect(rows[0]?.partySize).toBe(before.partySize); // untouched — the party-size change never took effect
+
+      const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+      expect(reservation.partySize).toBe(4); // original value, Reservation write also rolled back
+    } finally {
+      await prisma.$executeRawUnsafe(`ALTER TABLE "capacity_commitments" DROP CONSTRAINT IF EXISTS "${POISON_CONSTRAINT}"`);
+    }
+  });
+});
+
+describe("Failure injection — Modify: fail AFTER new commitment insert, BEFORE Reservation persistence", () => {
+  it("rolls back the whole transaction when the Reservation-side domain validation rejects the change after the new commitment was already inserted", async () => {
+    const reservationId = await seedModifiableReservation(prisma, NOW);
+    const before = await prisma.capacityCommitment.findFirst({ where: { reservationId } });
+    if (!before) throw new Error("test setup failed");
+
+    // Directly (outside the orchestrator, already-committed BEFORE this
+    // test's actual call) mark the Reservation row Cancelled — a terminal
+    // status. This is the test's injection lever: nothing in
+    // modifyWithCapacity checks Reservation status before the capacity
+    // work (evaluateBookingPolicy, the lock, capacity evaluation, and the
+    // new commitment insert all run first, all succeed on valid values),
+    // so execution reaches capacityRepository.create() successfully —
+    // then ModifyReservationHandler.handle() -> ReservationAggregate.modify()
+    // enforces CAP-D01.01-R16 (terminal reservations are not normally
+    // modifiable) and rejects it, exactly after the new commitment insert
+    // and before any Reservation write for this call.
+    await prisma.reservation.update({ where: { id: reservationId }, data: { status: "Cancelled" } });
+
+    const { orchestrator } = buildHarness(prisma, NOW);
+    const result = await orchestrator.modifyWithCapacity({
+      commandId: "mm-fi-terminal-cmd",
+      reservationId,
+      actor: staffActor,
+      changes: { partySize: 6 },
+    });
+
+    expect(result.type).toBe("VALIDATION_FAILED");
+    if (result.type === "VALIDATION_FAILED") {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R16")).toBe(true);
+    }
+
+    const rows = await prisma.capacityCommitment.findMany({ where: { reservationId } });
+    expect(rows).toHaveLength(1); // the tentative new commitment must not survive
+    expect(rows[0]?.commitmentId).toBe(before.commitmentId);
+    expect(rows[0]?.status).toBe("Committed"); // never superseded — rolled back alongside the failed insert
+    expect(rows[0]?.partySize).toBe(4); // the attempted change (6) never took effect
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.partySize).toBe(4); // unchanged by this call
+    expect(reservation.status).toBe("Cancelled"); // the pre-existing condition from test setup, not a rollback artifact
   });
 });

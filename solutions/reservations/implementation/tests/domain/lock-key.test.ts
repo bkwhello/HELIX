@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { deriveLockKey, sortLockResources, CAPACITY_LOCK_NAMESPACE } from "../../domain/availability/LockKey.js";
+import {
+  deriveLockKey,
+  sortLockResources,
+  CAPACITY_LOCK_NAMESPACE,
+  deriveReservationLockKey,
+  RESERVATION_LOCK_NAMESPACE,
+} from "../../domain/availability/LockKey.js";
 
 describe("deriveLockKey — determinism", () => {
   it("returns the identical key for the identical input, every time", () => {
@@ -45,6 +51,39 @@ describe("deriveLockKey — determinism", () => {
         expect(key).toBeGreaterThanOrEqual(-2147483648);
         expect(key).toBeLessThanOrEqual(2147483647);
       }
+    }
+  });
+});
+
+describe("deriveReservationLockKey — determinism (R1.1 Modify-vs-Modify P0 fix)", () => {
+  it("returns the identical key for the identical reservationId, every time", () => {
+    const a = deriveReservationLockKey("res-1");
+    const b = deriveReservationLockKey("res-1");
+    expect(a).toEqual(b);
+  });
+
+  it("uses a namespace distinct from CAPACITY_LOCK_NAMESPACE, so a reservation lock can never collide with a (pool, date) lock", () => {
+    const key = deriveReservationLockKey("res-1");
+    expect(key.namespace).toBe(RESERVATION_LOCK_NAMESPACE);
+    expect(key.namespace).not.toBe(CAPACITY_LOCK_NAMESPACE);
+  });
+
+  it("produces different keys for different reservationIds", () => {
+    const a = deriveReservationLockKey("res-1");
+    const b = deriveReservationLockKey("res-2");
+    expect(a.key).not.toBe(b.key);
+  });
+
+  it("throws on a missing reservationId rather than silently hashing an empty value", () => {
+    expect(() => deriveReservationLockKey("")).toThrow();
+  });
+
+  it("always returns a signed 32-bit integer key", () => {
+    for (const id of ["res-1", "a-very-long-uuid-like-reservation-identity-1234567890", "x"]) {
+      const { key } = deriveReservationLockKey(id);
+      expect(Number.isInteger(key)).toBe(true);
+      expect(key).toBeGreaterThanOrEqual(-2147483648);
+      expect(key).toBeLessThanOrEqual(2147483647);
     }
   });
 });

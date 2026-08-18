@@ -51,6 +51,22 @@ export interface CapacityRepository {
    */
   acquireCapacityLock(input: { readonly capacityPoolId: string; readonly localServiceDate: string; readonly tx: TransactionContext }): Promise<void>;
 
+  /**
+   * R1.1 P0 fix (Concurrent Modify vs Modify) — acquires a transaction-
+   * scoped PostgreSQL advisory lock scoped to a single reservationId,
+   * keyed via `LockKey.deriveReservationLockKey` (a namespace distinct
+   * from the (pool, date) capacity lock, so the two families of lock
+   * never collide). Must be the FIRST lock acquired by any operation that
+   * also takes capacity (pool, date) locks for the same reservation
+   * (Modify, Cancel) — see AvailabilityOrchestrator and
+   * R1_1_CONCURRENT_MODIFY_FIX_REPORT for the deadlock-freedom argument.
+   * Serializing on this lock is what makes it safe to re-read "the
+   * reservation's current active commitment" inside the transaction and
+   * trust that no concurrent Modify/Cancel on the SAME reservation can be
+   * mid-flight while it is held.
+   */
+  acquireReservationLock(input: { readonly reservationId: string; readonly tx: TransactionContext }): Promise<void>;
+
   /** Inserts a new commitment (default status Committed). Must run inside `tx`. */
   create(input: {
     readonly commitment: {

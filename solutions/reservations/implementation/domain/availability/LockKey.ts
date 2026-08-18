@@ -45,6 +45,31 @@ export function deriveLockKey(capacityPoolId: string, localServiceDate: string):
   return { namespace: CAPACITY_LOCK_NAMESPACE, key: fnv1a32(`${capacityPoolId}|${localServiceDate}`) };
 }
 
+/**
+ * "HALR" (Helix AvaiLability Reservation-lock) — deliberately a DIFFERENT
+ * namespace from CAPACITY_LOCK_NAMESPACE, so a reservation-scoped lock key
+ * and a (pool, date) lock key can never collide on the same
+ * (namespace, key) pair even if their hashes happened to coincide.
+ *
+ * R1.1 P0 fix (Concurrent Modify vs Modify): serializes ALL Modify/Cancel
+ * operations on the same reservation ahead of any capacity-resource lock
+ * they take, so the "which commitment is currently active" question has
+ * exactly one answer at a time per reservation — see
+ * AvailabilityOrchestrator.modifyWithCapacity / cancelWithCapacity. Global
+ * lock order (proven deadlock-free in R1_1_CONCURRENT_MODIFY_FIX_REPORT):
+ * reservation-scoped lock (if any) FIRST, then capacity (pool, date)
+ * locks in the sortLockResources order — every caller that takes both
+ * follows this same order, so no cycle is possible.
+ */
+export const RESERVATION_LOCK_NAMESPACE = 0x48414c52 | 0;
+
+export function deriveReservationLockKey(reservationId: string): LockKey {
+  if (!reservationId) {
+    throw new Error("deriveReservationLockKey: reservationId is required.");
+  }
+  return { namespace: RESERVATION_LOCK_NAMESPACE, key: fnv1a32(reservationId) };
+}
+
 export interface LockResource {
   readonly capacityPoolId: string;
   readonly localServiceDate: string;

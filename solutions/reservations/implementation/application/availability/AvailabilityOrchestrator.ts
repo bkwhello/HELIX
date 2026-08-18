@@ -219,6 +219,45 @@ export class AvailabilityOrchestrator {
     }
   }
 
+  /**
+   * R1.1 P0 fix (Concurrent Modify vs Modify — see
+   * R1_1_CONCURRENT_MODIFY_FIX_REPORT.md for the full investigation).
+   *
+   * The previous version captured `existingCommitment` via a pre-
+   * transaction read and used that possibly-stale value for the
+   * authoritative supersede/exclude/replace write. Two concurrent Modify
+   * calls on the same reservation could both capture the SAME snapshot,
+   * both acquire their locks (uncontended if the pools/dates differed,
+   * because nothing serialized them against EACH OTHER — only against
+   * unrelated capacity work on the same pool/date), and both then
+   * "supersede" the same already-superseded row while each creating its
+   * own new Committed commitment — leaving two Committed commitments for
+   * one reservation.
+   *
+   * Fix: acquire a reservation-scoped advisory lock
+   * (`CapacityRepository.acquireReservationLock`, keyed only by
+   * `reservationId`) BEFORE anything else. This serializes every
+   * Modify/Cancel on the SAME reservation against each other, so by the
+   * time this call re-reads "the current active commitment" and "the
+   * current reservation state" INSIDE the transaction, no concurrent
+   * Modify/Cancel on this reservation can possibly be mid-flight — there
+   * is no drift window between that re-read and the capacity-lock
+   * acquisition that follows it, because nothing else could have moved
+   * the reservation in the meantime (Strategy A from the assignment,
+   * chosen over optimistic retry: it removes the race by construction
+   * rather than detecting and retrying around it).
+   *
+   * Global lock order (proven deadlock-free in the report): the
+   * reservation-scoped lock is ALWAYS acquired first, before any
+   * capacity (pool, date) lock, by every operation that takes both
+   * (Modify, Cancel). Capacity locks are still acquired in the existing
+   * `sortLockResources` order relative to each other. Since nothing ever
+   * acquires a capacity lock before its own reservation lock, two
+   * operations can never form a cycle (A holding a capacity lock while
+   * waiting on a reservation lock that B already holds while waiting on
+   * that same capacity lock) — the reservation lock is always the FIRST
+   * thing either side takes.
+   */
   async modifyWithCapacity(request: ModifyReservationRequest): Promise<ModifyWithCapacityResult> {
     const alreadyApplied = await this.reservationRepository.findByCommandId(request.commandId);
     if (alreadyApplied) return { type: "MODIFIED" };
@@ -226,8 +265,11 @@ export class AvailabilityOrchestrator {
     const idResult = ReservationId.create(request.reservationId);
     if (!idResult.ok) return { type: "VALIDATION_FAILED", violations: idResult.violations };
 
-    const current = await this.reservationRepository.findById(idResult.value);
-    if (!current) {
+    // Existence-only fast-fail before opening a transaction / taking any
+    // lock for a garbage id. Its FIELD VALUES are deliberately not used
+    // for anything authoritative below — see the in-transaction re-read.
+    const exists = await this.reservationRepository.findById(idResult.value);
+    if (!exists) {
       return {
         type: "VALIDATION_FAILED",
         violations: [violation("CAP-D01.01-R15", "A reservation modification request must reference an existing Reservation Identity.")],
@@ -241,64 +283,81 @@ export class AvailabilityOrchestrator {
       return this.modifyWithoutCapacityChange(request);
     }
 
-    const currentPoolRaw = current.getPreferredArea();
-    if (!currentPoolRaw || !isCapacityPoolId(currentPoolRaw)) {
-      return { type: "NO_ACTIVE_COMMITMENT" };
-    }
-    const existingCommitment = await this.capacityRepository.findActiveByReservationId(request.reservationId);
-    if (!existingCommitment) {
-      return { type: "NO_ACTIVE_COMMITMENT" };
-    }
-
-    const newPartySize = changes.partySize ?? current.getPartySize();
-    const newPoolRaw = changes.preferredArea ?? currentPoolRaw;
-    if (!isCapacityPoolId(newPoolRaw)) {
-      return {
-        type: "VALIDATION_FAILED",
-        violations: [violation("CAP-D02.03", `preferredArea "${newPoolRaw}" is not a capacity-managed area.`)],
-      };
-    }
-    const newPool: CapacityPoolId = newPoolRaw;
-    const newStart = changes.reservationDate ?? current.getReservationDateTime();
-
-    const policy = evaluateBookingPolicy({
-      partySize: newPartySize,
-      requestedStart: newStart,
-      now: this.clock.now(),
-      isStaffActor: this.isStaffActor(request.actor),
-    });
-    if (policy.type !== "ALLOWED") {
-      return { type: "BOOKING_POLICY_REJECTED", policy };
-    }
-
-    const durationMinutes = CAPACITY_POOLS[newPool].durationMinutes;
-    const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000);
-    const oldLocalDate = toLocalServiceDate(existingCommitment.startTime);
-    const newLocalDate = toLocalServiceDate(newStart);
-    // CAP-D02.03 — deterministic global lock order across both resources
-    // (old and new may be the same, or genuinely different, pool/date).
-    const lockResources = sortLockResources([
-      { capacityPoolId: existingCommitment.capacityPoolId, localServiceDate: oldLocalDate },
-      { capacityPoolId: newPool, localServiceDate: newLocalDate },
-    ]);
+    type ModifyWork =
+      | { readonly kind: "ALREADY_APPLIED" }
+      | { readonly kind: "NO_ACTIVE_COMMITMENT" }
+      | { readonly kind: "BOOKING_POLICY_REJECTED"; readonly policy: BookingPolicyOutcome }
+      | { readonly kind: "CAPACITY_UNAVAILABLE"; readonly availability: AvailabilityOutcome }
+      | { readonly kind: "MODIFIED" };
 
     try {
-      const work = await this.transactionManager.runInTransaction(async (tx) => {
+      const work: ModifyWork = await this.transactionManager.runInTransaction(async (tx) => {
+        // Step 1 of the global lock order — always first.
+        await this.capacityRepository.acquireReservationLock({ reservationId: request.reservationId, tx });
+
+        // Idempotency layer 2 (see file header pattern for Create): a
+        // retried commandId for THIS reservation cannot race past this
+        // point concurrently with itself, because both attempts must
+        // hold the SAME reservation lock one at a time.
+        const existingForCommand = await this.capacityRepository.findByCommandId(request.commandId, tx);
+        if (existingForCommand) {
+          return { kind: "ALREADY_APPLIED" };
+        }
+
+        // Authoritative re-read, INSIDE the transaction, AFTER the
+        // reservation lock is held — no other Modify/Cancel on this
+        // reservation can be concurrently mutating it from this point
+        // until this transaction commits or rolls back.
+        const authoritative = await this.reservationRepository.findById(idResult.value);
+        if (!authoritative) {
+          throw new OrchestratedValidationFailure([
+            violation("CAP-D01.01-R15", "A reservation modification request must reference an existing Reservation Identity."),
+          ]);
+        }
+        const existingCommitment = await this.capacityRepository.findActiveByReservationId(request.reservationId, tx);
+        const currentPoolRaw = authoritative.getPreferredArea();
+        if (!existingCommitment || !currentPoolRaw || !isCapacityPoolId(currentPoolRaw)) {
+          return { kind: "NO_ACTIVE_COMMITMENT" };
+        }
+
+        const newPartySize = changes.partySize ?? authoritative.getPartySize();
+        const newPoolRaw = changes.preferredArea ?? currentPoolRaw;
+        if (!isCapacityPoolId(newPoolRaw)) {
+          throw new OrchestratedValidationFailure([
+            violation("CAP-D02.03", `preferredArea "${newPoolRaw}" is not a capacity-managed area.`),
+          ]);
+        }
+        const newPool: CapacityPoolId = newPoolRaw;
+        const newStart = changes.reservationDate ?? authoritative.getReservationDateTime();
+
+        const policy = evaluateBookingPolicy({
+          partySize: newPartySize,
+          requestedStart: newStart,
+          now: this.clock.now(),
+          isStaffActor: this.isStaffActor(request.actor),
+        });
+        if (policy.type !== "ALLOWED") {
+          return { kind: "BOOKING_POLICY_REJECTED", policy };
+        }
+
+        const durationMinutes = CAPACITY_POOLS[newPool].durationMinutes;
+        const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000);
+        const oldLocalDate = toLocalServiceDate(existingCommitment.startTime);
+        const newLocalDate = toLocalServiceDate(newStart);
+        // Step 2 of the global lock order — capacity locks, deterministically
+        // sorted, acquired only now that the TRUE old/new resources are known
+        // (no drift possible since the reservation lock is already held).
+        const lockResources = sortLockResources([
+          { capacityPoolId: existingCommitment.capacityPoolId, localServiceDate: oldLocalDate },
+          { capacityPoolId: newPool, localServiceDate: newLocalDate },
+        ]);
         for (const resource of lockResources) {
           await this.capacityRepository.acquireCapacityLock({ capacityPoolId: resource.capacityPoolId, localServiceDate: resource.localServiceDate, tx });
         }
 
-        const existingForCommand = await this.capacityRepository.findByCommandId(request.commandId, tx);
-        if (existingForCommand) {
-          return { kind: "ALREADY_APPLIED" as const };
-        }
-
         // Self-exclusion by commitmentId (CAP-D02.03 §7), never by
-        // reservationId: excludes exactly the interval being replaced,
-        // not "everything belonging to this reservation" (irrelevant
-        // distinction today since a reservation has at most one active
-        // commitment, but the port contract is explicit about which key
-        // it is because that is the correctness-relevant property).
+        // reservationId, and now using the freshly re-read commitmentId —
+        // never the stale pre-transaction one.
         const overlapping = await this.capacityRepository.findOverlappingCommitments({
           capacityPoolId: newPool,
           rangeStart: newStart,
@@ -314,8 +373,8 @@ export class AvailabilityOrchestrator {
         const capacity = CAPACITY_POOLS[newPool].maximumCapacity;
         if (evaluation.maxExistingOccupancy + newPartySize > capacity) {
           return {
-            kind: "CAPACITY_UNAVAILABLE" as const,
-            availability: { type: "CAPACITY_EXHAUSTED" as const, maxExistingOccupancy: evaluation.maxExistingOccupancy, capacity },
+            kind: "CAPACITY_UNAVAILABLE",
+            availability: { type: "CAPACITY_EXHAUSTED", maxExistingOccupancy: evaluation.maxExistingOccupancy, capacity },
           };
         }
 
@@ -337,10 +396,12 @@ export class AvailabilityOrchestrator {
         const modifyResult = await this.modifyHandler.handle({ ...request, tx });
         if (!modifyResult.ok) throw new OrchestratedValidationFailure(modifyResult.violations);
 
-        return { kind: "MODIFIED" as const };
+        return { kind: "MODIFIED" };
       });
 
       if (work.kind === "CAPACITY_UNAVAILABLE") return { type: "CAPACITY_UNAVAILABLE", availability: work.availability };
+      if (work.kind === "BOOKING_POLICY_REJECTED") return { type: "BOOKING_POLICY_REJECTED", policy: work.policy };
+      if (work.kind === "NO_ACTIVE_COMMITMENT") return { type: "NO_ACTIVE_COMMITMENT" };
       return { type: "MODIFIED" };
     } catch (err) {
       if (err instanceof ReservationCommandRaceLost) return { type: "MODIFIED" };
@@ -374,6 +435,15 @@ export class AvailabilityOrchestrator {
 
     try {
       await this.transactionManager.runInTransaction(async (tx) => {
+        // R1.1 P0 fix — always first (see modifyWithCapacity's doc
+        // comment for the full global-lock-order argument). This is what
+        // upgrades the cross-pool Modify-vs-Cancel pairing from "safe by
+        // coincidence of shared old-resource lock contention" to "safe by
+        // construction": Cancel and any concurrent Modify on this exact
+        // reservation now always serialize against each other here,
+        // regardless of which capacity resource either of them touches.
+        await this.capacityRepository.acquireReservationLock({ reservationId: request.reservationId, tx });
+
         if (snapshot) {
           const localServiceDate = toLocalServiceDate(snapshot.startTime);
           await this.capacityRepository.acquireCapacityLock({ capacityPoolId: snapshot.capacityPoolId, localServiceDate, tx });

@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { CapacityRepository } from "../../domain/repositories/CapacityRepository.js";
 import { CapacityCommitment, CapacityCommitmentStatus, CommitmentInterval } from "../../domain/availability/CapacityCommitment.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
-import { deriveLockKey } from "../../domain/availability/LockKey.js";
+import { deriveLockKey, deriveReservationLockKey } from "../../domain/availability/LockKey.js";
 import { asPrismaTx } from "./PrismaTransactionManager.js";
 
 interface CapacityCommitmentRow {
@@ -104,6 +104,12 @@ export class PrismaCapacityRepository implements CapacityRepository {
     // Postgres resolves to bigint by default, and pg_advisory_xact_lock has
     // overloads for (bigint) and (int4, int4) but not (bigint, bigint) —
     // without the casts this fails with "function ... does not exist".
+    await client.$executeRaw`SELECT pg_advisory_xact_lock(${namespace}::int4, ${key}::int4)`;
+  }
+
+  async acquireReservationLock(input: { readonly reservationId: string; readonly tx: TransactionContext }): Promise<void> {
+    const client = asPrismaTx(input.tx);
+    const { namespace, key } = deriveReservationLockKey(input.reservationId);
     await client.$executeRaw`SELECT pg_advisory_xact_lock(${namespace}::int4, ${key}::int4)`;
   }
 

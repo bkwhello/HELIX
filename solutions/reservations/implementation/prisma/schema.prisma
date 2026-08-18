@@ -117,15 +117,21 @@ model ClosingDay {
 // capacity (e.g. a walk-in hold) without a schema change, but every
 // commitment created by this implementation always sets it.
 //
-// Database-level invariants enforced via a hand-written CHECK constraint
-// migration (Prisma has no declarative CHECK-constraint syntax as of this
-// client version) — see
-// prisma/migrations/*_add_capacity_commitment/migration.sql:
-//   - party_size > 0
-//   - start_time < end_time
+// Database-level invariants enforced via hand-written constraint
+// migrations (Prisma has no declarative syntax for either of these as of
+// this client version):
+//   - party_size > 0, start_time < end_time — CHECK constraints, see
+//     prisma/migrations/*_add_capacity_commitment/migration.sql
+//   - at most one Committed commitment per reservationId — a partial
+//     UNIQUE index, see
+//     prisma/migrations/*_one_committed_commitment_per_reservation/migration.sql
+//     (R1.1 P0 fix, Concurrent Modify vs Modify — defense in depth
+//     alongside the reservation-scoped advisory lock in
+//     AvailabilityOrchestrator, not a substitute for it)
 // These exist so a defect upstream of this table (a bug in
 // AvailabilityOrchestrator, a bypassing script, a future caller) cannot
-// silently persist a physically nonsensical commitment — CAP-D02.03 §22.
+// silently persist a physically nonsensical or duplicated commitment —
+// CAP-D02.03 §22.
 model CapacityCommitment {
   commitmentId   String   @id @default(cuid()) @map("commitment_id")
   reservationId  String?  @map("reservation_id")
