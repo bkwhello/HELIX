@@ -1,16 +1,39 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { PrismaClient } from "@prisma/client";
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
+import { Express } from "express";
 import { createApp } from "../../api/app.js";
-import { InMemoryReservationRepository } from "../support/InMemoryReservationRepository.js";
-import { FakeContactReader, FakeServicePeriodReader, FakeDuplicateReservationChecker, FakeClosingDayStore } from "../support/FakePorts.js";
-import { NOW, FUTURE_DATE } from "../support/factories.js";
+import { resetDatabase } from "../integration/support/testHarness.js";
+import { PrismaReservationRepository } from "../../infrastructure/persistence/PrismaReservationRepository.js";
+import { PrismaDuplicateReservationChecker } from "../../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
+import { PrismaClosingDayStore } from "../../infrastructure/persistence/PrismaClosingDayStore.js";
+import { PrismaStaffUserRepository } from "../../infrastructure/persistence/PrismaStaffUserRepository.js";
+import { PrismaSessionRepository } from "../../infrastructure/persistence/PrismaSessionRepository.js";
+import { ScryptPasswordHasher } from "../../infrastructure/ScryptPasswordHasher.js";
+import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionTokenGenerator.js";
+import { UnvalidatedContactReader } from "../../infrastructure/UnvalidatedContactReader.js";
+import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
+import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
+import { ActorRole } from "../../domain/value-objects/Actor.js";
 
 /**
- * HTTP-level coverage for Create Reservation — the actual surface staff
- * or a POS integration will call during a pilot. Everything below this
- * layer already has unit coverage; this exists because that alone never
- * proved the wiring (body parsing, status codes, error shapes) works.
+ * HTTP-level coverage for the reservation endpoints — the actual surface
+ * staff or a POS integration will call during a pilot. Everything below
+ * this layer already has unit coverage; this exists because that alone
+ * never proved the wiring (body parsing, status codes, error shapes,
+ * and — since R1.2 — real authentication/authorization) works.
+ *
+ * R1.2 migration note: this file previously drove the app via
+ * x-actor-* headers against an in-memory repository. Per
+ * R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §22 Stage E, it now
+ * authenticates through the real login flow (a seeded StaffUser, a real
+ * POST /auth/login, a real session cookie via a supertest agent)
+ * against real PostgreSQL — there is no test-only bypass in the
+ * production route path.
  */
+const NOW = new Date("2026-08-01T10:00:00Z");
+const FUTURE_DATE = new Date("2026-08-15T19:00:00Z");
+
 class FixedClock {
   now(): Date {
     return NOW;
@@ -31,23 +54,39 @@ class SequentialEventIdGenerator {
   }
 }
 
+const prisma = new PrismaClient();
+const OWNER_USERNAME = "owner-test";
+const OWNER_PASSWORD = "SuperSecret123!";
+let sharedApp: Express;
+let sharedAgent: ReturnType<typeof request.agent>;
+
+async function resetStaffTables(): Promise<void> {
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "staff_sessions", "staff_users", "security_events" RESTART IDENTITY CASCADE');
+}
+
 function buildApp() {
-  const repository = new InMemoryReservationRepository();
-  const contactReader = new FakeContactReader();
-  const servicePeriodReader = new FakeServicePeriodReader();
-  const duplicateChecker = new FakeDuplicateReservationChecker();
-  const closingDayStore = new FakeClosingDayStore();
+  const repository = new PrismaReservationRepository(prisma);
+  const duplicateChecker = new PrismaDuplicateReservationChecker(prisma);
+  const closingDayStore = new PrismaClosingDayStore(prisma);
   const app = createApp({
     repository,
     duplicateChecker,
-    contactReader,
-    servicePeriodReader,
+    contactReader: new UnvalidatedContactReader(),
+    servicePeriodReader: new UnvalidatedServicePeriodReader(),
     closingDayStore,
     idGenerator: new SequentialIdGenerator(),
     eventIdGenerator: new SequentialEventIdGenerator(),
     clock: new FixedClock(),
+    auth: {
+      staffUserRepository: new PrismaStaffUserRepository(prisma),
+      sessionRepository: new PrismaSessionRepository(prisma),
+      passwordHasher: new ScryptPasswordHasher(),
+      sessionTokenGenerator: new RandomSessionTokenGenerator(),
+      cookieSecure: false,
+      expectedOrigin: null,
+    },
   });
-  return { app, repository, contactReader, servicePeriodReader, duplicateChecker, closingDayStore };
+  return { app, repository, duplicateChecker, closingDayStore };
 }
 
 function validBody(overrides: Record<string, unknown> = {}) {
@@ -62,21 +101,106 @@ function validBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const staffHeaders = { "x-actor-id": "staff-1", "x-actor-kind": "AuthorizedUser" };
+// Thin wrappers so every mutating call automatically carries the CSRF
+// header (api/authMiddleware.ts's createCsrfGuard requires it globally,
+// including on unauthenticated calls) without repeating `.set(...)` at
+// every call site.
+function post(agent: ReturnType<typeof request.agent>, url: string) {
+  return agent.post(url).set(CSRF_HEADER_NAME, "1");
+}
+function patchReq(agent: ReturnType<typeof request.agent>, url: string) {
+  return agent.patch(url).set(CSRF_HEADER_NAME, "1");
+}
+function del(agent: ReturnType<typeof request.agent>, url: string) {
+  return agent.delete(url).set(CSRF_HEADER_NAME, "1");
+}
+
+beforeAll(async () => {
+  await resetDatabase(prisma);
+  await resetStaffTables();
+  const built = buildApp();
+  sharedApp = built.app;
+
+  // Seed once — real scrypt hashing is deliberately slow; reusing one
+  // logged-in session across this whole file (sessions persist for
+  // hours by default, §9) is both realistic and keeps this suite fast.
+  const passwordHasher = new ScryptPasswordHasher();
+  const staffUserRepository = new PrismaStaffUserRepository(prisma);
+  await staffUserRepository.create({
+    id: "staff-owner-test",
+    username: OWNER_USERNAME,
+    displayName: "Test Owner",
+    email: null,
+    passwordHash: await passwordHasher.hash(OWNER_PASSWORD),
+    role: ActorRole.Owner,
+  });
+
+  sharedAgent = request.agent(sharedApp);
+  const loginRes = await post(sharedAgent, "/auth/login").send({ username: OWNER_USERNAME, password: OWNER_PASSWORD });
+  if (loginRes.status !== 200) throw new Error(`test setup failed to log in: ${loginRes.status} ${JSON.stringify(loginRes.body)}`);
+});
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+beforeEach(async () => {
+  // Reservation-domain tables only — staff_users/staff_sessions are
+  // deliberately NOT reset per-test, so sharedAgent's session stays valid.
+  await resetDatabase(prisma);
+});
 
 describe("GET /health", () => {
-  it("responds 200 so a pilot deployment can be monitored", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get("/health");
+  it("responds 200 so a pilot deployment can be monitored (no auth required)", async () => {
+    const res = await request(sharedApp).get("/health");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: "ok" });
   });
 });
 
+describe("Authentication and authorization boundary", () => {
+  it("rejects a mutating request with no session at all — 401", async () => {
+    const res = await post(request.agent(sharedApp), "/reservations").send(validBody());
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a request whose session was never established, even with a plausible-looking cookie value — 401 (not the ex-header-trust default)", async () => {
+    const res = await post(request.agent(sharedApp), "/reservations").set("Cookie", "helix_session=not-a-real-token").send(validBody());
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a mutating request missing the CSRF header even WITH a valid session — 403", async () => {
+    const res = await sharedAgent.post("/reservations").send(validBody({ commandId: "csrf-missing-header" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects login itself when the CSRF header is missing — 403 (login CSRF is still CSRF)", async () => {
+    const freshAgent = request.agent(sharedApp);
+    const res = await freshAgent.post("/auth/login").send({ username: OWNER_USERNAME, password: OWNER_PASSWORD });
+    expect(res.status).toBe(403);
+  });
+
+  it("gives an authenticated Reception-role session a 403, not a 401, when it lacks a permission (capacity.settings.manage)", async () => {
+    const passwordHasher = new ScryptPasswordHasher();
+    const staffUserRepository = new PrismaStaffUserRepository(prisma);
+    await staffUserRepository.create({
+      id: "staff-reception-test",
+      username: "reception-test",
+      displayName: "Test Reception",
+      email: null,
+      passwordHash: await passwordHasher.hash("ReceptionPass123!"),
+      role: ActorRole.Reception,
+    });
+    const receptionAgent = request.agent(sharedApp);
+    const login = await post(receptionAgent, "/auth/login").send({ username: "reception-test", password: "ReceptionPass123!" });
+    expect(login.status).toBe(200);
+
+    const res = await post(receptionAgent, "/closing-days").send({ fromDate: "2026-09-01" });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /reservations", () => {
   it("creates a reservation and returns the outcome DTO", async () => {
-    const { app } = buildApp();
-    const res = await request(app).post("/reservations").set(staffHeaders).send(validBody());
+    const res = await post(sharedAgent, "/reservations").send(validBody());
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ status: "Proposed", warnings: [] });
@@ -84,68 +208,44 @@ describe("POST /reservations", () => {
   });
 
   it("rejects a request missing required information with 422", async () => {
-    const { app } = buildApp();
-    const res = await request(app).post("/reservations").set(staffHeaders).send(validBody({ contactId: "" }));
+    const res = await post(sharedAgent, "/reservations").send(validBody({ contactId: "" }));
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R08")).toBe(true);
   });
 
-  // Every real ActorKind is currently trusted for creation (CAP-D01.01-R32
-  // only rejects an *unrecognized* kind), so an unauthorized-creation
-  // rejection can only ever originate from a malformed x-actor-kind header.
-  // resolveActor() catches that at the boundary with a clear 400 instead
-  // of letting it fall through to a confusing domain-level 422 — this test
-  // used to send "Unknown" as x-actor-kind and expect a 422/R32 response;
-  // that exact request now (correctly) gets a 400 here instead. R32 itself
-  // is still covered at the domain level — see tests/acceptance/creation.test.ts, AC39.
-  it("rejects an unrecognized x-actor-kind with a clear 400, not a domain violation", async () => {
-    const { app } = buildApp();
-    const res = await request(app)
-      .post("/reservations")
-      .set({ "x-actor-id": "nobody", "x-actor-kind": "Human" })
-      .send(validBody());
-
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain("Human");
-    expect(res.body.message).toContain("AuthorizedUser");
-  });
-
   it("rejects a structurally invalid date with 422 (CAP-D01.01-R10)", async () => {
-    const { app } = buildApp();
-    const res = await request(app).post("/reservations").set(staffHeaders).send(validBody({ reservationDate: "not-a-date" }));
+    const res = await post(sharedAgent, "/reservations").send(validBody({ reservationDate: "not-a-date" }));
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R10")).toBe(true);
   });
 
+  // CAP-D01.01-R14 (duplicate detection) against the REAL
+  // PrismaDuplicateReservationChecker — this used to toggle a fake flag;
+  // now it creates a genuine matching prior reservation.
   it("surfaces a duplicate warning in the response instead of only in the persisted event", async () => {
-    const { app, duplicateChecker } = buildApp();
-    duplicateChecker.duplicateDetected = true;
+    await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-dup-original" }));
 
-    const res = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-dup" }));
+    const res = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-dup" }));
 
     expect(res.status).toBe(201);
     expect(res.body.warnings.some((w: { ruleId: string }) => w.ruleId === "CAP-D01.01-R14")).toBe(true);
   });
 
   it("accepts a guest name and a preferred area, returning both in the outcome", async () => {
-    const { app } = buildApp();
-    const res = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-area", contactName: "Jan Jansen", preferredArea: "Sushi" }));
+    const res = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-area", contactName: "Jan Jansen", preferredArea: "Sushi" })
+    );
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ contactName: "Jan Jansen", preferredArea: "Sushi" });
   });
 
   it("rejects an unrecognized preferredArea with a clear 400 (CAP-D01.01-R48)", async () => {
-    const { app } = buildApp();
-    const res = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-bad-area", preferredArea: "Steakhouse" }));
+    const res = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-bad-area", preferredArea: "Steakhouse" })
+    );
 
     expect(res.status).toBe(400);
     expect(res.body.message).toContain("Steakhouse");
@@ -153,175 +253,163 @@ describe("POST /reservations", () => {
   });
 
   it("accepts notes (allergies, special requests) and returns them in the outcome and the list", async () => {
-    const { app } = buildApp();
-    const res = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-notes", notes: "Notenallergie, graag een rustige tafel" }));
+    const res = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-notes", notes: "Notenallergie, graag een rustige tafel" })
+    );
 
     expect(res.status).toBe(201);
     expect(res.body.notes).toBe("Notenallergie, graag een rustige tafel");
 
-    const list = await request(app).get(`/reservations?date=${FUTURE_DATE.toISOString().slice(0, 10)}`);
+    const list = await sharedAgent.get(`/reservations?date=${FUTURE_DATE.toISOString().slice(0, 10)}`);
     expect(list.body.reservations[0]).toMatchObject({ notes: "Notenallergie, graag een rustige tafel" });
   });
 
   it("rejects creation for a date marked closed (CAP-D01.01-R51)", async () => {
-    const { app, closingDayStore } = buildApp();
-    await closingDayStore.add({ fromDate: FUTURE_DATE, toDate: FUTURE_DATE, reason: "Personeelsuitje" });
+    await post(sharedAgent, "/closing-days").send({ fromDate: FUTURE_DATE.toISOString().slice(0, 10), reason: "Personeelsuitje" });
 
-    const res = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-closed" }));
+    const res = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-closed" }));
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R51")).toBe(true);
   });
 
   it("is idempotent under a retried commandId: same reservationId, no duplicate created", async () => {
-    const { app, repository } = buildApp();
     const body = validBody({ commandId: "http-cmd-retry" });
 
-    const first = await request(app).post("/reservations").set(staffHeaders).send(body);
-    const second = await request(app).post("/reservations").set(staffHeaders).send(body);
+    const first = await post(sharedAgent, "/reservations").send(body);
+    const second = await post(sharedAgent, "/reservations").send(body);
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(201);
     expect(second.body.reservationId).toBe(first.body.reservationId);
-    expect(repository.saveCallCount).toBe(1);
+
+    const rows = await prisma.reservation.findMany({ where: { id: first.body.reservationId } });
+    expect(rows).toHaveLength(1);
   });
 });
 
 describe("GET /reservations/:id", () => {
   it("returns the created reservation", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-get" }));
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-get" }));
 
-    const res = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const res = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: created.body.reservationId, status: "Proposed", partySize: 2 });
   });
 
   it("returns 404 for an unknown reservation", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get("/reservations/does-not-exist");
+    const res = await sharedAgent.get("/reservations/does-not-exist");
     expect(res.status).toBe(404);
   });
 });
 
 describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)", () => {
   it("sets and later changes the table assignment, reflected in GET", async () => {
-    const { app } = buildApp();
-    const created = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-table", preferredArea: "Teppanyaki" }));
+    const created = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-table", preferredArea: "Teppanyaki" })
+    );
 
-    const setTable = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-table-1", changes: { tableAssignment: "C1" } });
+    const setTable = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-table-1",
+      changes: { tableAssignment: "C1" },
+    });
     expect(setTable.status).toBe(204);
 
-    const afterSet = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const afterSet = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterSet.body.tableAssignment).toBe("C1");
 
-    const changeTable = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-table-2", changes: { tableAssignment: "D3" } });
+    const changeTable = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-table-2",
+      changes: { tableAssignment: "D3" },
+    });
     expect(changeTable.status).toBe(204);
 
-    const afterChange = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const afterChange = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterChange.body.tableAssignment).toBe("D3");
   });
 });
 
 describe("PATCH /reservations/:id — marking a reservation as arrived", () => {
   it("has no arrival mark on a freshly created reservation", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-arrive-none" }));
-    const before = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-arrive-none" }));
+    const before = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(before.body.arrivedAt).toBeUndefined();
   });
 
   it("marks a reservation as arrived, then clears the mark via an explicit null", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-arrive" }));
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-arrive" }));
 
     const arrivedAt = new Date().toISOString();
-    const marked = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-arrive-1", changes: { arrivedAt } });
+    const marked = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-arrive-1",
+      changes: { arrivedAt },
+    });
     expect(marked.status).toBe(204);
 
-    const afterMark = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const afterMark = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterMark.body.arrivedAt).toBe(new Date(arrivedAt).toISOString());
 
-    const cleared = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-arrive-2", changes: { arrivedAt: null } });
+    const cleared = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-arrive-2",
+      changes: { arrivedAt: null },
+    });
     expect(cleared.status).toBe(204);
 
-    const afterClear = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const afterClear = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterClear.body.arrivedAt).toBeUndefined();
   });
 });
 
 describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R36/R37)", () => {
   it("adds a note to a reservation created without one, then corrects it", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-notes-edit" }));
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-notes-edit" }));
     expect(created.body.notes).toBeUndefined();
 
-    const addNote = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-notes-edit-1", changes: { notes: "Op de rekening zetten" } });
+    const addNote = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-notes-edit-1",
+      changes: { notes: "Op de rekening zetten" },
+    });
     expect(addNote.status).toBe(204);
 
-    const afterAdd = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const afterAdd = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterAdd.body.notes).toBe("Op de rekening zetten");
 
-    const correctNote = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-notes-edit-2", changes: { notes: "Op de rekening zetten + glutenvrij" } });
+    const correctNote = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-notes-edit-2",
+      changes: { notes: "Op de rekening zetten + glutenvrij" },
+    });
     expect(correctNote.status).toBe(204);
 
-    const afterCorrect = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const afterCorrect = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterCorrect.body.notes).toBe("Op de rekening zetten + glutenvrij");
   });
 });
 
 describe("PATCH /reservations/:id — changing the preferred area after creation (CAP-D01.01-R48)", () => {
   it("switches Sushi to Teppanyaki", async () => {
-    const { app } = buildApp();
-    const created = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-area-edit", preferredArea: "Sushi" }));
+    const created = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-area-edit", preferredArea: "Sushi" })
+    );
     expect(created.body.preferredArea).toBe("Sushi");
 
-    const switched = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-area-edit-1", changes: { preferredArea: "Teppanyaki" } });
+    const switched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-area-edit-1",
+      changes: { preferredArea: "Teppanyaki" },
+    });
     expect(switched.status).toBe(204);
 
-    const after = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(after.body.preferredArea).toBe("Teppanyaki");
   });
 
   it("rejects an unrecognized preferredArea in changes with a clear 400", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-area-bad-edit" }));
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-area-bad-edit" }));
 
-    const res = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-area-bad-edit-1", changes: { preferredArea: "Steakhouse" } });
+    const res = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-area-bad-edit-1",
+      changes: { preferredArea: "Steakhouse" },
+    });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toContain("Steakhouse");
@@ -330,46 +418,42 @@ describe("PATCH /reservations/:id — changing the preferred area after creation
 
 describe("PATCH /reservations/:id — correcting the guest name and source (CAP-D01.01-R07/R12)", () => {
   it("corrects a misspelled guest name", async () => {
-    const { app } = buildApp();
-    const created = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-name-edit", contactName: "Jan Jansen" }));
+    const created = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-name-edit", contactName: "Jan Jansen" })
+    );
 
-    const patched = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-name-edit-1", changes: { contactName: "Jan Janssen" } });
+    const patched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-name-edit-1",
+      changes: { contactName: "Jan Janssen" },
+    });
     expect(patched.status).toBe(204);
 
-    const after = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(after.body.contactName).toBe("Jan Janssen");
   });
 
   it("corrects the reservation source", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-source-edit" }));
-    const before = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-source-edit" }));
+    const before = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(before.body.sourceCategory).toBe("Telephone");
 
-    const patched = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-source-edit-1", changes: { source: { category: "Google" } } });
+    const patched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-source-edit-1",
+      changes: { source: { category: "Google" } },
+    });
     expect(patched.status).toBe(204);
 
-    const after = await request(app).get(`/reservations/${created.body.reservationId}`);
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(after.body.sourceCategory).toBe("Google");
   });
 
   it("rejects an unrecognized source category with a 422 domain violation (CAP-D01.01-R12)", async () => {
-    const { app } = buildApp();
-    const created = await request(app).post("/reservations").set(staffHeaders).send(validBody({ commandId: "http-cmd-source-bad-edit" }));
+    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-source-bad-edit" }));
 
-    const res = await request(app)
-      .patch(`/reservations/${created.body.reservationId}`)
-      .set(staffHeaders)
-      .send({ commandId: "http-cmd-source-bad-edit-1", changes: { source: { category: "Carrier Pigeon" } } });
+    const res = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-source-bad-edit-1",
+      changes: { source: { category: "Carrier Pigeon" } },
+    });
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R12")).toBe(true);
@@ -378,15 +462,13 @@ describe("PATCH /reservations/:id — correcting the guest name and source (CAP-
 
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
   it("lists reservations for the requested date, including guest name and preferred area", async () => {
-    const { app } = buildApp();
-    const created = await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "http-cmd-list", contactName: "Jan Jansen", preferredArea: "Teppanyaki" }));
+    const created = await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "http-cmd-list", contactName: "Jan Jansen", preferredArea: "Teppanyaki" })
+    );
     expect(created.status).toBe(201);
 
     const dateParam = FUTURE_DATE.toISOString().slice(0, 10);
-    const res = await request(app).get(`/reservations?date=${dateParam}`);
+    const res = await sharedAgent.get(`/reservations?date=${dateParam}`);
 
     expect(res.status).toBe(200);
     expect(res.body.date).toBe(dateParam);
@@ -400,97 +482,86 @@ describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are
   });
 
   it("returns an empty list for a date with no reservations", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get("/reservations?date=2030-01-01");
+    const res = await sharedAgent.get("/reservations?date=2030-01-01");
     expect(res.status).toBe(200);
     expect(res.body.reservations).toHaveLength(0);
   });
 
   it("rejects a malformed date query parameter with 400", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get("/reservations?date=not-a-date");
+    const res = await sharedAgent.get("/reservations?date=not-a-date");
     expect(res.status).toBe(400);
   });
 });
 
 describe("Sluitingsdagen (closing days, van/tot)", () => {
   it("adds a single closed day when toDate is omitted — same day means 1 day", async () => {
-    const { app } = buildApp();
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
 
-    const add = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: dateKey, reason: "Personeelsuitje" });
+    const add = await post(sharedAgent, "/closing-days").send({ fromDate: dateKey, reason: "Personeelsuitje" });
     expect(add.status).toBe(201);
     expect(add.body).toMatchObject({ fromDate: dateKey, toDate: dateKey, reason: "Personeelsuitje" });
 
-    const list = await request(app).get("/closing-days");
+    const list = await sharedAgent.get("/closing-days");
     expect(list.status).toBe(200);
     expect(list.body.closingDays).toContainEqual(expect.objectContaining({ fromDate: dateKey, toDate: dateKey }));
   });
 
   it("adds, lists, and removes a multi-day range, blocking every day within it", async () => {
-    const { app } = buildApp();
     const from = "2026-08-10";
     const to = "2026-08-12";
 
-    const add = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: from, toDate: to, reason: "Verbouwing" });
+    const add = await post(sharedAgent, "/closing-days").send({ fromDate: from, toDate: to, reason: "Verbouwing" });
     expect(add.status).toBe(201);
     expect(add.body).toMatchObject({ fromDate: from, toDate: to });
 
-    const list = await request(app).get("/closing-days");
+    const list = await sharedAgent.get("/closing-days");
     const range = list.body.closingDays.find((r: { fromDate: string }) => r.fromDate === from);
     expect(range).toMatchObject({ fromDate: from, toDate: to, reason: "Verbouwing" });
 
     for (const day of ["2026-08-10", "2026-08-11", "2026-08-12"]) {
-      const res = await request(app)
-        .post("/reservations")
-        .set(staffHeaders)
-        .send(validBody({ commandId: `range-check-${day}`, reservationDate: `${day}T19:00:00.000Z` }));
+      const res = await post(sharedAgent, "/reservations").send(
+        validBody({ commandId: `range-check-${day}`, reservationDate: `${day}T19:00:00.000Z` })
+      );
       expect(res.status).toBe(422);
     }
 
-    const remove = await request(app).delete(`/closing-days/${range.id}`);
+    const remove = await del(sharedAgent, `/closing-days/${range.id}`);
     expect(remove.status).toBe(204);
 
-    const listAfter = await request(app).get("/closing-days");
+    const listAfter = await sharedAgent.get("/closing-days");
     expect(listAfter.body.closingDays).toEqual([]);
   });
 
   it("swaps a reversed range instead of rejecting it", async () => {
-    const { app } = buildApp();
-    const add = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: "2026-08-12", toDate: "2026-08-10" });
+    const add = await post(sharedAgent, "/closing-days").send({ fromDate: "2026-08-12", toDate: "2026-08-10" });
     expect(add.status).toBe(201);
     expect(add.body).toMatchObject({ fromDate: "2026-08-10", toDate: "2026-08-12" });
   });
 
   it("rejects an invalid date with 400", async () => {
-    const { app } = buildApp();
-    const res = await request(app).post("/closing-days").set(staffHeaders).send({ fromDate: "not-a-date" });
+    const res = await post(sharedAgent, "/closing-days").send({ fromDate: "not-a-date" });
     expect(res.status).toBe(400);
   });
 });
 
 describe("GET /teppanyaki-occupancy", () => {
-  async function createTeppanyaki(app: import("express").Express, commandId: string, partySize: number, servicePeriodId: string) {
-    return request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(
-        validBody({
-          commandId,
-          servicePeriodId,
-          reservationDate: FUTURE_DATE.toISOString(),
-          partySize,
-          preferredArea: "Teppanyaki",
-        })
-      );
+  async function createTeppanyaki(commandId: string, partySize: number, servicePeriodId: string) {
+    return post(sharedAgent, "/reservations").send(
+      validBody({
+        commandId,
+        servicePeriodId,
+        reservationDate: FUTURE_DATE.toISOString(),
+        partySize,
+        preferredArea: "Teppanyaki",
+      })
+    );
   }
 
   it("colors a date+service orange at 70% and red at 90% of the 40-seat capacity", async () => {
-    const { app } = buildApp();
-    await createTeppanyaki(app, "occ-orange", 28, "dinner"); // 28/40 = 70%
+    await createTeppanyaki("occ-orange", 28, "dinner"); // 28/40 = 70%
 
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
-    const orangeRes = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    const orangeRes = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
     expect(orangeRes.status).toBe(200);
     expect(orangeRes.body.capacity).toBe(40);
     expect(orangeRes.body.days).toContainEqual({
@@ -502,18 +573,17 @@ describe("GET /teppanyaki-occupancy", () => {
       level: "orange",
     });
 
-    await createTeppanyaki(app, "occ-red", 8, "dinner"); // 28 + 8 = 36/40 = 90%
-    const redRes = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    await createTeppanyaki("occ-red", 8, "dinner"); // 28 + 8 = 36/40 = 90%
+    const redRes = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
     expect(redRes.body.days[0]).toMatchObject({ bookedSeats: 36, percentage: 90, level: "red" });
   });
 
   it("tracks lunch and dinner separately rather than summing them (same physical seats, different services)", async () => {
-    const { app } = buildApp();
-    await createTeppanyaki(app, "occ-lunch", 20, "lunch");
-    await createTeppanyaki(app, "occ-dinner", 20, "dinner");
+    await createTeppanyaki("occ-lunch", 20, "lunch");
+    await createTeppanyaki("occ-dinner", 20, "dinner");
 
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
-    const res = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    const res = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
 
     expect(res.body.days).toHaveLength(2);
     for (const row of res.body.days) {
@@ -524,14 +594,12 @@ describe("GET /teppanyaki-occupancy", () => {
   });
 
   it("ignores non-Teppanyaki reservations", async () => {
-    const { app } = buildApp();
-    await request(app)
-      .post("/reservations")
-      .set(staffHeaders)
-      .send(validBody({ commandId: "occ-sushi", reservationDate: FUTURE_DATE.toISOString(), partySize: 6, preferredArea: "Sushi" }));
+    await post(sharedAgent, "/reservations").send(
+      validBody({ commandId: "occ-sushi", reservationDate: FUTURE_DATE.toISOString(), partySize: 6, preferredArea: "Sushi" })
+    );
 
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
-    const res = await request(app).get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
+    const res = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
     expect(res.body.days).toHaveLength(0);
   });
 });

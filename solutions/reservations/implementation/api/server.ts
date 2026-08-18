@@ -5,6 +5,10 @@ import { PrismaCapacityRepository } from "../infrastructure/persistence/PrismaCa
 import { PrismaTransactionManager } from "../infrastructure/persistence/PrismaTransactionManager.js";
 import { PrismaDuplicateReservationChecker } from "../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
 import { PrismaClosingDayStore } from "../infrastructure/persistence/PrismaClosingDayStore.js";
+import { PrismaStaffUserRepository } from "../infrastructure/persistence/PrismaStaffUserRepository.js";
+import { PrismaSessionRepository } from "../infrastructure/persistence/PrismaSessionRepository.js";
+import { ScryptPasswordHasher } from "../infrastructure/ScryptPasswordHasher.js";
+import { RandomSessionTokenGenerator } from "../infrastructure/RandomSessionTokenGenerator.js";
 import { UnvalidatedContactReader } from "../infrastructure/UnvalidatedContactReader.js";
 import { UnvalidatedServicePeriodReader } from "../infrastructure/UnvalidatedServicePeriodReader.js";
 import { SystemClock } from "../infrastructure/SystemClock.js";
@@ -12,6 +16,12 @@ import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
 import { RandomEventIdGenerator } from "../infrastructure/RandomEventIdGenerator.js";
 
 const prisma = new PrismaClient();
+// R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §21 — same-origin deployment
+// (this Express process serves both the API and the static pilot UI, see
+// api/app.ts's express.static(publicDir)). Set APP_ORIGIN in production
+// to also enable the CSRF guard's Origin check; unset (null) in local
+// dev, where only the custom-header check applies.
+const appOrigin = process.env["APP_ORIGIN"] ?? null;
 const app = createApp({
   repository: new PrismaReservationRepository(prisma),
   duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
@@ -29,6 +39,17 @@ const app = createApp({
   capacity: {
     capacityRepository: new PrismaCapacityRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
+  },
+  // R1.2 — Identity & Access. NODE_ENV=production is when the session
+  // cookie's Secure flag is actually enforced (plain http://localhost in
+  // dev would otherwise silently drop the cookie).
+  auth: {
+    staffUserRepository: new PrismaStaffUserRepository(prisma),
+    sessionRepository: new PrismaSessionRepository(prisma),
+    passwordHasher: new ScryptPasswordHasher(),
+    sessionTokenGenerator: new RandomSessionTokenGenerator(),
+    cookieSecure: process.env["NODE_ENV"] === "production",
+    expectedOrigin: appOrigin,
   },
 });
 

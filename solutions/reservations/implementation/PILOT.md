@@ -15,8 +15,23 @@ reservations entered here are real, persisted rows. Treat it as such.
 
 1. `npm install && npx prisma migrate deploy && npm run typecheck && npm test` — all green.
 2. `npm start` (or `npm run dev`). Confirm `http://localhost:3001/health` returns `{"status":"ok"}`.
-3. Open `http://localhost:3001/pilot.html`. Confirm the daily list loads (empty is fine).
+3. Open `http://localhost:3001/pilot.html`. Log in (see "Accounts" below), then confirm the daily list loads (empty is fine).
 4. Pick 1–2 staff members for the pilot, not the whole team at once — "controlled" means small and watched, not a full rollout.
+
+## Accounts (R1.2 — Identity & Access)
+
+**Corrected during R1.2 implementation** — this section used to say "No
+authentication," with attribution coming from a free-text "your name"
+field on the page. That is no longer true: every pilot participant now
+needs a real `StaffUser` account (username + password) and logs in
+before using the page. `x-actor-*` HTTP headers have zero authority —
+see `R1_2_IDENTITY_ACCESS_IMPLEMENTATION_REPORT.md`.
+
+The first account (Owner) is created via `npm run bootstrap-owner`
+(reads `BOOTSTRAP_OWNER_USERNAME`/`BOOTSTRAP_OWNER_PASSWORD` from the
+environment — never a hardcoded password). Additional pilot participants
+are created by the Owner via `POST /staff-users` (`users.manage`
+permission) — there is no self-service sign-up.
 
 ## Known, accepted limitations during the pilot
 
@@ -24,9 +39,6 @@ reservations entered here are real, persisted rows. Treat it as such.
   as the guest identifier; any service-period selection is accepted.
   These become real validations once Contact Management and Service
   Period Management exist as capabilities — not before.
-- **No authentication.** The "your name" field on the page is
-  self-reported, for attribution only (CAP-D01.01-R18), not access
-  control. Run this on a device/network only staff can reach.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

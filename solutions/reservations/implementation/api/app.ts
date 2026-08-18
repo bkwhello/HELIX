@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import express, { Express, NextFunction, Request, Response } from "express";
 import { ReservationRepository } from "../domain/repositories/ReservationRepository.js";
 import { ReservationId } from "../domain/value-objects/ReservationId.js";
-import { Actor, ActorKind, ActorRole } from "../domain/value-objects/Actor.js";
 import { CompletionEvidence } from "../domain/value-objects/CompletionEvidence.js";
 import { PreferredArea } from "../domain/value-objects/PreferredArea.js";
 import { CreateReservationHandler } from "../application/command-handlers/CreateReservationHandler.js";
@@ -22,6 +21,28 @@ import { CapacityRepository } from "../domain/repositories/CapacityRepository.js
 import { TransactionManager } from "../application/ports/TransactionManager.js";
 import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
 import { isCapacityPoolId } from "../domain/availability/CapacityPool.js";
+import { StaffUserRepository } from "../domain/repositories/StaffUserRepository.js";
+import { SessionRepository } from "../domain/repositories/SessionRepository.js";
+import { PasswordHasher } from "../application/ports/PasswordHasher.js";
+import { SessionTokenGenerator } from "../application/ports/SessionTokenGenerator.js";
+import { LoginHandler } from "../application/auth/LoginHandler.js";
+import { LogoutHandler } from "../application/auth/LogoutHandler.js";
+import { CreateStaffUserHandler } from "../application/auth/CreateStaffUserHandler.js";
+import { Permission } from "../domain/rules/StaffAuthorizationPolicy.js";
+import {
+  SESSION_COOKIE_NAME,
+  createRequireStaffSession,
+  requirePermission,
+  createCsrfGuard,
+  principalToActor,
+  parseCookieHeader,
+} from "./authMiddleware.js";
+
+// R1.2 — configurable, not architectural (R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md
+// §11: exact session duration is operational policy). 12 hours is a
+// reasonable default for surviving a normal shift without forcing a
+// mid-service re-login; override via SESSION_LIFETIME_MS if needed.
+export const DEFAULT_SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000;
 
 export interface AppDependencies {
   repository: ReservationRepository;
@@ -33,15 +54,31 @@ export interface AppDependencies {
   eventIdGenerator: EventIdGenerator;
   clock: Clock;
   /**
-   * CAP-D02.03 — optional so the existing CAP-D01.01-only wiring (and its
-   * tests, which build an app with an in-memory repository and no
-   * database) keeps working unchanged. When omitted, the /availability/*
-   * routes below are not mounted at all — there is no degraded/fake
-   * capacity behavior, only "not available in this deployment."
+   * CAP-D02.03 — optional so tests that don't need capacity-aware
+   * routes at all can omit it. When omitted, the /availability/* routes
+   * below are not mounted — there is no degraded/fake capacity
+   * behavior, only "not available in this deployment."
    */
   capacity?: {
     readonly capacityRepository: CapacityRepository;
     readonly transactionManager: TransactionManager;
+  };
+  /**
+   * R1.2 — Identity & Access. NOT optional: every deployment of this API
+   * must authenticate staff, so there is no "insecure mode" to fall back
+   * to the way CAP-D02.03's capacity block above legitimately has one.
+   * `expectedOrigin`/`cookieSecure` are separated out because they are
+   * genuinely environment-dependent (dev/test vs a real deployment),
+   * unlike the repositories, which are always real.
+   */
+  auth: {
+    readonly staffUserRepository: StaffUserRepository;
+    readonly sessionRepository: SessionRepository;
+    readonly passwordHasher: PasswordHasher;
+    readonly sessionTokenGenerator: SessionTokenGenerator;
+    readonly sessionLifetimeMs?: number;
+    readonly cookieSecure: boolean;
+    readonly expectedOrigin?: string | null;
   };
 }
 
@@ -55,6 +92,10 @@ const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", 
 export function createApp(deps: AppDependencies): Express {
   const app = express();
   app.use(express.json());
+  // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §20 — applied globally,
+  // before any route, so no mutating endpoint (including /auth/login
+  // itself) can be added later without CSRF coverage by accident.
+  app.use(createCsrfGuard(deps.auth.expectedOrigin ?? null));
   // Pilot-only staff interface (see PILOT.md) — plain static HTML/JS, no
   // build step. Talks to the JSON endpoints below via fetch().
   app.use(express.static(publicDir));
@@ -97,6 +138,24 @@ export function createApp(deps: AppDependencies): Express {
       )
     : null;
 
+  // R1.2 — Identity & Access.
+  const sessionLifetimeMs = deps.auth.sessionLifetimeMs ?? DEFAULT_SESSION_LIFETIME_MS;
+  const loginHandler = new LoginHandler(
+    deps.auth.staffUserRepository,
+    deps.auth.sessionRepository,
+    deps.auth.passwordHasher,
+    deps.auth.sessionTokenGenerator,
+    deps.clock,
+    sessionLifetimeMs
+  );
+  const logoutHandler = new LogoutHandler(deps.auth.sessionRepository);
+  const createStaffUserHandler = new CreateStaffUserHandler(deps.auth.staffUserRepository, deps.auth.passwordHasher, deps.idGenerator);
+  const requireStaffSession = createRequireStaffSession({
+    staffUserRepository: deps.auth.staffUserRepository,
+    sessionRepository: deps.auth.sessionRepository,
+    clock: deps.clock,
+  });
+
   function routeParam(req: Request, name: string): string {
     const value = req.params[name];
     return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
@@ -106,7 +165,6 @@ export function createApp(deps: AppDependencies): Express {
     return routeParam(req, "id");
   }
 
-  const KNOWN_ACTOR_KINDS: readonly string[] = Object.values(ActorKind);
   const KNOWN_PREFERRED_AREAS: readonly string[] = Object.values(PreferredArea);
 
   /** CAP-D01.01-R48: reject a garbage preferredArea with a clear 400 rather than silently persisting a typo. Absent/undefined is fine — it's a Warning-severity preference, not a required field. */
@@ -121,37 +179,82 @@ export function createApp(deps: AppDependencies): Express {
     return { present: true, value: value as PreferredArea };
   }
 
-  /**
-   * Placeholder actor resolution. A real deployment resolves this from an
-   * authenticated session (see capability.md, Security) — not implemented
-   * here, since authentication is a separate capability.
-   *
-   * Validates x-actor-kind against the known ActorKind values and fails
-   * fast with a clear 400 if it's unrecognized, rather than letting a
-   * typo (e.g. "Human" instead of "AuthorizedUser") silently fall through
-   * to a confusing CAP-D01.01-R32/R33/... "unauthorized" rejection deep in
-   * the domain layer. Returns null after already writing the response.
-   */
-  function resolveActor(req: Request, res: Response): Actor | null {
-    const kindHeader = req.header("x-actor-kind");
-    if (kindHeader !== undefined && !KNOWN_ACTOR_KINDS.includes(kindHeader)) {
-      res.status(400).json({
-        message: `Unknown x-actor-kind header: "${kindHeader}". Expected one of: ${KNOWN_ACTOR_KINDS.join(", ")}.`,
-      });
-      return null;
-    }
-    return {
-      id: req.header("x-actor-id") ?? "unknown",
-      kind: (kindHeader as ActorKind) ?? ActorKind.AuthorizedUser,
-      role: req.header("x-actor-role") as ActorRole | undefined,
-    };
-  }
-
   app.get("/health", (_req: Request, res: Response) => {
     res.status(200).json({ status: "ok" });
   });
 
-  app.post("/reservations", async (req: Request, res: Response) => {
+  // R1.2 — Identity & Access. §8: identical response whether the
+  // username doesn't exist or the password is wrong — see
+  // LoginHandler's INVALID_CREDENTIALS variants, all mapped to the same
+  // 401 body here.
+  app.post("/auth/login", async (req: Request, res: Response) => {
+    const body = req.body as { username?: string; password?: string };
+    if (!body.username || !body.password) {
+      res.status(401).json({ message: "Invalid username or password." });
+      return;
+    }
+    const result = await loginHandler.handle({ username: body.username, password: body.password });
+    if (result.type === "INVALID_CREDENTIALS") {
+      res.status(401).json({ message: "Invalid username or password." });
+      return;
+    }
+    res.cookie(SESSION_COOKIE_NAME, result.sessionToken, {
+      httpOnly: true,
+      secure: deps.auth.cookieSecure,
+      sameSite: "lax",
+      path: "/",
+      // maxAge (a relative duration), not `expires` (an absolute Date):
+      // `result.expiresAt` is computed from `deps.clock`, which in tests
+      // is often a FixedClock returning an arbitrary fixed instant —
+      // using it as an absolute cookie Expires would make a real cookie
+      // jar (this API's own real client, or supertest's agent in tests)
+      // see an already-past expiry relative to actual wall-clock time and
+      // discard the cookie immediately. maxAge is computed by the cookie
+      // library from the REAL current time, independent of any injected
+      // application clock — correct in both production and tests. The
+      // server's own session-validity check (authMiddleware.ts) still
+      // authoritatively uses `deps.clock` against the DB-stored
+      // `expiresAt`; this only affects when the BROWSER stops sending
+      // the cookie, a client-side hint, not the security boundary.
+      maxAge: sessionLifetimeMs,
+    });
+    res.status(200).json({
+      staffUser: { id: result.staffUser.id, username: result.staffUser.username, displayName: result.staffUser.displayName, role: result.staffUser.role },
+    });
+  });
+
+  app.post("/auth/logout", async (req: Request, res: Response) => {
+    const token = parseCookieHeader(req.headers.cookie, SESSION_COOKIE_NAME);
+    if (token) {
+      await logoutHandler.handle({ sessionToken: token });
+    }
+    res.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
+    res.status(204).send();
+  });
+
+  // R1.2 §19 — Owner-only (users.manage). The minimal necessary write
+  // path for Identity & Access to be usable by more than one person —
+  // see R1_2_IDENTITY_ACCESS_IMPLEMENTATION_REPORT.md for why disable/
+  // role-change/reset-credential endpoints were deliberately NOT built
+  // in this pass ("do not create dormant endpoints" cuts the other way
+  // for those: no evidence they're needed yet).
+  app.post("/staff-users", requireStaffSession, requirePermission(Permission.UsersManage), async (req: Request, res: Response) => {
+    const body = req.body as { username?: string; displayName?: string; email?: string; password?: string; role?: string };
+    const result = await createStaffUserHandler.handle({
+      username: body.username ?? "",
+      displayName: body.displayName ?? "",
+      email: body.email,
+      password: body.password ?? "",
+      role: body.role ?? "",
+    });
+    if (!result.ok) {
+      res.status(422).json({ violations: result.violations });
+      return;
+    }
+    res.status(201).json(result.value);
+  });
+
+  app.post("/reservations", requireStaffSession, requirePermission(Permission.ReservationCreate), async (req: Request, res: Response) => {
     const body = req.body as {
       commandId: string;
       correlationId?: string;
@@ -168,8 +271,11 @@ export function createApp(deps: AppDependencies): Express {
       historicalCorrectionReason?: string;
     };
 
-    const actor = resolveActor(req, res);
-    if (!actor) return;
+    // requireStaffSession has already run and attached req.staffPrincipal
+    // — this cannot be undefined here, but the check keeps this function
+    // typed without a non-null assertion.
+    if (!req.staffPrincipal) return;
+    const actor = principalToActor(req.staffPrincipal);
 
     const preferredArea = parsePreferredArea(body.preferredArea, res);
     if (!preferredArea) return;
@@ -201,7 +307,7 @@ export function createApp(deps: AppDependencies): Express {
   // CAP-D01.01-AC34 — Today's Active Reservations Are Operationally
   // Discoverable. Defaults to today (deps.clock.now()) so "what's on the
   // books today" is a bare GET with no query string required.
-  app.get("/reservations", async (req: Request, res: Response) => {
+  app.get("/reservations", requireStaffSession, requirePermission(Permission.ReservationView), async (req: Request, res: Response) => {
     const dateParam = req.query["date"];
     const date = typeof dateParam === "string" && dateParam.length > 0 ? new Date(dateParam) : deps.clock.now();
     if (Number.isNaN(date.getTime())) {
@@ -216,7 +322,7 @@ export function createApp(deps: AppDependencies): Express {
     });
   });
 
-  app.get("/reservations/:id", async (req: Request, res: Response) => {
+  app.get("/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationView), async (req: Request, res: Response) => {
     const idResult = ReservationId.create(paramId(req));
     if (!idResult.ok) {
       res.status(400).json({ violations: idResult.violations });
@@ -230,7 +336,7 @@ export function createApp(deps: AppDependencies): Express {
     res.status(200).json(serializeReservation(aggregate));
   });
 
-  app.patch("/reservations/:id", async (req: Request, res: Response) => {
+  app.patch("/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationModify), async (req: Request, res: Response) => {
     const body = req.body as {
       commandId: string;
       correlationId?: string;
@@ -252,8 +358,8 @@ export function createApp(deps: AppDependencies): Express {
       correctionReason?: string;
     };
 
-    const actor = resolveActor(req, res);
-    if (!actor) return;
+    if (!req.staffPrincipal) return;
+    const actor = principalToActor(req.staffPrincipal);
 
     const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
     if (!preferredArea) return;
@@ -289,10 +395,10 @@ export function createApp(deps: AppDependencies): Express {
     res.status(204).send();
   });
 
-  app.post("/reservations/:id/confirm", async (req: Request, res: Response) => {
+  app.post("/reservations/:id/confirm", requireStaffSession, requirePermission(Permission.ReservationConfirm), async (req: Request, res: Response) => {
     const body = req.body as { commandId: string; correlationId?: string; causationId?: string; isReservationDataValid?: boolean };
-    const actor = resolveActor(req, res);
-    if (!actor) return;
+    if (!req.staffPrincipal) return;
+    const actor = principalToActor(req.staffPrincipal);
 
     const result = await confirmHandler.handle({
       commandId: body.commandId,
@@ -309,7 +415,7 @@ export function createApp(deps: AppDependencies): Express {
     res.status(204).send();
   });
 
-  app.post("/reservations/:id/cancel", async (req: Request, res: Response) => {
+  app.post("/reservations/:id/cancel", requireStaffSession, requirePermission(Permission.ReservationCancel), async (req: Request, res: Response) => {
     const body = req.body as {
       commandId: string;
       correlationId?: string;
@@ -317,8 +423,8 @@ export function createApp(deps: AppDependencies): Express {
       reason?: string;
       reasonRequiredByPolicy?: boolean;
     };
-    const actor = resolveActor(req, res);
-    if (!actor) return;
+    if (!req.staffPrincipal) return;
+    const actor = principalToActor(req.staffPrincipal);
 
     const result = await cancelHandler.handle({
       commandId: body.commandId,
@@ -336,7 +442,7 @@ export function createApp(deps: AppDependencies): Express {
     res.status(204).send();
   });
 
-  app.post("/reservations/:id/complete", async (req: Request, res: Response) => {
+  app.post("/reservations/:id/complete", requireStaffSession, requirePermission(Permission.ReservationComplete), async (req: Request, res: Response) => {
     const body = req.body as {
       commandId: string;
       correlationId?: string;
@@ -345,8 +451,8 @@ export function createApp(deps: AppDependencies): Express {
       isManualCompletion?: boolean;
       manualCompletionReason?: string;
     };
-    const actor = resolveActor(req, res);
-    if (!actor) return;
+    if (!req.staffPrincipal) return;
+    const actor = principalToActor(req.staffPrincipal);
 
     const result = await completeHandler.handle({
       commandId: body.commandId,
@@ -372,7 +478,7 @@ export function createApp(deps: AppDependencies): Express {
   // decision. Mounted only when the deployment supplies capacity
   // infrastructure (see AppDependencies.capacity).
   if (availabilityOrchestrator) {
-    app.post("/availability/reservations", async (req: Request, res: Response) => {
+    app.post("/availability/reservations", requireStaffSession, requirePermission(Permission.ReservationCreate), async (req: Request, res: Response) => {
       const body = req.body as {
         commandId: string;
         correlationId?: string;
@@ -387,8 +493,8 @@ export function createApp(deps: AppDependencies): Express {
         notes?: string;
       };
 
-      const actor = resolveActor(req, res);
-      if (!actor) return;
+      if (!req.staffPrincipal) return;
+      const actor = principalToActor(req.staffPrincipal);
 
       if (!body.preferredArea || !isCapacityPoolId(body.preferredArea)) {
         res.status(422).json({ message: `preferredArea must be one of the capacity-managed areas for a capacity-aware create. Received: ${String(body.preferredArea)}.` });
@@ -426,7 +532,7 @@ export function createApp(deps: AppDependencies): Express {
       }
     });
 
-    app.patch("/availability/reservations/:id", async (req: Request, res: Response) => {
+    app.patch("/availability/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationModify), async (req: Request, res: Response) => {
       const body = req.body as {
         commandId: string;
         correlationId?: string;
@@ -445,8 +551,8 @@ export function createApp(deps: AppDependencies): Express {
         isServicePeriodStillValid?: boolean;
       };
 
-      const actor = resolveActor(req, res);
-      if (!actor) return;
+      if (!req.staffPrincipal) return;
+      const actor = principalToActor(req.staffPrincipal);
 
       const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
       if (!preferredArea) return;
@@ -490,10 +596,10 @@ export function createApp(deps: AppDependencies): Express {
       }
     });
 
-    app.post("/availability/reservations/:id/cancel", async (req: Request, res: Response) => {
+    app.post("/availability/reservations/:id/cancel", requireStaffSession, requirePermission(Permission.ReservationCancel), async (req: Request, res: Response) => {
       const body = req.body as { commandId: string; correlationId?: string; causationId?: string; reason?: string; reasonRequiredByPolicy?: boolean };
-      const actor = resolveActor(req, res);
-      if (!actor) return;
+      if (!req.staffPrincipal) return;
+      const actor = principalToActor(req.staffPrincipal);
 
       const result = await availabilityOrchestrator.cancelWithCapacity({
         commandId: body.commandId,
@@ -522,10 +628,10 @@ export function createApp(deps: AppDependencies): Express {
   // here as a stopgap instead of in Availability Management. A closure is
   // a fromDate..toDate range (inclusive); a single closed day is a range
   // where toDate is omitted or equals fromDate.
-  app.post("/closing-days", async (req: Request, res: Response) => {
+  app.post("/closing-days", requireStaffSession, requirePermission(Permission.CapacitySettingsManage), async (req: Request, res: Response) => {
     const body = req.body as { fromDate: string; toDate?: string; reason?: string };
-    const actor = resolveActor(req, res);
-    if (!actor) return;
+    if (!req.staffPrincipal) return;
+    const actor = principalToActor(req.staffPrincipal);
 
     const fromDate = new Date(body.fromDate);
     const toDate = body.toDate ? new Date(body.toDate) : fromDate;
@@ -538,12 +644,16 @@ export function createApp(deps: AppDependencies): Express {
     res.status(201).json(saved);
   });
 
-  app.get("/closing-days", async (_req: Request, res: Response) => {
+  // R1.2 — a read, available to any authenticated staff member (not
+  // gated behind capacity.settings.manage, which governs mutation only)
+  // — closing-day context is operationally relevant to everyone booking
+  // reservations, not just whoever manages the calendar.
+  app.get("/closing-days", requireStaffSession, async (_req: Request, res: Response) => {
     const closingDays = await deps.closingDayStore.list();
     res.status(200).json({ closingDays });
   });
 
-  app.delete("/closing-days/:id", async (req: Request, res: Response) => {
+  app.delete("/closing-days/:id", requireStaffSession, requirePermission(Permission.CapacitySettingsManage), async (req: Request, res: Response) => {
     await deps.closingDayStore.remove(routeParam(req, "id"));
     res.status(204).send();
   });
@@ -555,7 +665,7 @@ export function createApp(deps: AppDependencies): Express {
   // together). 40 is hardcoded pending a real Capacity Management
   // capability — there is nowhere else this number could come from yet.
   const TEPPANYAKI_CAPACITY = 40;
-  app.get("/teppanyaki-occupancy", async (req: Request, res: Response) => {
+  app.get("/teppanyaki-occupancy", requireStaffSession, async (req: Request, res: Response) => {
     const fromParam = req.query["from"];
     const from = typeof fromParam === "string" && fromParam.length > 0 ? new Date(fromParam) : deps.clock.now();
     if (Number.isNaN(from.getTime())) {

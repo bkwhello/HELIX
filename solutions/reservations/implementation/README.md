@@ -74,13 +74,17 @@ same HTTP-level and pilot-readiness pass — see "Known limitations" below.
   Management and Service Period Management don't exist as capabilities
   yet. Real validation is deferred until they do; this is a known,
   intentional gap, not an oversight.
-- `actorFromHeader()` in `api/app.ts` trusts request headers for actor
-  identity — acceptable for a controlled pilot on a trusted device/network,
-  not for a public-facing deployment. Needs real authentication before
-  wider rollout.
-- SQLite is fine for a single-location controlled pilot; switch
-  `prisma/schema.prisma`'s `provider` (and `DATABASE_URL`) to PostgreSQL
-  before scaling beyond one site or one process.
+- **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
+  trusted `x-actor-*` request headers for identity — that is no longer
+  true. Real `StaffUser` accounts, password authentication, server-side
+  sessions, and centralized role-based authorization replace it entirely;
+  those headers now have zero authority (a permanent regression test
+  proves this — see `tests/integration/identity-access.test.ts`). See
+  `R1_2_IDENTITY_ACCESS_IMPLEMENTATION_REPORT.md`.
+- **Resolved (CAP-D02.03).** This bullet used to recommend switching from
+  SQLite to PostgreSQL before scaling — that switch already happened (see
+  the Stack section above); this codebase has been PostgreSQL-only since
+  CAP-D02.03.
 - No transactional outbox — events are persisted atomically with state
   (see `PrismaReservationRepository.save()`), but nothing publishes them
   to an external consumer yet, because none exists.

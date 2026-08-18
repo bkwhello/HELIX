@@ -155,3 +155,95 @@ model CapacityCommitment {
   @@index([reservationId])
   @@index([commandId])
 }
+
+// R1.2 — Identity & Access. Real staff identity, replacing the
+// self-reported x-actor-* HTTP headers as a source of production
+// authority — see R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md and
+// R1_2_IDENTITY_ACCESS_IMPLEMENTATION_REPORT.md.
+//
+// id is the stable identity anchor (§6 of the architecture doc) —
+// audit attribution is anchored to it, never to username/email/
+// displayName, all three of which may change over a person's employment.
+//
+// role reuses ActorRole (domain/value-objects/Actor.ts) rather than a
+// second, parallel enum — StaffUser.role and Actor.role are the same
+// domain concept; the server derives one from the other at request time
+// (see api/authMiddleware.ts), it does not maintain two.
+//
+// Database-level invariant: at most one StaffUser may hold role='Owner'
+// at a time — a hand-written partial UNIQUE index (Prisma has no
+// declarative syntax for this, same situation as CapacityCommitment's
+// invariants above), see
+// prisma/migrations/*_one_owner_staff_user/migration.sql. This is both
+// the Owner-protection mechanism (domain/rules/StaffAuthorizationPolicy.ts)
+// and the bootstrap/recovery gate (infrastructure/bootstrap/bootstrapOwner.ts):
+// bootstrap can run exactly once because a second attempt collides with
+// this same constraint, with no separate "has bootstrap run" flag needed.
+model StaffUser {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  displayName  String
+  // Optional, unique when present (never mandatory, never the sole
+  // identifier — some staff have no individual email address). Prisma's
+  // @unique on a nullable column allows any number of NULLs (standard
+  // Postgres UNIQUE semantics — two NULLs are never "equal"), so this
+  // needs no partial-index workaround the way the Owner invariant does.
+  email        String?  @unique
+  passwordHash String   @map("password_hash")
+  role         String
+  status       String   @default("Active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  sessions     StaffSession[]
+
+  @@map("staff_users")
+}
+
+// Server-side session — the opaque cookie value the client holds maps to
+// exactly one row here, looked up by the SHA-256 hash of that value
+// (domain/shared/hashSessionToken.ts). The raw token itself is never
+// persisted anywhere; only its hash, so a database read alone can never
+// yield a usable session token.
+//
+// Deliberately carries no role or status — every authenticated request
+// re-reads StaffUser.role/.status live via the staffUserId relation, so a
+// disable or role change takes effect on the very next request (see
+// R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §9). Storing a copy here
+// would reintroduce exactly the stale-authority problem that design
+// choice exists to avoid.
+model StaffSession {
+  // The SHA-256 hash of the opaque token (hex), not a separately
+  // generated row id — the hash itself is already a stable, unique,
+  // lookup-ready value; a second id column would be redundant.
+  id          String    @id
+  staffUserId String    @map("staff_user_id")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
+
+  staffUser   StaffUser @relation(fields: [staffUserId], references: [id])
+
+  @@map("staff_sessions")
+  @@index([staffUserId])
+}
+
+// R1.2 §26 — a separate log from ReservationDomainEvent: account-lifecycle
+// events are not reservation-domain events, and conflating them would
+// violate the existing event model's own stated ownership boundary
+// ("owned by Reservation Management even when consumed elsewhere" —
+// domain/events/ReservationEvents.ts). Minimal by design — no IP/device
+// metadata column: evaluated in the architecture doc and deliberately
+// left out unless a real operational need justifies collecting it
+// ("do not over-collect").
+model SecurityEvent {
+  id                 String   @id @default(cuid())
+  type               String
+  occurredAt         DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  actingStaffUserId  String?  @map("acting_staff_user_id")
+  targetStaffUserId  String?  @map("target_staff_user_id")
+  metadata           String?
+
+  @@map("security_events")
+  @@index([targetStaffUserId])
+}

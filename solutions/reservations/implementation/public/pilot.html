@@ -133,7 +133,6 @@
   .compact-form textarea { resize: vertical; min-height: 72px; }
   .compact-form .row { display: flex; gap: 0.5rem; }
   .compact-form .row > div { flex: 1; }
-  .compact-form .staff-name-row { margin-bottom: 0.5rem; }
   .compact-form button { margin-top: 0.75rem; padding: 0.5rem 0.9rem; font-size: 0.9rem; min-height: 44px; }
   .compact-form button[type="submit"] { width: auto; }
   label { display: block; font-size: 14px; color: var(--muted); margin: 0.75rem 0 0.25rem; }
@@ -287,9 +286,26 @@
 </head>
 <body>
 
+<!-- R1.2 — Identity & Access. Shown until a real, authenticated session
+     exists; the app shell below stays hidden until then. Identity comes
+     from the login below, never from a client-supplied name field. -->
+<section id="login-gate" style="max-width: 360px; margin: 3rem auto;">
+  <h2>Inloggen</h2>
+  <form id="login-form" class="compact-form">
+    <label for="login-username">Gebruikersnaam</label>
+    <input id="login-username" type="text" required autocomplete="username" />
+    <label for="login-password">Wachtwoord</label>
+    <input id="login-password" type="password" required autocomplete="current-password" />
+    <button type="submit">Inloggen</button>
+    <div id="login-message"></div>
+  </form>
+</section>
+
+<div id="app-shell" style="display:none;">
 <header>
   <h1>Konnichiwa — Reserveringen (pilot)</h1>
   <p>Alleen voor gecontroleerd testgebruik: reservering aanmaken en dagoverzicht bekijken.</p>
+  <p id="session-indicator" style="font-size: 0.85rem; color: var(--muted);"></p>
 </header>
 
 <main>
@@ -339,11 +355,6 @@
     <h2 id="form-title">Nieuwe reservering</h2>
     <div id="edit-banner" class="edit-banner"></div>
     <form id="create-form" class="compact-form">
-      <div class="staff-name-row">
-        <label for="staff-name">Jouw naam (voor de administratie)</label>
-        <input id="staff-name" type="text" required placeholder="bijv. Kelvin" />
-      </div>
-
       <div class="row">
         <div>
           <label for="guest-name">Naam gast</label>
@@ -434,18 +445,95 @@
 </main>
 
 <footer id="footer-info">HELIX Pilot v0.1</footer>
+</div>
 
 <script>
-  const STAFF_NAME_KEY = "konnichiwa-pilot-staff-name";
-  const staffNameInput = document.getElementById("staff-name");
-  staffNameInput.value = localStorage.getItem(STAFF_NAME_KEY) || "";
-
+  // R1.2 — Identity & Access. Real staff identity comes from the session
+  // established by the login form below, never from a client-supplied
+  // name field — the server derives who is acting from the authenticated
+  // session on every request (api/authMiddleware.ts). This function keeps
+  // its old name and call sites (`...actorHeaders()`, spread into every
+  // fetch's headers) to minimize the diff, but its content is now the
+  // CSRF header the server requires on every mutating request
+  // (api/authMiddleware.ts's createCsrfGuard) — not an identity claim.
   function actorHeaders() {
-    return {
-      "x-actor-id": staffNameInput.value.trim() || "onbekend",
-      "x-actor-kind": "AuthorizedUser",
-    };
+    return { "x-helix-client": "1" };
   }
+
+  const loginGate = document.getElementById("login-gate");
+  const appShell = document.getElementById("app-shell");
+  const loginForm = document.getElementById("login-form");
+  const loginMessage = document.getElementById("login-message");
+  const sessionIndicator = document.getElementById("session-indicator");
+
+  function showApp(staffUser) {
+    loginGate.style.display = "none";
+    appShell.style.display = "";
+    sessionIndicator.textContent = `Ingelogd als ${staffUser.displayName} (${staffUser.role}) — `;
+    const logoutLink = document.createElement("a");
+    logoutLink.href = "#";
+    logoutLink.textContent = "uitloggen";
+    logoutLink.addEventListener("click", async (event) => {
+      event.preventDefault();
+      await fetch("/auth/logout", { method: "POST", headers: actorHeaders() });
+      window.location.reload();
+    });
+    sessionIndicator.appendChild(logoutLink);
+    initApp();
+  }
+
+  // Defined here, called only after authentication succeeds — the three
+  // functions it calls are declared further down the script but are
+  // still callable here (function declarations hoist), and critically
+  // this is only ever INVOKED later, from showApp(), never at
+  // page-load/script-parse time, so no fetch happens before login.
+  function initApp() {
+    loadList();
+    loadClosingDays();
+    loadOccupancy();
+  }
+
+  function showLoginGate() {
+    appShell.style.display = "none";
+    loginGate.style.display = "";
+  }
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("login-username").value.trim();
+    const password = document.getElementById("login-password").value;
+    showMessage(loginMessage, "Bezig met inloggen…", "");
+    const res = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      showMessage(loginMessage, "Ongeldige gebruikersnaam of wachtwoord.", "error");
+      return;
+    }
+    const body = await res.json();
+    clearMessage(loginMessage);
+    showApp(body.staffUser);
+  });
+
+  // On load: a same-origin GET against an endpoint that only requires
+  // *any* authenticated session (not a specific permission) — if the
+  // browser still holds a valid, unexpired session cookie from an
+  // earlier visit, this skips the login form instead of forcing a
+  // re-login on every page refresh (sessions last hours, §11).
+  (async function checkExistingSession() {
+    const res = await fetch("/closing-days");
+    if (res.ok) {
+      // No /auth/me endpoint exists to fetch a display name from
+      // without one more request; a generic label is an acceptable
+      // trade-off for this pilot rather than adding a route solely for
+      // this cosmetic purpose.
+      showApp({ displayName: "ingelogde gebruiker", role: "" });
+    } else {
+      showLoginGate();
+    }
+  })();
 
   function escapeHtml(value) {
     const div = document.createElement("div");
@@ -522,7 +610,6 @@
   function exitEditMode() {
     editingReservationId = null;
     createForm.reset();
-    document.getElementById("staff-name").value = staffNameInput.value;
     formTitle.textContent = "Nieuwe reservering";
     createSubmit.textContent = "Reservering aanmaken";
     cancelEditButton.style.display = "none";
@@ -544,7 +631,6 @@
 
   createForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    localStorage.setItem(STAFF_NAME_KEY, staffNameInput.value.trim());
     clearMessage(createMessage);
 
     if (!dateInput.value || !timeSelect.value) {
@@ -905,7 +991,6 @@
     areaFilterBar.querySelectorAll(".filter-button").forEach((b) => b.classList.toggle("active", b === button));
     renderList();
   });
-  loadList();
 
   // --- Sluitingsdagen -------------------------------------------------
   const closingDayForm = document.getElementById("closing-day-form");
@@ -983,8 +1068,6 @@
     }
   });
 
-  loadClosingDays();
-
   // --- Teppanyaki bezetting --------------------------------------------
   const occupancyBody = document.getElementById("occupancy-body");
   const occupancyEmpty = document.getElementById("occupancy-empty");
@@ -1017,8 +1100,6 @@
       // Non-critical widget — fail quietly rather than blocking the rest of the page.
     }
   }
-
-  loadOccupancy();
 
   // --- Footer / developer mode ------------------------------------------
   // Staff don't need to see the capability ID — click to reveal it.
