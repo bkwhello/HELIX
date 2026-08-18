@@ -18,6 +18,10 @@ import { ClosingDayStore } from "../application/ports/ClosingDayStore.js";
 import { IdGenerator } from "../application/ports/IdGenerator.js";
 import { EventIdGenerator } from "../application/ports/EventIdGenerator.js";
 import { Clock } from "../application/ports/Clock.js";
+import { CapacityRepository } from "../domain/repositories/CapacityRepository.js";
+import { TransactionManager } from "../application/ports/TransactionManager.js";
+import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
+import { isCapacityPoolId } from "../domain/availability/CapacityPool.js";
 
 export interface AppDependencies {
   repository: ReservationRepository;
@@ -28,6 +32,17 @@ export interface AppDependencies {
   idGenerator: IdGenerator;
   eventIdGenerator: EventIdGenerator;
   clock: Clock;
+  /**
+   * CAP-D02.03 — optional so the existing CAP-D01.01-only wiring (and its
+   * tests, which build an app with an in-memory repository and no
+   * database) keeps working unchanged. When omitted, the /availability/*
+   * routes below are not mounted at all — there is no degraded/fake
+   * capacity behavior, only "not available in this deployment."
+   */
+  capacity?: {
+    readonly capacityRepository: CapacityRepository;
+    readonly transactionManager: TransactionManager;
+  };
 }
 
 /**
@@ -65,6 +80,22 @@ export function createApp(deps: AppDependencies): Express {
   const confirmHandler = new ConfirmReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const cancelHandler = new CancelReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const completeHandler = new CompleteReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
+
+  // CAP-D02.03 — only constructed when the deployment supplies capacity
+  // infrastructure (see AppDependencies.capacity doc comment above).
+  const availabilityOrchestrator = deps.capacity
+    ? new AvailabilityOrchestrator(
+        deps.repository,
+        deps.capacity.capacityRepository,
+        deps.capacity.transactionManager,
+        deps.closingDayStore,
+        deps.idGenerator,
+        deps.clock,
+        createHandler,
+        modifyHandler,
+        cancelHandler
+      )
+    : null;
 
   function routeParam(req: Request, name: string): string {
     const value = req.params[name];
@@ -333,6 +364,157 @@ export function createApp(deps: AppDependencies): Express {
     }
     res.status(204).send();
   });
+
+  // CAP-D02.03 — capacity-aware Create/Modify/Cancel. Separate routes from
+  // the plain /reservations ones above (which remain capacity-unaware,
+  // unchanged CAP-D01.01 behavior) rather than branching inside them, so
+  // a caller always knows explicitly whether it is asking for a capacity
+  // decision. Mounted only when the deployment supplies capacity
+  // infrastructure (see AppDependencies.capacity).
+  if (availabilityOrchestrator) {
+    app.post("/availability/reservations", async (req: Request, res: Response) => {
+      const body = req.body as {
+        commandId: string;
+        correlationId?: string;
+        causationId?: string;
+        servicePeriodId: string;
+        contactId: string;
+        contactName?: string;
+        reservationDate: string;
+        partySize: number;
+        source: { category: string; externalReference?: string; importedBy?: string };
+        preferredArea?: string;
+        notes?: string;
+      };
+
+      const actor = resolveActor(req, res);
+      if (!actor) return;
+
+      if (!body.preferredArea || !isCapacityPoolId(body.preferredArea)) {
+        res.status(422).json({ message: `preferredArea must be one of the capacity-managed areas for a capacity-aware create. Received: ${String(body.preferredArea)}.` });
+        return;
+      }
+
+      const result = await availabilityOrchestrator.createWithCapacity({
+        commandId: body.commandId,
+        correlationId: body.correlationId,
+        causationId: body.causationId,
+        servicePeriodId: body.servicePeriodId,
+        contactId: body.contactId,
+        contactName: body.contactName,
+        reservationDate: new Date(body.reservationDate),
+        partySize: body.partySize,
+        source: body.source as never,
+        preferredArea: body.preferredArea,
+        notes: body.notes,
+        actor,
+      });
+
+      switch (result.type) {
+        case "CREATED":
+          res.status(201).json(result.outcome);
+          return;
+        case "CAPACITY_UNAVAILABLE":
+          res.status(409).json({ availability: result.availability });
+          return;
+        case "BOOKING_POLICY_REJECTED":
+          res.status(422).json({ policy: result.policy });
+          return;
+        case "VALIDATION_FAILED":
+          res.status(422).json({ violations: result.violations });
+          return;
+      }
+    });
+
+    app.patch("/availability/reservations/:id", async (req: Request, res: Response) => {
+      const body = req.body as {
+        commandId: string;
+        correlationId?: string;
+        causationId?: string;
+        changes: {
+          reservationDate?: string;
+          partySize?: number;
+          preferredArea?: string;
+          contactId?: string;
+          contactName?: string;
+          source?: { category: string; externalReference?: string; importedBy?: string };
+          servicePeriodId?: string;
+          tableAssignment?: string;
+          notes?: string;
+        };
+        isServicePeriodStillValid?: boolean;
+      };
+
+      const actor = resolveActor(req, res);
+      if (!actor) return;
+
+      const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
+      if (!preferredArea) return;
+
+      const result = await availabilityOrchestrator.modifyWithCapacity({
+        commandId: body.commandId,
+        correlationId: body.correlationId,
+        causationId: body.causationId,
+        reservationId: paramId(req),
+        actor,
+        changes: {
+          reservationDate: body.changes?.reservationDate ? new Date(body.changes.reservationDate) : undefined,
+          partySize: body.changes?.partySize,
+          contactId: body.changes?.contactId,
+          contactName: body.changes?.contactName,
+          source: body.changes?.source as never,
+          servicePeriodId: body.changes?.servicePeriodId,
+          tableAssignment: body.changes?.tableAssignment,
+          notes: body.changes?.notes,
+          preferredArea: preferredArea.present ? preferredArea.value : undefined,
+        },
+        isServicePeriodStillValid: body.isServicePeriodStillValid,
+      });
+
+      switch (result.type) {
+        case "MODIFIED":
+          res.status(204).send();
+          return;
+        case "CAPACITY_UNAVAILABLE":
+          res.status(409).json({ availability: result.availability });
+          return;
+        case "BOOKING_POLICY_REJECTED":
+          res.status(422).json({ policy: result.policy });
+          return;
+        case "NO_ACTIVE_COMMITMENT":
+          res.status(422).json({ message: "This reservation has no active CAP-D02.03 capacity commitment to modify (it may predate capacity tracking)." });
+          return;
+        case "VALIDATION_FAILED":
+          res.status(422).json({ violations: result.violations });
+          return;
+      }
+    });
+
+    app.post("/availability/reservations/:id/cancel", async (req: Request, res: Response) => {
+      const body = req.body as { commandId: string; correlationId?: string; causationId?: string; reason?: string; reasonRequiredByPolicy?: boolean };
+      const actor = resolveActor(req, res);
+      if (!actor) return;
+
+      const result = await availabilityOrchestrator.cancelWithCapacity({
+        commandId: body.commandId,
+        correlationId: body.correlationId,
+        causationId: body.causationId,
+        reservationId: paramId(req),
+        actor,
+        reason: body.reason,
+        reasonRequiredByPolicy: body.reasonRequiredByPolicy,
+      });
+
+      switch (result.type) {
+        case "CANCELLED":
+          res.status(204).send();
+          return;
+        case "VALIDATION_FAILED":
+          res.status(422).json({ violations: result.violations });
+          return;
+      }
+    });
+  }
 
   // CAP-D01.01-R51 — closing-days management. Not part of the Reservation
   // aggregate; this is the "line where we can add special closing days"

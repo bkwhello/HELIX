@@ -1,16 +1,22 @@
-// CAP-D01.01 Reservation Management — persistence schema.
+// CAP-D01.01 Reservation Management + CAP-D02.03 Availability Management —
+// persistence schema.
 //
-// Local verification uses SQLite (see .env) so this can run without any
-// external service. Production target is PostgreSQL, per the technology
-// choice for this solution — switch `provider` below and DATABASE_URL to
-// move; no application code depends on which one is active.
+// PostgreSQL (see .env). CAP-D02.03's concurrency guarantees (a shared
+// transaction across capacity + reservation + idempotency writes, plus
+// pg_advisory_xact_lock) are PostgreSQL-specific — this schema is no
+// longer portable to SQLite the way the CAP-D01.01-only version was.
+// DateTime columns are explicitly mapped to `timestamptz` (not Prisma's
+// PostgreSQL default of `timestamp` without a time zone) so every stored
+// instant is unambiguous UTC — see domain/availability/ServiceTime.ts for
+// how a stored instant is converted to an Europe/Amsterdam local
+// date/time for display or policy decisions.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -24,7 +30,7 @@ model Reservation {
   // alongside the primary contact identity (contactId).
   contactName        String?
   status             String
-  reservationDate    DateTime
+  reservationDate    DateTime @db.Timestamptz
   partySize          Int
   sourceCategory     String
   externalReference  String?
@@ -42,10 +48,10 @@ model Reservation {
   // scope of this capability's formal rule model (no Rxx) — like
   // tableAssignment, it's a pragmatic staff-facing field, not a modeled
   // check-in/Seating Management capability.
-  arrivedAt          DateTime?
+  arrivedAt          DateTime? @db.Timestamptz
   createdBy          String
-  createdAt          DateTime
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @db.Timestamptz
+  updatedAt          DateTime @updatedAt @db.Timestamptz
   // Optimistic-concurrency token. Incremented on every write; save()
   // rejects a write whose expected version no longer matches this column.
   version            Int      @default(1)
@@ -62,7 +68,7 @@ model ReservationEvent {
   id            String   @id @default(cuid())
   reservationId String
   type          String
-  occurredAt    DateTime
+  occurredAt    DateTime @db.Timestamptz
   payload       String
 
   reservation   Reservation @relation(fields: [reservationId], references: [id])
@@ -79,7 +85,7 @@ model ReservationEvent {
 model AppliedCommand {
   commandId     String   @id
   reservationId String
-  appliedAt     DateTime @default(now())
+  appliedAt     DateTime @default(now()) @db.Timestamptz
 
   @@map("applied_commands")
 }
@@ -90,11 +96,56 @@ model AppliedCommand {
 // range where fromDate equals toDate.
 model ClosingDay {
   id        String   @id @default(cuid())
-  fromDate  DateTime
-  toDate    DateTime
+  fromDate  DateTime @db.Timestamptz
+  toDate    DateTime @db.Timestamptz
   reason    String?
   createdBy String
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz
 
   @@map("closing_days")
+}
+
+// CAP-D02.03 — Availability Management. One row per capacity commitment
+// against a CapacityPool (Sushi / Teppanyaki — see
+// domain/availability/CapacityPool.ts; pools are static configuration,
+// not a database table, per that file's header comment). Committed rows
+// are the input to AvailabilityEvaluator.evaluateSimultaneousOccupancy;
+// Released/Superseded rows are kept (never deleted) as history, matching
+// the append-only posture already used for ReservationEvent.
+//
+// reservationId is nullable to allow a future non-reservation consumer of
+// capacity (e.g. a walk-in hold) without a schema change, but every
+// commitment created by this implementation always sets it.
+//
+// Database-level invariants enforced via a hand-written CHECK constraint
+// migration (Prisma has no declarative CHECK-constraint syntax as of this
+// client version) — see
+// prisma/migrations/*_add_capacity_commitment/migration.sql:
+//   - party_size > 0
+//   - start_time < end_time
+// These exist so a defect upstream of this table (a bug in
+// AvailabilityOrchestrator, a bypassing script, a future caller) cannot
+// silently persist a physically nonsensical commitment — CAP-D02.03 §22.
+model CapacityCommitment {
+  commitmentId   String   @id @default(cuid()) @map("commitment_id")
+  reservationId  String?  @map("reservation_id")
+  capacityPoolId String   @map("capacity_pool_id")
+  startTime      DateTime @map("start_time") @db.Timestamptz
+  endTime        DateTime @map("end_time") @db.Timestamptz
+  partySize      Int      @map("party_size")
+  // Committed | Released | Superseded — see domain/availability/CapacityCommitment.ts.
+  status         String
+  // Not a unique constraint here: idempotency for the write that produced
+  // this row is enforced once, authoritatively, by AppliedCommand.commandId
+  // (@id) inside the SAME shared transaction — see
+  // application/availability/AvailabilityOrchestrator.ts. A second unique
+  // constraint on this column would duplicate that guarantee, not
+  // strengthen it. Indexed purely to support findByCommandId lookups.
+  commandId      String   @map("command_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("capacity_commitments")
+  @@index([capacityPoolId, startTime, endTime])
+  @@index([reservationId])
+  @@index([commandId])
 }

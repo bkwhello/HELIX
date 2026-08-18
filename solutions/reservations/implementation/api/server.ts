@@ -1,6 +1,8 @@
 import { PrismaClient } from "@prisma/client";
 import { createApp } from "./app.js";
 import { PrismaReservationRepository } from "../infrastructure/persistence/PrismaReservationRepository.js";
+import { PrismaCapacityRepository } from "../infrastructure/persistence/PrismaCapacityRepository.js";
+import { PrismaTransactionManager } from "../infrastructure/persistence/PrismaTransactionManager.js";
 import { PrismaDuplicateReservationChecker } from "../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
 import { PrismaClosingDayStore } from "../infrastructure/persistence/PrismaClosingDayStore.js";
 import { UnvalidatedContactReader } from "../infrastructure/UnvalidatedContactReader.js";
@@ -21,6 +23,13 @@ const app = createApp({
   idGenerator: new RandomIdGenerator(),
   eventIdGenerator: new RandomEventIdGenerator(),
   clock: new SystemClock(),
+  // CAP-D02.03 — mounts the /availability/* routes. Requires PostgreSQL
+  // (pg_advisory_xact_lock, shared interactive transactions) — see
+  // prisma/schema.prisma's header comment.
+  capacity: {
+    capacityRepository: new PrismaCapacityRepository(prisma),
+    transactionManager: new PrismaTransactionManager(prisma),
+  },
 });
 
 const port = Number(process.env["PORT"] ?? 3001);

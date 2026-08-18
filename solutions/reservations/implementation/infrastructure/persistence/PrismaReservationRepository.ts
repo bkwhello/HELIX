@@ -5,6 +5,11 @@ import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { ReservationStatus } from "../../domain/value-objects/ReservationStatus.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
+import { TransactionContext } from "../../domain/shared/TransactionContext.js";
+import { asPrismaTx } from "./PrismaTransactionManager.js";
+
+/** Either a top-level PrismaClient or an interactive-transaction client — the write logic below only ever needs the model delegates both expose. */
+type PrismaWriteClient = Pick<Prisma.TransactionClient, "reservation" | "reservationEvent" | "appliedCommand">;
 
 /**
  * Infrastructure adapter for the ReservationRepository port.
@@ -88,9 +93,15 @@ export class PrismaReservationRepository implements ReservationRepository {
     readonly aggregate: ReservationAggregate;
     readonly expectedVersion: number;
     readonly commandId: string;
+    readonly tx?: TransactionContext;
   }): Promise<SaveResult> {
-    const { aggregate, expectedVersion, commandId } = input;
+    const { aggregate, expectedVersion, commandId, tx: externalTx } = input;
 
+    // The idempotency pre-check always reads against the top-level client,
+    // even when an external `tx` is supplied: it is a non-authoritative
+    // fast path (the P2002 catch below is the real guard), and reading
+    // through `externalTx` here would just mean "read my own
+    // not-yet-committed write," which is never useful.
     const alreadyApplied = await this.prisma.appliedCommand.findUnique({ where: { commandId } });
     if (alreadyApplied) {
       // CAP-D01.01-R44 — a repeated command is a safe no-op: nothing is
@@ -107,7 +118,7 @@ export class PrismaReservationRepository implements ReservationRepository {
     const reservationId = aggregate.getId().toString();
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      const writeWork = async (tx: PrismaWriteClient): Promise<void> => {
         const existing = await tx.reservation.findUnique({ where: { id: reservationId } });
 
         if (!existing) {
@@ -172,7 +183,16 @@ export class PrismaReservationRepository implements ReservationRepository {
         }
 
         await tx.appliedCommand.create({ data: { commandId, reservationId } });
-      });
+      };
+
+      if (externalTx) {
+        // Participate in the caller's already-open transaction — do not
+        // open a nested one. See ReservationRepository.save()'s doc
+        // comment on `tx`.
+        await writeWork(asPrismaTx(externalTx));
+      } else {
+        await this.prisma.$transaction((tx) => writeWork(tx));
+      }
     } catch (err) {
       if (err instanceof ConcurrencyConflict) {
         return { type: "CONCURRENCY_CONFLICT" };
@@ -182,7 +202,34 @@ export class PrismaReservationRepository implements ReservationRepository {
       // one wins the `commandId` unique constraint (AppliedCommand.commandId
       // is @id) and the transaction rolls back entirely for the other —
       // including its `reservation.create()` — so no orphaned row survives.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      //
+      // Narrowed to the applied_commands primary key specifically (via
+      // Prisma's error `meta.target`): a P2002 on some OTHER constraint
+      // (e.g. a colliding ReservationEvent.id) is a genuine, unexpected
+      // failure, not a benign duplicate-commandId replay, and must
+      // propagate as such rather than being silently reinterpreted.
+      const isCommandIdConflict =
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002" &&
+        (Array.isArray(err.meta?.["target"])
+          ? (err.meta?.["target"] as string[]).includes("commandId")
+          : typeof err.meta?.["target"] === "string" && (err.meta?.["target"] as string).includes("applied_commands"));
+      if (isCommandIdConflict) {
+        if (externalTx) {
+          // CAP-D02.03 — PostgreSQL aborts an entire transaction on any
+          // statement error; it cannot be "partially" continued after
+          // this, even though the JS exception was caught here. A caller
+          // sharing this transaction (AvailabilityOrchestrator) may have
+          // already written a capacity commitment earlier in the SAME
+          // transaction that must now be rolled back too — silently
+          // returning IDEMPOTENT_REPLAY here would make the caller think
+          // it can keep issuing queries on a connection Postgres has
+          // already poisoned. Re-throw so the failure propagates all the
+          // way out of the shared transaction and Prisma performs a real
+          // rollback; the caller resolves the actual winner afterward via
+          // findByCommandId() against a fresh, healthy connection.
+          throw new ReservationCommandRaceLost(commandId);
+        }
         return { type: "IDEMPOTENT_REPLAY" };
       }
       throw err;
@@ -197,6 +244,13 @@ export class PrismaReservationRepository implements ReservationRepository {
 
 /** Internal signal only — never escapes save(); see the catch block above. */
 class ConcurrencyConflict extends Error {}
+
+/** Thrown (not returned) by save() only when called with an external `tx` and the commandId was won by a concurrent transaction — see the catch block above for why this case cannot be handled the same way as the self-contained-transaction path. */
+export class ReservationCommandRaceLost extends Error {
+  constructor(public readonly commandId: string) {
+    super(`Reservation command "${commandId}" was applied by a concurrent transaction.`);
+  }
+}
 
 // Small helpers to pull creation-only fields out of the event stream
 // without adding creation-specific getters to the aggregate itself.

@@ -27,12 +27,17 @@ reservations entered here are real, persisted rows. Treat it as such.
 - **No authentication.** The "your name" field on the page is
   self-reported, for attribution only (CAP-D01.01-R18), not access
   control. Run this on a device/network only staff can reach.
-- **SQLite, single file, single machine.** `prisma/dev.db` is the entire
-  database. It is not backed up automatically. Do not delete it during
-  or immediately after the pilot — it is the evidence record.
+- **PostgreSQL, single local instance, single machine.** (Corrected during
+  CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
+  the datasource switched to PostgreSQL because CAP-D02.03's concurrency
+  guarantees require it, see `README.md`'s Stack section.) The database
+  configured in `.env` is the entire record. It is not backed up
+  automatically. Do not drop or truncate it during or immediately after
+  the pilot — it is the evidence record.
 - **Real guest data.** Guest names/phone numbers typed into "contact"
-  are real personal data from the moment the pilot starts. Treat
-  `dev.db` accordingly — don't copy it off the machine, don't share it.
+  are real personal data from the moment the pilot starts. Treat the
+  database accordingly — don't copy it off the machine, don't share
+  database access or backups.
 
 ## Duration and rollback
 

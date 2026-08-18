@@ -4,6 +4,7 @@ import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
+import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 
 export interface CancelReservationRequest {
   readonly commandId: string;
@@ -13,6 +14,8 @@ export interface CancelReservationRequest {
   readonly actor: Actor;
   readonly reason?: string;
   readonly reasonRequiredByPolicy?: boolean;
+  /** CAP-D02.03 — see CreateReservationRequest.tx. */
+  readonly tx?: TransactionContext;
 }
 
 export class CancelReservationHandler {
@@ -54,6 +57,7 @@ export class CancelReservationHandler {
       aggregate,
       expectedVersion: aggregate.getVersion(),
       commandId: request.commandId,
+      tx: request.tx,
     });
     if (saveResult.type === "CONCURRENCY_CONFLICT") {
       return fail([violation("CAP-D01.01-R05", "The reservation was modified concurrently by another command. Reload and retry.")]);

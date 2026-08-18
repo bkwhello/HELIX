@@ -12,6 +12,7 @@ import { ClosingDayStore } from "../ports/ClosingDayStore.js";
 import { IdGenerator } from "../ports/IdGenerator.js";
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
+import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 
 export interface CreateReservationRequest {
   readonly commandId: string;
@@ -29,6 +30,8 @@ export interface CreateReservationRequest {
   readonly actor: Actor;
   readonly isHistoricalCorrection?: boolean;
   readonly historicalCorrectionReason?: string;
+  /** CAP-D02.03 — when supplied by AvailabilityOrchestrator, the final persistence write (step 8 below) joins this transaction instead of opening its own, so it commits or rolls back atomically with a paired capacity commitment write. Absent for a plain CAP-D01.01 create (unchanged behavior). */
+  readonly tx?: TransactionContext;
 }
 
 /**
@@ -140,6 +143,7 @@ export class CreateReservationHandler {
       aggregate: created.value,
       expectedVersion: created.value.getVersion(),
       commandId: request.commandId,
+      tx: request.tx,
     });
 
     if (saveResult.type === "IDEMPOTENT_REPLAY") {
@@ -165,7 +169,8 @@ export class CreateReservationHandler {
   }
 }
 
-function toOutcome(aggregate: ReservationAggregate, warnings: readonly RuleViolation[]): CreateReservationOutcome {
+/** Exported for AvailabilityOrchestrator, which needs to build the same outcome DTO shape when it resolves a race-lost commandId to its winning aggregate — see PrismaReservationRepository's ReservationCommandRaceLost. */
+export function toOutcome(aggregate: ReservationAggregate, warnings: readonly RuleViolation[]): CreateReservationOutcome {
   return {
     reservationId: aggregate.getId().toString(),
     status: aggregate.getStatus(),

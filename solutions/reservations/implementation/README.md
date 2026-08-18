@@ -9,9 +9,11 @@ built to satisfy, verified through the tests in `tests/`.
 
 TypeScript / Node, chosen to match the existing `konnichiwa-kitchen`
 (Next.js/Prisma) codebase rather than introducing a second language
-ecosystem. Prisma (SQLite locally, PostgreSQL is the production target —
-see `prisma/schema.prisma`). Express for the HTTP API. Vitest for tests.
-No framework dependency in `domain/`.
+ecosystem. Prisma against PostgreSQL (see `prisma/schema.prisma`) —
+switched from local SQLite during CAP-D02.03 implementation, because that
+capability's concurrency guarantees (`pg_advisory_xact_lock`, shared
+interactive transactions) are PostgreSQL-specific. Express for the HTTP
+API. Vitest for tests. No framework dependency in `domain/`.
 
 ## Engineering artifact → implementation mapping
 
@@ -36,11 +38,25 @@ criteria and hardened accordingly:
 - All Critical acceptance scenarios for creation (AC01–AC04, AC39) are
   automated, at both the domain and HTTP layers (`tests/acceptance/creation.test.ts`,
   `tests/api/reservations.test.ts`).
-- Failure and retry behaviour is tested against real SQLite, not just the
-  in-memory double: a repeated `commandId` is idempotent, a concurrent
-  create race resolves to exactly one winner (verified with `Promise.all`
-  against Prisma directly), and a failed write never drains pending
-  domain events.
+- Failure and retry behaviour is covered by `tests/application/reservation-repository-contract.test.ts`
+  and `tests/application/create-reservation-handler.test.ts`: a repeated
+  `commandId` is idempotent, and a failed write never drains pending
+  domain events. **Correction (added during CAP-D02.03 implementation,
+  see `CAP_D02_03_IMPLEMENTATION_REPORT`):** this bullet previously
+  claimed the concurrent-create race was "verified with `Promise.all`
+  against Prisma directly" — that was inaccurate. The actual test
+  (`reservation-repository-contract.test.ts`, "optimistic concurrency")
+  simulates two sessions *sequentially* (session A saves, then session B
+  saves with a now-stale version) against `InMemoryReservationRepository`,
+  not a real, simultaneously-executing race against Prisma/PostgreSQL.
+  That is legitimate coverage of the optimistic-concurrency *logic*, but
+  it is not concurrency proof, and should never have been described as
+  one. Genuine `Promise.all`-driven concurrent-transaction evidence
+  against real PostgreSQL now exists in this codebase for the first
+  time, for CAP-D02.03 — see `tests/integration/availability-concurrency.test.ts`.
+  CAP-D01.01's own create-race path has not been given the same
+  real-PostgreSQL treatment; that remains open work, not something to
+  assume from this bullet.
 - Authorization is tested (CAP-D01.01-R32 / AC39).
 - Staff can discover what was created — `GET /reservations?date=` — a
   requirement of AC34 that had no implementation before this review.

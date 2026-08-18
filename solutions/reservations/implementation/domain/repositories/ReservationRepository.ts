@@ -1,5 +1,6 @@
 import { ReservationAggregate } from "../aggregates/ReservationAggregate.js";
 import { ReservationId } from "../value-objects/ReservationId.js";
+import { TransactionContext } from "../shared/TransactionContext.js";
 
 /**
  * Outcome of a save() attempt. Concurrency conflicts and a lost
@@ -60,10 +61,17 @@ export interface ReservationRepository {
    * in particular, the aggregate's pending events are left untouched
    * (use `peekEvents()`, not `pullEvents()`, until SAVED is returned) so
    * a caller can safely inspect or retry.
+   *
+   * `tx` (CAP-D02.03) — when supplied, this write participates in the
+   * caller's already-open transaction instead of opening its own, so it
+   * can commit or roll back atomically alongside a capacity commitment
+   * write (see AvailabilityOrchestrator). Omitted, behavior is unchanged
+   * from CAP-D01.01: save() opens and commits its own transaction.
    */
   save(input: {
     readonly aggregate: ReservationAggregate;
     readonly expectedVersion: number;
     readonly commandId: string;
+    readonly tx?: TransactionContext;
   }): Promise<SaveResult>;
 }
