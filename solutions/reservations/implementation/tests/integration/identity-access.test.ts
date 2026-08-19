@@ -7,6 +7,7 @@ import { PrismaDuplicateReservationChecker } from "../../infrastructure/persiste
 import { PrismaClosingDayStore } from "../../infrastructure/persistence/PrismaClosingDayStore.js";
 import { PrismaStaffUserRepository } from "../../infrastructure/persistence/PrismaStaffUserRepository.js";
 import { PrismaSessionRepository } from "../../infrastructure/persistence/PrismaSessionRepository.js";
+import { PrismaLoginAttemptTracker } from "../../infrastructure/persistence/PrismaLoginAttemptTracker.js";
 import { ScryptPasswordHasher } from "../../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionTokenGenerator.js";
 import { RandomIdGenerator } from "../../infrastructure/RandomIdGenerator.js";
@@ -32,7 +33,9 @@ async function resetAll(): Promise<void> {
   await prisma.$executeRawUnsafe(
     'TRUNCATE TABLE "capacity_commitments", "applied_commands", "reservation_events", "reservations", "closing_days" RESTART IDENTITY CASCADE'
   );
-  await prisma.$executeRawUnsafe('TRUNCATE TABLE "staff_sessions", "staff_users", "security_events" RESTART IDENTITY CASCADE');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "staff_sessions", "staff_users", "security_events", "login_attempt_windows" RESTART IDENTITY CASCADE'
+  );
 }
 
 function buildAuthDeps() {
@@ -385,6 +388,7 @@ describe("MANDATORY SPOOFING REGRESSION — x-actor-* headers must grant zero st
         sessionTokenGenerator: new RandomSessionTokenGenerator(),
         cookieSecure: false,
         expectedOrigin: null,
+        loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
       },
     });
   }

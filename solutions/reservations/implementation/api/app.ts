@@ -28,6 +28,8 @@ import { SessionTokenGenerator } from "../application/ports/SessionTokenGenerato
 import { LoginHandler } from "../application/auth/LoginHandler.js";
 import { LogoutHandler } from "../application/auth/LogoutHandler.js";
 import { CreateStaffUserHandler } from "../application/auth/CreateStaffUserHandler.js";
+import { LoginThrottleGuard, LoginThrottleConfig } from "../application/auth/LoginThrottleGuard.js";
+import { LoginAttemptTracker } from "../application/ports/LoginAttemptTracker.js";
 import { Permission } from "../domain/rules/StaffAuthorizationPolicy.js";
 import {
   SESSION_COOKIE_NAME,
@@ -79,6 +81,9 @@ export interface AppDependencies {
     readonly sessionLifetimeMs?: number;
     readonly cookieSecure: boolean;
     readonly expectedOrigin?: string | null;
+    /** R1.2 final P1 closure — login abuse protection. Not optional, same reasoning as the rest of `auth`: every deployment must throttle /auth/login. */
+    readonly loginAttemptTracker: LoginAttemptTracker;
+    readonly loginThrottleConfig?: LoginThrottleConfig;
   };
 }
 
@@ -91,6 +96,19 @@ const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", 
 
 export function createApp(deps: AppDependencies): Express {
   const app = express();
+  // R1.2 final P1 closure — login abuse protection, source dimension.
+  // Explicitly set (Express's own default), not left implicit: `req.ip`
+  // must be the actual TCP peer address, never a client-spoofable
+  // `X-Forwarded-For` header. This deployment has no reverse proxy in
+  // front of it today (api/server.ts serves both the static UI and the
+  // API directly) — if one is ever introduced, `trust proxy` MUST be set
+  // to the exact number of trusted hops (or a trusted CIDR list) at that
+  // time, not simply flipped to `true`/`1`, which would let ANY caller
+  // set X-Forwarded-For and forge their apparent source address,
+  // defeating the per-source throttle entirely. See
+  // R1_2_LOGIN_ABUSE_PROTECTION_REPORT.md §7/§8 — this is a documented
+  // production deployment prerequisite, not something guessed at here.
+  app.set("trust proxy", false);
   app.use(express.json());
   // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §20 — applied globally,
   // before any route, so no mutating endpoint (including /auth/login
@@ -150,6 +168,7 @@ export function createApp(deps: AppDependencies): Express {
   );
   const logoutHandler = new LogoutHandler(deps.auth.sessionRepository);
   const createStaffUserHandler = new CreateStaffUserHandler(deps.auth.staffUserRepository, deps.auth.passwordHasher, deps.idGenerator);
+  const loginThrottleGuard = new LoginThrottleGuard(deps.auth.loginAttemptTracker, deps.clock, deps.auth.loginThrottleConfig);
   const requireStaffSession = createRequireStaffSession({
     staffUserRepository: deps.auth.staffUserRepository,
     sessionRepository: deps.auth.sessionRepository,
@@ -186,18 +205,34 @@ export function createApp(deps: AppDependencies): Express {
   // R1.2 — Identity & Access. §8: identical response whether the
   // username doesn't exist or the password is wrong — see
   // LoginHandler's INVALID_CREDENTIALS variants, all mapped to the same
-  // 401 body here.
+  // 401 body here. R1.2 final P1 closure adds the throttle check/record
+  // calls around it — see application/auth/LoginThrottleGuard.ts.
   app.post("/auth/login", async (req: Request, res: Response) => {
     const body = req.body as { username?: string; password?: string };
+    const sourceAddress = req.ip ?? "unknown";
+    // Used for throttle bucketing even when missing/malformed — the
+    // limiter must treat "" the same as any other attempted username, so
+    // an empty-body probe doesn't get a free pass around the per-username
+    // dimension.
+    const usernameForThrottling = body.username ?? "";
+
+    if (await loginThrottleGuard.isThrottled({ username: usernameForThrottling, sourceAddress })) {
+      res.status(429).json({ message: "Too many attempts. Try again later." });
+      return;
+    }
+
     if (!body.username || !body.password) {
+      await loginThrottleGuard.recordFailure({ username: usernameForThrottling, sourceAddress });
       res.status(401).json({ message: "Invalid username or password." });
       return;
     }
     const result = await loginHandler.handle({ username: body.username, password: body.password });
     if (result.type === "INVALID_CREDENTIALS") {
+      await loginThrottleGuard.recordFailure({ username: body.username, sourceAddress });
       res.status(401).json({ message: "Invalid username or password." });
       return;
     }
+    await loginThrottleGuard.recordSuccess({ username: body.username });
     res.cookie(SESSION_COOKIE_NAME, result.sessionToken, {
       httpOnly: true,
       secure: deps.auth.cookieSecure,

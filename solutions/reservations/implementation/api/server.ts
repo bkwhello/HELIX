@@ -7,6 +7,7 @@ import { PrismaDuplicateReservationChecker } from "../infrastructure/persistence
 import { PrismaClosingDayStore } from "../infrastructure/persistence/PrismaClosingDayStore.js";
 import { PrismaStaffUserRepository } from "../infrastructure/persistence/PrismaStaffUserRepository.js";
 import { PrismaSessionRepository } from "../infrastructure/persistence/PrismaSessionRepository.js";
+import { PrismaLoginAttemptTracker } from "../infrastructure/persistence/PrismaLoginAttemptTracker.js";
 import { ScryptPasswordHasher } from "../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../infrastructure/RandomSessionTokenGenerator.js";
 import { UnvalidatedContactReader } from "../infrastructure/UnvalidatedContactReader.js";
@@ -50,6 +51,8 @@ const app = createApp({
     sessionTokenGenerator: new RandomSessionTokenGenerator(),
     cookieSecure: process.env["NODE_ENV"] === "production",
     expectedOrigin: appOrigin,
+    // R1.2 final P1 closure — login abuse protection.
+    loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
   },
 });
 

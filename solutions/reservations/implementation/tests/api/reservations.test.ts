@@ -9,6 +9,7 @@ import { PrismaDuplicateReservationChecker } from "../../infrastructure/persiste
 import { PrismaClosingDayStore } from "../../infrastructure/persistence/PrismaClosingDayStore.js";
 import { PrismaStaffUserRepository } from "../../infrastructure/persistence/PrismaStaffUserRepository.js";
 import { PrismaSessionRepository } from "../../infrastructure/persistence/PrismaSessionRepository.js";
+import { PrismaLoginAttemptTracker } from "../../infrastructure/persistence/PrismaLoginAttemptTracker.js";
 import { ScryptPasswordHasher } from "../../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionTokenGenerator.js";
 import { UnvalidatedContactReader } from "../../infrastructure/UnvalidatedContactReader.js";
@@ -61,7 +62,9 @@ let sharedApp: Express;
 let sharedAgent: ReturnType<typeof request.agent>;
 
 async function resetStaffTables(): Promise<void> {
-  await prisma.$executeRawUnsafe('TRUNCATE TABLE "staff_sessions", "staff_users", "security_events" RESTART IDENTITY CASCADE');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "staff_sessions", "staff_users", "security_events", "login_attempt_windows" RESTART IDENTITY CASCADE'
+  );
 }
 
 function buildApp() {
@@ -84,6 +87,7 @@ function buildApp() {
       sessionTokenGenerator: new RandomSessionTokenGenerator(),
       cookieSecure: false,
       expectedOrigin: null,
+      loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
     },
   });
   return { app, repository, duplicateChecker, closingDayStore };

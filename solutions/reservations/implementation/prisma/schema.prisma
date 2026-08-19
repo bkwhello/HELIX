@@ -247,3 +247,25 @@ model SecurityEvent {
   @@map("security_events")
   @@index([targetStaffUserId])
 }
+
+// R1.2 final P1 closure — login abuse protection
+// (R1_2_LOGIN_ABUSE_PROTECTION_REPORT.md). One row per throttle key —
+// "source:<address>" or "username:<normalized>" — a fixed window that
+// resets (rather than a rolling window) the moment a request arrives
+// after `windowStart` is more than the configured window old. `key` is
+// deliberately opaque to the schema: which dimension it represents lives
+// in application/auth/LoginThrottleGuard.ts, not here.
+//
+// PostgreSQL-backed, not in-memory: this app may run as more than one
+// process/instance, and an in-memory counter would silently stop being
+// effective the moment it did (each instance would enforce its own,
+// smaller-than-intended limit against a share of the traffic, not the
+// true global count) — see the report's Storage Model section.
+model LoginAttemptWindow {
+  key         String   @id
+  windowStart DateTime @map("window_start") @db.Timestamptz
+  count       Int
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("login_attempt_windows")
+}
