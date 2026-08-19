@@ -27,6 +27,16 @@ export const Permission = {
   SystemSettingsManage: "system.settings.manage",
   UsersManage: "users.manage",
   AuditView: "audit.view",
+  // R1.5 — CAP-D04.01/CAP-D02.03(ResourceBlock). Smallest required set
+  // (assignment §30: "avoid unnecessary RBAC expansion") — no separate
+  // seating.markSeated/seating.preAssign permission, since those are the
+  // same underlying action (assign/move) at a different point in time,
+  // per the final architecture §12/§14 "no new workflow states" posture.
+  SeatingView: "seating.view",
+  SeatingAssign: "seating.assign",
+  SeatingMove: "seating.move",
+  SeatingRelease: "seating.release",
+  ResourceBlock: "resource.block",
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -52,6 +62,14 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.ReservationWalkinCreate,
     Permission.CapacitySettingsManage,
     Permission.AuditView,
+    Permission.SeatingView,
+    Permission.SeatingAssign,
+    Permission.SeatingMove,
+    Permission.SeatingRelease,
+    // ResourceBlock mirrors CapacitySettingsManage's own distribution
+    // (Owner + Manager only) — a bigger operational decision than an
+    // ordinary seating action, per assignment §30.
+    Permission.ResourceBlock,
   ]),
   [ActorRole.AssistantManager]: new Set([
     Permission.ReservationView,
@@ -61,6 +79,10 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.ReservationConfirm,
     Permission.ReservationComplete,
     Permission.ReservationWalkinCreate,
+    Permission.SeatingView,
+    Permission.SeatingAssign,
+    Permission.SeatingMove,
+    Permission.SeatingRelease,
   ]),
   [ActorRole.Supervisor]: new Set([
     Permission.ReservationView,
@@ -70,6 +92,10 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.ReservationConfirm,
     Permission.ReservationComplete,
     Permission.ReservationWalkinCreate,
+    Permission.SeatingView,
+    Permission.SeatingAssign,
+    Permission.SeatingMove,
+    Permission.SeatingRelease,
   ]),
   [ActorRole.ReservationAgent]: new Set([
     Permission.ReservationView,
@@ -78,6 +104,10 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.ReservationCancel,
     Permission.ReservationConfirm,
     Permission.ReservationWalkinCreate,
+    Permission.SeatingView,
+    Permission.SeatingAssign,
+    Permission.SeatingMove,
+    Permission.SeatingRelease,
     // No ReservationComplete — see R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §18.
   ]),
   [ActorRole.Reception]: new Set([
@@ -86,6 +116,10 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.ReservationModify,
     Permission.ReservationCancel,
     Permission.ReservationConfirm,
+    Permission.SeatingView,
+    Permission.SeatingAssign,
+    Permission.SeatingMove,
+    Permission.SeatingRelease,
     Permission.ReservationWalkinCreate,
     // No ReservationComplete — see R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §18.
   ]),

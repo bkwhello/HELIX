@@ -14,6 +14,8 @@
     "prisma:generate": "prisma generate",
     "bootstrap-owner": "tsx infrastructure/bootstrap/bootstrapOwner.ts",
     "setup-test-db": "tsx ops/testDatabaseSetup.ts",
+    "seed-floor": "tsx ops/floor/seedFloor.ts",
+    "floor-smoke-test": "tsx ops/floor/floorSmokeTest.ts",
     "backup": "tsx ops/backup/createBackup.ts",
     "restore": "tsx ops/restore/restoreBackup.ts",
     "verify-integrity": "tsx ops/integrity/verifyIntegrity.ts",

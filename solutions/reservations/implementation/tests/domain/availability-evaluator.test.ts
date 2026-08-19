@@ -14,8 +14,8 @@ function iv(id: string, startIso: string, endIso: string, partySize: number): Co
  * reached a concurrency test.
  */
 describe("AvailabilityEvaluator — mandatory false-sold-out regression (§9)", () => {
-  it("does NOT sum A(40) + B(40) + C(20) = 100; correctly finds max simultaneous occupancy = 40, so C is AVAILABLE at capacity 60", () => {
-    const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T18:30:00Z", 40), iv("B", "2026-08-20T19:00:00Z", "2026-08-20T19:30:00Z", 40)];
+  it("does NOT sum A(29) + B(29) + C(20) = 78; correctly finds max simultaneous occupancy = 29, so C is AVAILABLE at the corrected Sushi capacity (49, R1.5 — was 60 at R1.1 time)", () => {
+    const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T18:30:00Z", 29), iv("B", "2026-08-20T19:00:00Z", "2026-08-20T19:30:00Z", 29)];
 
     const result = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T18:15:00Z"),
@@ -23,16 +23,16 @@ describe("AvailabilityEvaluator — mandatory false-sold-out regression (§9)", 
       candidates,
     });
 
-    expect(result.maxExistingOccupancy).toBe(40);
+    expect(result.maxExistingOccupancy).toBe(29);
     expect(result.maxExistingOccupancy + 20).toBeLessThanOrEqual(CAPACITY_POOLS.Sushi.maximumCapacity);
 
     // Explicitly assert the naive, rejected algorithm's answer is NOT what this returns.
-    const naiveSum = 40 + 40 + 20;
+    const naiveSum = 29 + 29 + 20;
     expect(result.maxExistingOccupancy + 20).not.toBe(naiveSum);
   });
 
   it("matches the exact per-slice occupancy trace from the architecture decision", () => {
-    const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T18:30:00Z", 40), iv("B", "2026-08-20T19:00:00Z", "2026-08-20T19:30:00Z", 40)];
+    const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T18:30:00Z", 29), iv("B", "2026-08-20T19:00:00Z", "2026-08-20T19:30:00Z", 29)];
 
     const { slices } = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T18:15:00Z"),
@@ -41,10 +41,10 @@ describe("AvailabilityEvaluator — mandatory false-sold-out regression (§9)", 
     });
 
     expect(slices).toHaveLength(4);
-    expect(slices[0]!.occupancy).toBe(40); // 18:15–18:30 → A
+    expect(slices[0]!.occupancy).toBe(29); // 18:15–18:30 → A
     expect(slices[1]!.occupancy).toBe(0); // 18:30–18:45 → neither
     expect(slices[2]!.occupancy).toBe(0); // 18:45–19:00 → neither
-    expect(slices[3]!.occupancy).toBe(40); // 19:00–19:15 → B
+    expect(slices[3]!.occupancy).toBe(29); // 19:00–19:15 → B
   });
 });
 
@@ -64,26 +64,26 @@ describe("AvailabilityEvaluator — Scenario B: actual overcapacity", () => {
 });
 
 describe("AvailabilityEvaluator — Scenario C/D: exact capacity boundary", () => {
-  it("accepts at exactly capacity (52 existing + 8 requested = 60)", () => {
-    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 52)];
+  it("accepts at exactly capacity (41 existing + 8 requested = 49, the corrected Sushi capacity — R1.5, was 60 at R1.1 time)", () => {
+    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 41)];
     const result = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T18:00:00Z"),
       requestedDurationMinutes: 90,
       candidates,
     });
-    expect(result.maxExistingOccupancy + 8).toBe(60);
-    expect(result.maxExistingOccupancy + 8).toBeLessThanOrEqual(60);
+    expect(result.maxExistingOccupancy + 8).toBe(CAPACITY_POOLS.Sushi.maximumCapacity);
+    expect(result.maxExistingOccupancy + 8).toBeLessThanOrEqual(CAPACITY_POOLS.Sushi.maximumCapacity);
   });
 
-  it("rejects at capacity + 1 (53 existing + 8 requested = 61)", () => {
-    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 53)];
+  it("rejects at capacity + 1 (42 existing + 8 requested = 50)", () => {
+    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 42)];
     const result = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T18:00:00Z"),
       requestedDurationMinutes: 90,
       candidates,
     });
-    expect(result.maxExistingOccupancy + 8).toBe(61);
-    expect(result.maxExistingOccupancy + 8).toBeGreaterThan(60);
+    expect(result.maxExistingOccupancy + 8).toBe(50);
+    expect(result.maxExistingOccupancy + 8).toBeGreaterThan(CAPACITY_POOLS.Sushi.maximumCapacity);
   });
 });
 
@@ -93,7 +93,7 @@ describe("AvailabilityEvaluator — Scenario E: back-to-back reservations do not
       false
     );
 
-    const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 60)]; // full capacity
+    const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", CAPACITY_POOLS.Sushi.maximumCapacity)]; // full capacity
     const result = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T19:30:00Z"),
       requestedDurationMinutes: 90, // Sushi duration

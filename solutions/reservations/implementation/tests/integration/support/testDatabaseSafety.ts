@@ -149,3 +149,20 @@ export async function truncateStaffDomainTables(prisma: PrismaClient): Promise<v
     'TRUNCATE TABLE "staff_sessions", "staff_users", "security_events", "login_attempt_windows" RESTART IDENTITY CASCADE'
   );
 }
+
+/**
+ * R1.5 — seating-assignment domain tables ONLY. Deliberately does NOT
+ * truncate "tables"/"seats": those are the seeded, authoritative floor
+ * configuration (ops/floor/seedFloor.ts) — analogous to how resetting
+ * reservation-domain tables never touches CAPACITY_POOLS' static config.
+ * Truncating them between tests would force every floor test to reseed,
+ * and (via ON DELETE RESTRICT) would fail outright while any
+ * seating_assignment_resources row still references them — truncate this
+ * function's own tables FIRST for exactly that reason.
+ */
+export async function truncateSeatingDomainTables(prisma: PrismaClient): Promise<void> {
+  await assertSafeToReset(prisma);
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "seating_assignment_resources", "seating_assignments", "resource_blocks" RESTART IDENTITY CASCADE'
+  );
+}

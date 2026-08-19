@@ -51,6 +51,7 @@ import { AvailabilityOutcome } from "../../domain/availability/AvailabilityResul
 import { toLocalServiceDate } from "../../domain/availability/ServiceTime.js";
 import { sortLockResources } from "../../domain/availability/LockKey.js";
 import { RuleViolation, violation } from "../../domain/shared/Result.js";
+import { SeatingOrchestrator } from "../floor/SeatingOrchestrator.js";
 import { Actor, ActorKind } from "../../domain/value-objects/Actor.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 
@@ -89,7 +90,20 @@ export class AvailabilityOrchestrator {
     private readonly clock: Clock,
     private readonly createHandler: CreateReservationHandler,
     private readonly modifyHandler: ModifyReservationHandler,
-    private readonly cancelHandler: CancelReservationHandler
+    private readonly cancelHandler: CancelReservationHandler,
+    /**
+     * R1.5 — CAP-D04.01 integration point. Optional (and last) so every
+     * existing call site (R1.1-R1.4 tests, api/app.ts, ops/recoveryDrill.ts)
+     * remains valid unchanged — this orchestrator's cancel path already
+     * worked correctly with no seating awareness at all before R1.5
+     * existed, and continues to if this is omitted. When provided,
+     * cancelWithCapacity releases any active SeatingAssignment in the
+     * SAME shared transaction as the reservation/capacity release — see
+     * that method and R1_5_FLOOR_SEATING_FINAL_ARCHITECTURE.md §20/
+     * assignment §27 ("cancellation must leave zero active
+     * SeatingAssignments").
+     */
+    private readonly seatingOrchestrator?: SeatingOrchestrator
   ) {}
 
   /**
@@ -443,6 +457,16 @@ export class AvailabilityOrchestrator {
         // reservation now always serialize against each other here,
         // regardless of which capacity resource either of them touches.
         await this.capacityRepository.acquireReservationLock({ reservationId: request.reservationId, tx });
+
+        // R1.5 — CAP-D04.01: release any active SeatingAssignment in the
+        // SAME transaction, reusing the reservation lock just acquired
+        // above (releaseActiveAssignmentForReservation takes no lock of
+        // its own — see its doc comment). Optional dependency, so this is
+        // a no-op for any caller that hasn't wired a SeatingOrchestrator
+        // in (every pre-R1.5 call site).
+        if (this.seatingOrchestrator) {
+          await this.seatingOrchestrator.releaseActiveAssignmentForReservation(request.reservationId, request.actor.id, tx);
+        }
 
         if (snapshot) {
           const localServiceDate = toLocalServiceDate(snapshot.startTime);

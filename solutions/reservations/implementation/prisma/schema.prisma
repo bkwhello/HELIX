@@ -345,3 +345,161 @@ model LoginAttemptWindow {
 
   @@map("login_attempt_windows")
 }
+
+// CAP-D03.03 — Table and Seat Management (R1.5). One physical, claimable
+// floor resource. Deliberately ONE entity type for both Sushi tables/bar
+// positions AND Teppanyaki grills — R1_5_FLOOR_SEATING_FINAL_ARCHITECTURE.md
+// §4: "one entity type, two usage patterns, driven entirely by the
+// supportsSharedSeating flag." `areaId` reuses CapacityPoolId's exact
+// string values ("Sushi" | "Teppanyaki", domain/availability/CapacityPool.ts)
+// — deliberately NOT a new Area/CapacityPool table; see that file's own
+// "promote only when a concrete need exists" precedent (product-principles.md
+// PRP-014/PRP-020).
+//
+// A Sushi table (supportsSharedSeating: false) is claimed as a whole unit
+// via SeatingAssignmentResource.tableId — no Seat children exist for it.
+// A Teppanyaki grill (supportsSharedSeating: true) is claimed seat-by-seat
+// via its Seat children (below); the Table row itself is never directly
+// claimed by a SeatingAssignmentResource for a shared-seating table.
+//
+// id is a stable, immutable internal identity, never reused — see §20 of
+// the final architecture (historical correctness): renaming or
+// deactivating a Table must never corrupt a historical SeatingAssignment's
+// interpretability. operationalLabel ("Table 1", "Bar 17", "C") is the
+// staff-facing name and MAY change; id never does.
+model Table {
+  id                    String   @id @default(cuid())
+  areaId                String   @map("area_id")
+  operationalLabel      String   @map("operational_label")
+  nominalCapacity       Int      @map("nominal_capacity")
+  supportsSharedSeating Boolean  @default(false) @map("supports_shared_seating")
+  // Active | Inactive — a genuinely retired/not-yet-in-service resource.
+  // Distinct from a time-bounded ResourceBlock (below) — see final
+  // architecture §9.
+  status                String   @default("Active")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  seats        Seat[]
+  resourceBlocks ResourceBlock[]
+
+  @@map("tables")
+  @@index([areaId])
+}
+
+// One individually-claimable seat at a supportsSharedSeating Table
+// (today: the four Teppanyaki grills only). id is the stable identity a
+// SeatingAssignmentResource references; operationalLabel ("C-01") is the
+// staff-facing name.
+model Seat {
+  id               String   @id @default(cuid())
+  tableId          String   @map("table_id")
+  operationalLabel String   @map("operational_label")
+  status           String   @default("Active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  table Table @relation(fields: [tableId], references: [id])
+
+  @@map("seats")
+  @@index([tableId])
+}
+
+// CAP-D02.03-owned concept (capability-registry.yaml.md already registers
+// "Resource Block" under Availability Management, not under Table/Seat
+// Management — R1_5 final architecture §9 confirms this as the correct,
+// pre-existing owner). A time-bounded, reasoned, attributed exclusion —
+// distinct from Table.status: physical existence (Table.status) and
+// operational availability (ResourceBlock) are separate concepts (owner's
+// own framing, chef-shortage example). Always Table-scoped (a whole
+// grill/table goes offline, e.g. for a chef shortage) — never Seat-scoped,
+// per the owner's own example and the final architecture §9's explicit
+// finding that nothing evidences a need to block individual seats
+// independently of their table; blocking the parent Table's id is read as
+// "every seat under this Table is unavailable for the blocked interval"
+// (enforced in application logic, not a second FK) — this is the "one
+// parent-level block... not ten duplicate blocks" requirement (assignment
+// §17) satisfied structurally by scoping the block to the Table, not by
+// generating one row per Seat.
+model ResourceBlock {
+  id        String   @id @default(cuid())
+  tableId   String   @map("table_id")
+  startTime DateTime @map("start_time") @db.Timestamptz
+  endTime   DateTime @map("end_time") @db.Timestamptz
+  reason    String?
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  table Table @relation(fields: [tableId], references: [id])
+
+  @@map("resource_blocks")
+  @@index([tableId, startTime, endTime])
+}
+
+// CAP-D04.01 — Seating Assignment (R1.5). One SeatingAssignment belongs to
+// exactly one Reservation; a Reservation has at most one non-Released
+// SeatingAssignment at a time (mirrors CapacityCommitment's own "one
+// Committed per reservation" invariant — final architecture §10).
+//
+// status: Assigned | Seated | Released — the single collapsed operational
+// status the owner confirmed (final architecture §14) — no separate
+// Arrived state. seatedAt is set only on the Assigned -> Seated
+// transition. releaseReason (e.g. "NoShow", "StaffReassigned",
+// "GuestCancelled", "Completed") is set only on release.
+//
+// startTime/endTime are the reservation's own occupied interval, carried
+// here (not re-derived via a live join every read) for the same reason
+// CapacityCommitment already stores its own — see SeatingAssignmentResource
+// below, where the SAME interval is what the PostgreSQL EXCLUDE
+// constraints actually operate on.
+model SeatingAssignment {
+  id            String    @id @default(cuid())
+  reservationId String    @map("reservation_id")
+  status        String
+  releaseReason String?   @map("release_reason")
+  startTime     DateTime  @map("start_time") @db.Timestamptz
+  endTime       DateTime  @map("end_time") @db.Timestamptz
+  assignedBy    String    @map("assigned_by")
+  assignedAt    DateTime  @default(now()) @map("assigned_at") @db.Timestamptz
+  seatedAt      DateTime? @map("seated_at") @db.Timestamptz
+  releasedBy    String?   @map("released_by")
+  releasedAt    DateTime? @map("released_at") @db.Timestamptz
+  // Idempotency — mirrors AppliedCommand's role for CAP-D01.01/CapacityCommitment.
+  commandId     String    @map("command_id")
+
+  resources SeatingAssignmentResource[]
+
+  @@map("seating_assignments")
+  @@index([reservationId])
+  @@index([commandId])
+}
+
+// One row per physical Table or Seat claimed by a SeatingAssignment —
+// final architecture §7/§10: the SAME mechanism represents a single Sushi
+// table, multiple combined Sushi tables, individual Sushi bar positions,
+// one or many Teppanyaki seats, and seats spanning multiple grills.
+// Exactly one of tableId/seatId is set per row (enforced by a hand-written
+// CHECK constraint — see the migration; Prisma has no declarative XOR
+// syntax, same situation as every other hand-written constraint in this
+// schema).
+//
+// status/startTime/endTime DUPLICATE the parent SeatingAssignment's own
+// fields, updated together with it in the same transaction — this is not
+// redundant modeling, it is a structural requirement: a PostgreSQL EXCLUDE
+// constraint (see migration 20260820..._add_seating_resource_exclusion_constraints)
+// operates on THIS row directly and cannot join to a parent table, so the
+// interval and status it must reason about have to live here.
+model SeatingAssignmentResource {
+  id           String   @id @default(cuid())
+  assignmentId String   @map("assignment_id")
+  tableId      String?  @map("table_id")
+  seatId       String?  @map("seat_id")
+  status       String
+  startTime    DateTime @map("start_time") @db.Timestamptz
+  endTime      DateTime @map("end_time") @db.Timestamptz
+
+  assignment SeatingAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@map("seating_assignment_resources")
+  @@index([assignmentId])
+  @@index([tableId])
+  @@index([seatId])
+}

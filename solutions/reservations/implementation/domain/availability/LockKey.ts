@@ -104,3 +104,39 @@ export function sortLockResources<T extends LockResource>(resources: readonly T[
     return 0;
   });
 }
+
+/**
+ * R1.5 — CAP-D04.01 Seating Assignment. Tier 3 of the global lock order
+ * (R1_5_FLOOR_SEATING_FINAL_ARCHITECTURE.md §18): reservation-scoped lock
+ * (Tier 1, existing) -> capacity pool/date lock(s) (Tier 2, existing) ->
+ * seating-resource lock(s) (Tier 3, this namespace) — always in that
+ * order, by every caller that takes more than one tier, so no two
+ * operations can ever form a wait-cycle (the same argument
+ * sortLockResources's own doc comment already makes for Tier 2, extended
+ * one tier further).
+ *
+ * "HALS" (Helix seAting Lock-Seat/table) — deliberately a THIRD namespace,
+ * distinct from both CAPACITY_LOCK_NAMESPACE and RESERVATION_LOCK_NAMESPACE,
+ * so a seating-resource lock key can never collide with either existing
+ * family even if their hashes happened to coincide.
+ */
+export const SEATING_RESOURCE_LOCK_NAMESPACE = 0x48414c53 | 0;
+
+export function deriveSeatingResourceLockKey(resourceId: string): LockKey {
+  if (!resourceId) {
+    throw new Error("deriveSeatingResourceLockKey: resourceId is required.");
+  }
+  return { namespace: SEATING_RESOURCE_LOCK_NAMESPACE, key: fnv1a32(resourceId) };
+}
+
+/**
+ * Deterministic global lock-acquisition order for a multi-resource seating
+ * claim (a combined-tables Sushi assignment, or a multi-seat Teppanyaki
+ * assignment) — same reasoning as sortLockResources: every caller sorts
+ * the distinct resourceIds it is about to lock in the same fixed order,
+ * so two operations racing over overlapping resource sets can never
+ * deadlock on each other.
+ */
+export function sortSeatingResourceIds(resourceIds: readonly string[]): readonly string[] {
+  return [...new Set(resourceIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
