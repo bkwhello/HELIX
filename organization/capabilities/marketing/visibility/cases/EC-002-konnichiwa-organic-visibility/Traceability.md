@@ -1436,6 +1436,71 @@ external_changes_authorized: false
 
 **This decision authorizes one bounded execution attempt — it does not itself execute the protocol, create evidence, or start Stage 2.** transformation/IC-OD2-001-crux-mobile-ttfb-remeasurement-protocol.md and the candidate workstream received status-only addenda; decisions/DD-018 through DD-035 were **not** modified. No CrUX/PageSpeed system was accessed; no evidence was created. **Next action:** wait until at least 2026-08-19, then perform at most one public read-only execution only if the source visibly confirms a complete comparable field-data window — not performed by this task. No commit or push occurred.
 
+## IC-OD2-001 CrUX Remeasurement Execution Attempt 1 — Blocked (19 August 2026)
+
+Authority: transformation/IC-OD2-001-crux-remeasurement-execution-attempt-1.md. **Record type: Execution Attempt Record — Not Evidence**, not a classification, not a Case-Owner Decision.
+
+One public, read-only, unauthenticated request to the PageSpeed Insights API v5 endpoint (`strategy=mobile`, `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://konnichiwa.nl/`) returned **HTTP 429 Too Many Requests** with no usable response body: no CrUX data, no window-start/window-end dates, no mobile origin-level TTFB distribution, no Core Web Vitals. No evidence artifact was created; `O-014` and `EV-025` (the next free observation/evidence IDs) were determined but not used or reserved. The same route and parameters are documented as a historical failure mode in observations/O-012.md's own Attempt Log (24 July 2026, two 429s before the interactive report interface succeeded) — cited here as historical context only, not as justification for this attempt's outcome or method choice.
+
+**Two determinations are explicitly deferred, not made by this record:** (1) whether an unauthenticated PageSpeed Insights API v5 call satisfies the protocol's Phase 5 Step 3 requirement of an "approved public read-only CrUX/PageSpeed source" — UMF-002 already anticipated more than one possible interface and required recording, not pre-selecting, one; (2) whether this blocked attempt definitively consumes decisions/DD-036's single authorized attempt, or whether decisions/DD-036 Set B Condition 13's "a stopped attempt... does not authorize repeated attempts" should be read as a provisional safety default pending review. Both are routed to a future, independent **DD-037 — Execution Blocker and Attempt-Consumption Gate**, not yet created.
+
+```yaml
+od_002_stage_1_attempt_1_occurred: true
+od_002_stage_1_request_count: 1
+od_002_stage_1_attempts_remaining_provisional: 0
+od_002_stage_1_execution_status: Blocked — HTTP 429 / No CrUX Data Returned
+od_002_stage_1_execution_completed: false
+od_002_stage_1_evidence_created: false
+od_002_stage_1_classification_status: Pending Independent Blocker Review
+od_002_stage_1_replacement_attempt_authorized: false
+od_002_stage_1_method_compliance_review: Pending Independent Review
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+`od_002_stage_1_execution_started` is deliberately left at its existing value (`false`) — DD-036 does not explicitly define whether "execution started" means a request was sent, regardless of outcome, or that comparable data began to be evaluated; resolving this is left to DD-037, not asserted here. decisions/DD-035 and decisions/DD-036 were **not** modified — both remain exactly as gate-reviewed and case-owner-decided. No second request occurred. No commit or push occurred.
+
+## IC-OD2-001 Execution Blocker and Attempt-Consumption Gate — DD-037 (19 August 2026)
+
+Authority: decisions/DD-037-ic-od2-001-execution-blocker-attempt-gate.md. Independent review of transformation/IC-OD2-001-crux-remeasurement-execution-attempt-1.md's registration.
+
+**Gate Verdict: PASSED WITH CONDITIONS.** Held separately: Process outcome **Blocked Execution — Source Rate Limited / No Data**; Method-compliance classification **Unresolvable From Existing Authority** (the API v5 route is neither named nor excluded by decisions/DD-035/DD-036 or the protocol; UMF-002 defers interface selection to execution time); Attempt-consumption classification **Attempt Consumed — 0 Remaining** under the current authorization (DD-036 Set B Condition 13 directly names a stopped-attempt-by-unavailable-data scenario as non-repeat-authorizing; Condition 14 requires a wholly new case-owner instruction for any future attempt). Lifecycle-semantics recommendation: `execution_started` should mean data became available (not merely that a request was sent); `od_002_stage_1_execution_started` left unedited at `false`, not retroactively corrected by this gate. Three next-routes assessed, none executed: A (close without replacement), B (a possible future replacement-attempt authorization gate, not authorized here), C (return to Design/Diagnosis, found unwarranted — HTTP 429 is not evidence about Konnichiwa's own TTFB mechanism). Fifteen-attack independent challenge: thirteen Rejected, two addressed with narrowing/explicit-text resolution, none Survives outright unqualified. G-01–G-12: ten PASS, two PASS WITH CONDITIONS (G-02, G-05), no FAIL.
+
+```yaml
+od_002_stage_1_blocker_gate: DD-037 — Passed With Conditions
+od_002_stage_1_blocker_outcome: Blocked Execution — Source Rate Limited / No Data
+od_002_stage_1_method_compliance: Unresolvable From Existing Authority
+od_002_stage_1_attempt_consumption: Attempt Consumed — 0 Remaining
+od_002_stage_1_blocker_acceptance_decision: Pending
+od_002_stage_1_replacement_gate_preparation_authorized: false
+od_002_stage_1_replacement_attempt_authorized: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+## IC-OD2-001 Replacement-Attempt Gate Preparation Authorized — DD-037 Case-Owner Decision (19 August 2026)
+
+Kelvin Wong issued **ACCEPT BLOCKED EXECUTION AND AUTHORIZE PREPARATION OF A REPLACEMENT-ATTEMPT GATE** (decisions/DD-037, Case-Owner Decision). DD-037's own findings (Blocked Execution / Source Rate Limited, Method-Compliance Unresolvable From Existing Authority, Attempt Consumed — 0 Remaining) are accepted unmodified as the closing record of Attempt 1. Repository-only **preparation** of a new, separate replacement-attempt authorization gate is now authorized — not its execution — subject to seven inherited DD-037 Set A gate conditions and twelve new Set B case-owner conditions recorded verbatim in decisions/DD-037, including: one replacement attempt only; prescribe the interactive PageSpeed Insights interface where justified by O-012/Attempt 1's own evidence, or explicitly justify otherwise; exclude the failed API v5 route unless re-justified; no API key/login; address the elapsed 22 July–18 August 2026 window explicitly; no assumed availability; a labeled expiry; no auto-Stage-2; preparation and execution remain separate, sequential gates.
+
+```yaml
+od_002_stage_1_blocker_acceptance_decision: Accepted — Authorize Replacement-Attempt Gate Preparation
+od_002_stage_1_replacement_gate_preparation_authorized: true
+od_002_stage_1_replacement_attempt_authorized: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This decision does not authorize any new PageSpeed/CrUX request.** decisions/DD-035, decisions/DD-036, DD-037's own Precondition Check/Parts 1–9/Gate Verdict, the protocol's Phases 1–14, and the Attempt 1 record all remain unmodified, preserved as historical record. No CrUX/PageSpeed access occurred. No evidence ID used. No Stage 2 activity. No commit or push occurred.
+
 ## Lifecycle Traceability
 
 Current stage: Case Establishment **Completed** (decisions/DD-008) → Observation and Evidence Collection **Completed**, baseline **Established** → Evidence Synthesis and Justified Organizational Claims **Completed** (decisions/DD-010, 24 July 2026, PASSED) → Organizational Understanding **Authorized With Conditions** (decisions/DD-014, case-owner decision 24 July 2026) → Reconstructed and gated PASSED WITH CONDITIONS (decisions/DD-015, 24 July 2026) → **Organizational Understanding — Established With Conditions** (decisions/DD-015, case-owner decision 25 July 2026) → Diagnosis Authorization Gate reviewed and recommended AUTHORIZED WITH CONDITIONS, question-specific (decisions/DD-016, 25 July 2026) → **Organizational Diagnosis — Partially Authorized With Conditions** (decisions/DD-016, case-owner decision 25 July 2026), `current_stage: Organizational Diagnosis` → **DQ-001 investigated and gated** (decisions/DD-017, 25 July 2026) → **DQ-001 — Established With Conditions** (decisions/DD-017, case-owner decision 25 July 2026), `dq_001_diagnosis_established: true`, `diagnosis_established_scope: DQ-001 only` → **DQ-004 investigated and gated** (decisions/DD-018, 25 July 2026) → **DQ-004 — Established With Conditions** (decisions/DD-018, case-owner decision 25 July 2026), `dq_004_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-004` — the authoritative formulation for OD-002 is narrowed per the case-owner's Condition 2 (see above) → **DQ-005 investigated and gated** (decisions/DD-019, 25 July 2026): ground-truth facts registered first, fact-by-fact correspondence test run against OC-005's three conditions and every AI-observed discrepancy, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED** (unconditional) → **DQ-005 — Completed, Evidence Insufficient, ACCEPTED** (decisions/DD-019, case-owner decision 25 July 2026), `dq_005_acceptance_decision: Accepted`, `dq_005_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-005) → **DQ-007 investigated and gated** (decisions/DD-020, 25 July 2026): twelve candidate explanations tested against a twelve-domain evidence-sufficiency matrix, new bounded public research directly falsified a GA4-integration mechanism and left one 13-June community-report lead unconfirmed, **Diagnosis Outcome: Evidence Insufficient**, no OD created, Gate Verdict **PASSED WITH CONDITIONS** → **DQ-007 — Completed, Evidence Insufficient, ACCEPTED WITH CONDITIONS** (decisions/DD-020, case-owner decision 25 July 2026), `dq_007_acceptance_decision: Accepted With Conditions`, `dq_007_diagnosis_established: false` (no Organizational Diagnosis exists or was ever created for DQ-007) → **DQ-002 investigated and gated** (decisions/DD-021, 25 July 2026): name-variant inventory and canonical entity baseline established, direct re-analysis of EV-014's raw Search Console export found the misspelled query family shows equal-to-better average position than the correct spelling in both directly-tested pairs, eight candidate explanations tested, Candidate Organizational Diagnosis diagnosis/OD-003-name-variant-entity-resolution.md produced and independently challenged (Survives), Gate Verdict **PASSED WITH CONDITIONS** → **DQ-002 — Established With Conditions** (decisions/DD-021, case-owner decision 25 July 2026): the authoritative formulation is narrowed to a single sentence and twelve binding conditions apply verbatim, `dq_002_diagnosis_established: true`, `diagnosis_established_scope: DQ-001, DQ-002, DQ-004` → **DQ-002 confidence corrected** (decisions/DD-021 Confidence Decision, case-owner decision 25 July 2026): OD-003's authoritative confidence set to **Medium**, narrower than the gate's original Medium-High assessment, which remains preserved unchanged as historical analysis — **this remains the case's current authoritative stage**, `current_stage: Organizational Diagnosis`. **All five of DD-016's authorized/conditionally-authorized diagnosis questions (DQ-001, DQ-002, DQ-004, DQ-005, DQ-007) have now been investigated, and every question capable of producing an Organizational Diagnosis (DQ-001, DQ-002, DQ-004) is now established.** DQ-003 and DQ-006 remain Not Authorized (Not a Diagnosis Question). `design_authorized: false`, `transformation_authorized: false`, `external_changes_authorized: false` — unaffected by any diagnosis gate to date; no cache, CDN, hosting, WordPress, code, GBP, listing, or production change is authorized; no Design Authorization Gate exists. DQ-005 and DQ-007 may only be reopened with materially new evidence and a new explicit case-owner decision. Organizational Understanding's first attempt was without valid prior authorization and was reclassified Draft — Not Authoritative (decisions/DD-012, 24 July 2026); that finding is preserved, unedited, as lifecycle history — it is not reopened or corrected by any later authorization, reconstruction, establishment, or gate review, all of which rest on independent review and explicit case-owner decision rather than on the earlier drafts.

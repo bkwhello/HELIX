@@ -129,6 +129,32 @@ external_changes_authorized: false
 
 ---
 
+## Status Update — IC-OD2-001 Attempt 1 Blocked (19 August 2026)
+
+*Status/reference-only addendum. It does not alter any precondition, requirement, candidate formulation, assumption register, attack, comparison, or challenge content above — all remain exactly as originally constructed. Authority: transformation/IC-OD2-001-crux-remeasurement-execution-attempt-1.md, 19 August 2026.*
+
+One public, read-only, unauthenticated request to the PageSpeed Insights API v5 endpoint returned HTTP 429 with no usable data — no evidence created, no `O-014`/`EV-025` used.
+
+```yaml
+od_002_stage_1_attempt_1_occurred: true
+od_002_stage_1_request_count: 1
+od_002_stage_1_attempts_remaining_provisional: 0
+od_002_stage_1_execution_status: Blocked — HTTP 429 / No CrUX Data Returned
+od_002_stage_1_execution_completed: false
+od_002_stage_1_evidence_created: false
+od_002_stage_1_classification_status: Pending Independent Blocker Review
+od_002_stage_1_replacement_attempt_authorized: false
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Whether this method satisfies the protocol's approved-source requirement is Pending Independent Review (DD-037, not yet created). No second request occurred. No commit or push occurred.
+
+---
+
 ## Precondition Check
 
 | # | Precondition | Result |

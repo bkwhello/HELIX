@@ -51,6 +51,23 @@ Kelvin Wong issued **APPROVED WITH CONDITIONS FOR READ-ONLY CRUX REMEASUREMENT E
 
 ---
 
+## Status Update — Attempt 1 Blocked (19 August 2026)
+
+*Status-only addendum. It does not alter any substantive Phase 1–14 content. Authority: Attempt Record, transformation/IC-OD2-001-crux-remeasurement-execution-attempt-1.md, 19 August 2026.*
+
+```yaml
+Status: Execution Authorized — Attempt 1 Blocked (HTTP 429 / No CrUX Data Returned)
+Attempt 1 Date: 2026-08-19
+Attempt 1 Result: Blocked — see transformation/IC-OD2-001-crux-remeasurement-execution-attempt-1.md
+Attempts Remaining (Provisional): 0
+Method-Compliance Review: Pending Independent Review
+Independent Attempt-Consumption Determination: Pending (DD-037, not yet created)
+```
+
+One public, read-only, unauthenticated request was made to the PageSpeed Insights API v5 endpoint (`strategy=mobile`) for `https://konnichiwa.nl/` and received HTTP 429 with no usable body — no CrUX data, no window dates, no TTFB distribution, no Core Web Vitals. No evidence was created; no `O-014`/`EV-025` was used. Full detail: transformation/IC-OD2-001-crux-remeasurement-execution-attempt-1.md. Whether this specific method (unauthenticated API v5, as distinct from the interactive report interface that succeeded for the historical baseline, EV-017/O-012) satisfies this protocol's Phase 5 Step 3 ("approved public read-only CrUX/PageSpeed source") is an open question for a future, independent DD-037 review — not resolved by this addendum.
+
+---
+
 ## Precondition Check
 
 | # | Precondition | Result |
