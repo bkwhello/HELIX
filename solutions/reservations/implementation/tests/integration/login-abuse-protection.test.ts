@@ -1,4 +1,3 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../../api/app.js";
@@ -18,14 +17,15 @@ import { UnvalidatedServicePeriodReader } from "../../infrastructure/Unvalidated
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
 import { LoginThrottleConfig } from "../../application/auth/LoginThrottleGuard.js";
+import { createTestPrismaClient, truncateStaffDomainTables } from "./support/testDatabaseSafety.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const NOW = new Date("2026-08-01T10:00:00Z");
 
+// R1.4 P0: delegates to the centralized, fail-closed gate — see
+// tests/integration/support/testDatabaseSafety.ts.
 async function resetAll(): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "staff_sessions", "staff_users", "security_events", "login_attempt_windows" RESTART IDENTITY CASCADE'
-  );
+  await truncateStaffDomainTables(prisma);
 }
 
 // Small/fast for test speed — the DEFAULT production config (5/15min,

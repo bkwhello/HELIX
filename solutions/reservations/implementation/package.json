@@ -12,7 +12,13 @@
     "start": "tsx api/server.ts",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "bootstrap-owner": "tsx infrastructure/bootstrap/bootstrapOwner.ts"
+    "bootstrap-owner": "tsx infrastructure/bootstrap/bootstrapOwner.ts",
+    "setup-test-db": "tsx ops/testDatabaseSetup.ts",
+    "backup": "tsx ops/backup/createBackup.ts",
+    "restore": "tsx ops/restore/restoreBackup.ts",
+    "verify-integrity": "tsx ops/integrity/verifyIntegrity.ts",
+    "service-snapshot": "tsx ops/snapshot/createServiceSnapshot.ts",
+    "recovery-drill": "tsx ops/recoveryDrill.ts"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

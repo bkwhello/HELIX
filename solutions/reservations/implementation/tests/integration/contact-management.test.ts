@@ -1,10 +1,10 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildHarness, resetDatabase } from "./support/testHarness.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
 import { PrismaContactRepository } from "../../infrastructure/persistence/PrismaContactRepository.js";
+import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 
 /**
  * CAP-D05.01 — R1.3-I1 final gate (§9 Transaction Integrity, §10
@@ -13,7 +13,7 @@ import { PrismaContactRepository } from "../../infrastructure/persistence/Prisma
  * persistence, matching this codebase's existing convention for
  * capability-boundary evidence.
  */
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z");
 const FUTURE_DATE = new Date("2026-08-20T18:00:00Z");

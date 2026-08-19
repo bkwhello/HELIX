@@ -12,5 +12,5 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["domain", "application", "infrastructure", "api", "tests"]
+  "include": ["domain", "application", "infrastructure", "api", "tests", "ops"]
 }

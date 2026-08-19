@@ -15,6 +15,7 @@ import { IdGenerator } from "../../../application/ports/IdGenerator.js";
 import { EventIdGenerator } from "../../../application/ports/EventIdGenerator.js";
 import { Clock } from "../../../application/ports/Clock.js";
 import { ContactRepository } from "../../../application/ports/ContactRepository.js";
+import { truncateReservationDomainTables } from "./testDatabaseSafety.js";
 
 let counter = 0;
 /** Distinct, human-inspectable IDs per test run — not cryptographically random, which is irrelevant for tests and would make failures harder to read. */
@@ -87,11 +88,20 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
   return { repository, capacityRepository, transactionManager, closingDayStore, orchestrator, clock, idGenerator, createHandler, cancelHandler };
 }
 
-/** Wipes every table this suite touches. Safe only against the dedicated local test database configured in .env — never call against anything else. */
+/**
+ * Wipes every reservation-domain table this suite touches.
+ *
+ * R1.4 P0: this used to run TRUNCATE directly, relying on a code comment
+ * ("safe only against the dedicated local test database... never call
+ * against anything else") to keep it from ever hitting the pilot's live
+ * database — a comment enforces nothing. It now delegates to
+ * testDatabaseSafety.ts's assertSafeToReset() first, which independently
+ * re-verifies the connected database's name and a provisioned sentinel
+ * row before this function's TRUNCATE is ever reached. See that module
+ * for the full reasoning.
+ */
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "capacity_commitments", "applied_commands", "reservation_events", "reservations", "closing_days", "contacts" RESTART IDENTITY CASCADE'
-  );
+  await truncateReservationDomainTables(prisma);
 }
 
 /**

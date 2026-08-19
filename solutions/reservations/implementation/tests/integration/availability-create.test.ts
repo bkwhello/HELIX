@@ -1,18 +1,20 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
+import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 
 /**
  * CAP-D02.03 — real PostgreSQL evidence. §"This capability MUST be
  * tested against real PostgreSQL. SQLite is NOT acceptable as
  * concurrency evidence for CAP-D02.03." These tests run
- * AvailabilityOrchestrator end-to-end against the local dev PostgreSQL
- * instance configured in .env — no mocks/fakes for persistence.
+ * AvailabilityOrchestrator end-to-end against the dedicated, sentinel-
+ * gated TEST_DATABASE_URL instance (R1.4 P0 — see
+ * tests/integration/support/testDatabaseSafety.ts), never the pilot's
+ * DATABASE_URL — no mocks/fakes for persistence.
  */
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z"); // well before any requested date, so the same-day cutoff never applies

@@ -1,4 +1,3 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { createApp } from "../../api/app.js";
@@ -21,8 +20,9 @@ import { CreateStaffUserHandler } from "../../application/auth/CreateStaffUserHa
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { hashSessionToken } from "../../domain/shared/hashSessionToken.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
+import { createTestPrismaClient, truncateReservationDomainTables, truncateStaffDomainTables } from "./support/testDatabaseSafety.js";
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const NOW = new Date("2026-08-01T10:00:00Z");
 class FixedClock {
   now(): Date {
@@ -30,13 +30,17 @@ class FixedClock {
   }
 }
 
+// R1.4 P0: previously two inline TRUNCATE statements here, gated only by
+// a code comment. Now delegates to the centralized, fail-closed gate in
+// testDatabaseSafety.ts — see that module. truncateReservationDomainTables
+// also clears `contacts`; this suite never creates one, so that's a no-op
+// here, but reusing the single canonical table list (rather than this
+// file maintaining its own, previously `contacts`-less, copy) means there
+// is exactly one place to update if the reservation-domain table set ever
+// changes, instead of several independently drifting lists.
 async function resetAll(): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "capacity_commitments", "applied_commands", "reservation_events", "reservations", "closing_days" RESTART IDENTITY CASCADE'
-  );
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "staff_sessions", "staff_users", "security_events", "login_attempt_windows" RESTART IDENTITY CASCADE'
-  );
+  await truncateReservationDomainTables(prisma);
+  await truncateStaffDomainTables(prisma);
 }
 
 function buildAuthDeps() {

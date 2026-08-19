@@ -1,6 +1,6 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
+import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
@@ -18,9 +18,9 @@ import { CreateReservationRequest } from "../../application/command-handlers/Cre
  * All scenarios use separate PrismaClient instances per concurrent actor
  * — genuinely simultaneous PostgreSQL transactions, not sequential calls.
  */
-const prisma = new PrismaClient();
-const prismaB = new PrismaClient();
-const prismaC = new PrismaClient();
+const prisma = createTestPrismaClient();
+const prismaB = createTestPrismaClient();
+const prismaC = createTestPrismaClient();
 
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z");

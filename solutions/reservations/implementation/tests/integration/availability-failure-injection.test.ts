@@ -1,9 +1,10 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import type { PrismaClient } from "@prisma/client";
 import { buildHarness, resetDatabase } from "./support/testHarness.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
+import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 
 /**
  * CAP-D02.03 §"failure-injection tests" — both mandatory scenarios,
@@ -12,7 +13,7 @@ import { CreateReservationRequest } from "../../application/command-handlers/Cre
  *  2. fail AFTER the reservation mutation, BEFORE the idempotency marker
  * Both must prove full rollback — no partial state survives.
  */
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z");

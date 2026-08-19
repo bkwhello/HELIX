@@ -4,3 +4,12 @@ coverage/
 .env
 prisma/dev.db
 prisma/dev.db-journal
+
+# R1.4 — backup artifacts and service snapshots must never be committed
+# (AC-R10; they contain guest PII and, for backups, password hashes).
+# Scoped to these specific directories only — prisma/migrations/**/*.sql
+# is legitimate, tracked, version-controlled schema history and must
+# never be caught by a broader *.sql/*.dump pattern here.
+/backups/
+/snapshots/
+/recovery-drill-results/

@@ -1,8 +1,8 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
 import { Actor, ActorKind } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
+import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 
 /**
  * CAP-D02.03 §timezone — real PostgreSQL evidence for both 2026
@@ -17,7 +17,7 @@ import { ReservationSourceCategory } from "../../domain/value-objects/Reservatio
  * same-day cutoff decision on exactly these dates, which is what the
  * discriminating tests below are built to catch.
  */
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const guestChannelActor: Actor = { id: "guest-channel-1", kind: ActorKind.ApprovedGuestChannel };
 let cmdCounter = 0;
 function cmd(): string {

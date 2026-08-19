@@ -1,6 +1,6 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
+import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
@@ -13,8 +13,8 @@ import { CreateReservationRequest } from "../../application/command-handlers/Cre
  * same pg_advisory_xact_lock; a single client's $transaction calls cannot
  * overlap on one connection).
  */
-const prisma = new PrismaClient();
-const prismaB = new PrismaClient();
+const prisma = createTestPrismaClient();
+const prismaB = createTestPrismaClient();
 
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z");

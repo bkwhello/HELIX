@@ -1,9 +1,9 @@
-import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { Express } from "express";
 import { createApp } from "../../api/app.js";
 import { resetDatabase } from "../integration/support/testHarness.js";
+import { createTestPrismaClient, truncateStaffDomainTables } from "../integration/support/testDatabaseSafety.js";
 import { PrismaReservationRepository } from "../../infrastructure/persistence/PrismaReservationRepository.js";
 import { PrismaDuplicateReservationChecker } from "../../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
 import { PrismaClosingDayStore } from "../../infrastructure/persistence/PrismaClosingDayStore.js";
@@ -56,16 +56,16 @@ class SequentialEventIdGenerator {
   }
 }
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const OWNER_USERNAME = "owner-test";
 const OWNER_PASSWORD = "SuperSecret123!";
 let sharedApp: Express;
 let sharedAgent: ReturnType<typeof request.agent>;
 
+// R1.4 P0: delegates to the centralized, fail-closed gate — see
+// tests/integration/support/testDatabaseSafety.ts.
 async function resetStaffTables(): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "staff_sessions", "staff_users", "security_events", "login_attempt_windows" RESTART IDENTITY CASCADE'
-  );
+  await truncateStaffDomainTables(prisma);
 }
 
 function buildApp() {
