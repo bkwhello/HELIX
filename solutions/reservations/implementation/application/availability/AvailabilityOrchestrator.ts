@@ -47,6 +47,7 @@ import { ReservationCommandRaceLost } from "../../infrastructure/persistence/Pri
 import { CapacityPoolId, CAPACITY_POOLS, isCapacityPoolId } from "../../domain/availability/CapacityPool.js";
 import { evaluateSimultaneousOccupancy } from "../../domain/availability/AvailabilityEvaluator.js";
 import { evaluateBookingPolicy, BookingPolicyOutcome } from "../../domain/availability/BookingPolicy.js";
+import { evaluateTeppanyakiSelfServicePacing } from "../../domain/availability/TeppanyakiSelfServicePacing.js";
 import { AvailabilityOutcome } from "../../domain/availability/AvailabilityResult.js";
 import { toLocalServiceDate } from "../../domain/availability/ServiceTime.js";
 import { sortLockResources } from "../../domain/availability/LockKey.js";
@@ -176,11 +177,29 @@ export class AvailabilityOrchestrator {
           candidates: overlapping,
         });
         const capacity = CAPACITY_POOLS[pool].maximumCapacity;
-        if (evaluation.maxExistingOccupancy + request.partySize > capacity) {
+        const projectedOccupancy = evaluation.maxExistingOccupancy + request.partySize;
+        if (projectedOccupancy > capacity) {
           return {
             kind: "CAPACITY_UNAVAILABLE" as const,
             availability: { type: "CAPACITY_EXHAUSTED" as const, maxExistingOccupancy: evaluation.maxExistingOccupancy, capacity },
           };
+        }
+
+        // Owner decision — Teppanyaki self-service pacing policy. Checked
+        // ONLY after confirming actual physical capacity (40) is not
+        // exceeded — a self-service request that would exceed 40 is
+        // CAPACITY_EXHAUSTED above, never silently downgraded to
+        // ROUTE_TO_STAFF. This never touches Sushi (the evaluator itself
+        // is a no-op for any pool other than Teppanyaki) and never
+        // touches staff bookings (exempt, same as the two original
+        // BookingPolicy.ts rules).
+        const pacing = evaluateTeppanyakiSelfServicePacing({
+          capacityPoolId: pool,
+          isStaffActor: this.isStaffActor(request.actor),
+          projectedOccupancy,
+        });
+        if (pacing.type !== "ALLOWED") {
+          return { kind: "BOOKING_POLICY_REJECTED" as const, policy: pacing };
         }
 
         const created = await this.createHandler.handle({ ...request, tx });
@@ -205,6 +224,9 @@ export class AvailabilityOrchestrator {
 
       if (work.kind === "CAPACITY_UNAVAILABLE") {
         return { type: "CAPACITY_UNAVAILABLE", availability: work.availability };
+      }
+      if (work.kind === "BOOKING_POLICY_REJECTED") {
+        return { type: "BOOKING_POLICY_REJECTED", policy: work.policy };
       }
       if (work.kind === "ALREADY_APPLIED") {
         const winner = await this.reservationRepository.findByCommandId(request.commandId);
@@ -385,11 +407,24 @@ export class AvailabilityOrchestrator {
           excludeCommitmentId: existingCommitment.commitmentId,
         });
         const capacity = CAPACITY_POOLS[newPool].maximumCapacity;
-        if (evaluation.maxExistingOccupancy + newPartySize > capacity) {
+        const projectedOccupancy = evaluation.maxExistingOccupancy + newPartySize;
+        if (projectedOccupancy > capacity) {
           return {
             kind: "CAPACITY_UNAVAILABLE",
             availability: { type: "CAPACITY_EXHAUSTED", maxExistingOccupancy: evaluation.maxExistingOccupancy, capacity },
           };
+        }
+
+        // Owner decision — Teppanyaki self-service pacing policy. Same
+        // ordering/reasoning as createWithCapacity: checked only after
+        // confirming actual physical capacity is not exceeded.
+        const pacing = evaluateTeppanyakiSelfServicePacing({
+          capacityPoolId: newPool,
+          isStaffActor: this.isStaffActor(request.actor),
+          projectedOccupancy,
+        });
+        if (pacing.type !== "ALLOWED") {
+          return { kind: "BOOKING_POLICY_REJECTED", policy: pacing };
         }
 
         await this.capacityRepository.updateStatus({ commitmentId: existingCommitment.commitmentId, status: "Superseded", tx });

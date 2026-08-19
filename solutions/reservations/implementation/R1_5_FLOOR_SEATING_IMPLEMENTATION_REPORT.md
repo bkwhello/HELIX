@@ -247,3 +247,39 @@ Ready for the next gate: (1) resolve the two flagged numeric discrepancies with 
 ---
 
 **STOP CONDITION REACHED.** Implementation, schema/migration, real-PostgreSQL proof, concurrency proof (including 80 zero-flake repetition iterations), failure injection, full regression (412/412), local smoke test (16/16), and this report are complete. No push. No deploy. No Guestplan changes. No website changes. Awaiting the Chief Engineer's R1.5 Final Implementation Gate before proceeding to HTTP API endpoints or any further work.
+
+---
+
+## Addendum — Teppanyaki Self-Service Pacing Correction (superseding, appended, dated after the original report above)
+
+**This addendum records a later, separate Chief Engineer/owner instruction. Nothing above this line (§1–§36 and the original STOP CONDITION notice) has been edited, reworded, or removed — every finding, number, and risk recorded above reflects exactly what was true and known at the time this report was originally written. Where the correction below supersedes something stated above, that supersession is recorded here, not by rewriting the original text.**
+
+### What changed
+
+**"OWNER DECISION — TEPPANYAKI SELF-SERVICE PACING POLICY"** superseded the unresolved 70–80% Teppanyaki self-service threshold this report's §33 Risk #2 had flagged, and separately withdrew the E+F 24-person preferred block this report's §11/§33 Risk #2 had also flagged as arithmetically inconsistent (20 physical seats vs. a stated 24-person preference).
+
+- **§33 Risk #2 (24-vs-20 seats) is now RESOLVED, not merely tracked**: the owner withdrew the 24-person figure outright rather than resolving the arithmetic gap. `domain/floor/PreferredResourceBlock.ts`'s `PREFERRED_RESOURCE_BLOCKS` constant is now an empty array — the mechanism is kept (for any future, correctly-specified preferred block) but the withdrawn entry itself was removed from code, not merely documented as stale. E and F remain ordinary 10-seat `Table` rows, 20 seats together, entirely unchanged, claimable via the same multi-grill mechanism Scenario G/H already proved.
+- **A new, distinct owner decision — the Teppanyaki self-service pacing ceiling** — is now implemented: `domain/availability/TeppanyakiSelfServicePacing.ts`, a new pure function (`evaluateTeppanyakiSelfServicePacing`) mirroring `BookingPolicy.ts`'s own existing style exactly. `TEPPANYAKI_SELF_SERVICE_CEILING = 32`, computed as `Math.floor(40 * 0.8)`, not hardcoded, so the "32 is 80% of 40" relationship stays self-evidently correct.
+- **`AvailabilityOrchestrator.createWithCapacity` and `modifyWithCapacity`** both call the new evaluator, at the same point (immediately after confirming actual physical capacity — 40 — is not exceeded, immediately before proceeding to write). Ordering is deliberate and load-bearing: a self-service request that would exceed 40 is `CAPACITY_EXHAUSTED`, exactly as before this correction, **never** silently downgraded to `ROUTE_TO_STAFF`; a self-service request between 33 and 40 (inclusive of neither bound issue at exactly 32, which is allowed) is now `BOOKING_POLICY_REJECTED` with `policy.type: "ROUTE_TO_STAFF"` — reusing the exact same outcome shape party-size routing (9+) already used, distinguished internally by a different `reason` string (proven by a dedicated unit test asserting the two reason strings never collide).
+- **Three concepts kept structurally separate, per the owner's own explicit instruction**: physical capacity (`CapacityPool.ts`, untouched, still 40), the new self-service pacing ceiling (`TeppanyakiSelfServicePacing.ts`, entirely new file, 32), and physical seating (`domain/floor/`, entirely unaware this ceiling exists — `SeatabilityEvaluator`/`SeatingOrchestrator` do not import or reference it).
+- **Sushi is provably unaffected**: `evaluateTeppanyakiSelfServicePacing` returns `ALLOWED` unconditionally for any pool other than `"Teppanyaki"` — proven directly by T8's two dedicated tests (a Sushi request past what 80% of Sushi's own capacity would be, and a Sushi request at exactly 49, both correctly never routed to staff on pacing grounds).
+
+### Test evidence (T1–T8, assignment §8)
+
+- `tests/integration/teppanyaki-self-service-pacing.test.ts` — **10 tests**, real PostgreSQL, real overlapping `CapacityCommitment` intervals (an existing commitment seeded with the exact same interval as the request under test, per the assignment's explicit "use overlapping intervals, not merely reservation totals for the day" instruction) — T1 through T7 exactly as specified, plus two T8 sub-tests (Sushi past its own 80%-equivalent, and Sushi at exact physical capacity).
+- `tests/domain/teppanyaki-self-service-pacing.test.ts` — **6 tests**, pure-function unit coverage of `evaluateTeppanyakiSelfServicePacing` mirroring `tests/domain/booking-policy.test.ts`'s own style (no database) — boundary-exact ALLOWED/ROUTE_TO_STAFF, staff exemption, Sushi no-op, and the distinguishable-reason-string assertion.
+
+### Full regression (post-correction)
+
+```
+npm run typecheck   -> clean
+npm test             -> 36 test files, 428 tests, ALL PASSING
+```
+
+Up from 412 (this report's own original §30 figure) — the +16 delta is exactly the 10 integration + 6 unit pacing tests above. **No previous invariant regressed** — every R1.1–R1.5 test from before this correction passes unchanged.
+
+### Files touched by this correction
+
+New: `domain/availability/TeppanyakiSelfServicePacing.ts`, `tests/integration/teppanyaki-self-service-pacing.test.ts`, `tests/domain/teppanyaki-self-service-pacing.test.ts`. Modified: `application/availability/AvailabilityOrchestrator.ts` (two call sites, `createWithCapacity`/`modifyWithCapacity`), `domain/floor/PreferredResourceBlock.ts` (24-person entry removed, mechanism preserved). No Prisma schema change, no new migration — this correction is pure application/domain logic plus one static-config change, touching no persisted shape.
+
+**STOP CONDITION REACHED (correction).** No push. No deploy. No Guestplan changes. No website changes. One bounded local commit follows this addendum. Awaiting Chief Engineer review.
