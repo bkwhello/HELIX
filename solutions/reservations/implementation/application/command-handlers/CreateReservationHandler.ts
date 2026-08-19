@@ -222,10 +222,22 @@ export class CreateReservationHandler {
         potentialDuplicateDetected,
       });
       if (!created.ok) {
-        if (!existingContact && tx) {
-          // A new Contact was already written in THIS transaction —
-          // must force a rollback, not return normally (see the class
-          // doc comment on ReservationFailureAfterContactWrite).
+        if (!existingContact && tx && !request.tx) {
+          // A new Contact was already written in a transaction THIS
+          // handler opened itself (the plain, non-capacity path) — must
+          // force a rollback via throw, not a normal return, since only
+          // the try/catch around runInTransaction() below can trigger
+          // that rollback (see ReservationFailureAfterContactWrite's doc
+          // comment). When `request.tx` is set instead (the capacity
+          // path), `tx` here IS request.tx — an externally-owned
+          // transaction this handler must never throw into. Returning
+          // the failed Result normally is correct there: the caller
+          // (AvailabilityOrchestrator) already converts a failed Result
+          // from createHandler.handle() into its OWN thrown
+          // OrchestratedValidationFailure, which rolls back everything
+          // in ITS transaction — including this Contact write, since
+          // it's the same transaction. Throwing here too would just be
+          // an uncaught exception on that path (see final-gate report).
           throw new ReservationFailureAfterContactWrite(created.violations);
         }
         return created;

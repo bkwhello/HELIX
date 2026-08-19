@@ -151,6 +151,81 @@ describe("CreateReservationHandler", () => {
     expect(await repository.findByCommandId("cmd-no-method")).toBeNull();
   });
 
+  // CAP-D05.01-R01 — Name + Email-only is allowed (owner-confirmed: neither
+  // phone nor email is individually mandatory).
+  it("accepts CreateNewContact with a name and email only, no phone", async () => {
+    const result = await handler.handle(
+      validRequest({
+        commandId: "cmd-email-only",
+        contactSelection: { type: "CreateNewContact", displayName: "Email Only Guest", email: "guest@example.com" },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const saved = await repository.findByCommandId("cmd-email-only");
+    expect(saved?.getContactEmailSnapshot()).toBe("guest@example.com");
+    expect(saved?.getContactPhoneSnapshot()).toBeUndefined();
+  });
+
+  // CAP-D05.01-R01 — Name + Phone + Email is allowed (never required together, but never rejected either).
+  it("accepts CreateNewContact with a name, phone, and email all supplied", async () => {
+    const result = await handler.handle(
+      validRequest({
+        commandId: "cmd-both-methods",
+        contactSelection: {
+          type: "CreateNewContact",
+          displayName: "Full Detail Guest",
+          phone: "0687654321",
+          email: "full@example.com",
+        },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const saved = await repository.findByCommandId("cmd-both-methods");
+    expect(saved?.getContactPhoneSnapshot()).toBe("0687654321");
+    expect(saved?.getContactEmailSnapshot()).toBe("full@example.com");
+  });
+
+  // CAP-D05.01-R03 — a possible match must never silently become a reuse:
+  // submitting CreateNewContact again with the SAME phone as an existing
+  // Contact must still create a genuinely separate Contact record.
+  it("creates a genuinely separate Contact when CreateNewContact is submitted despite a phone match with an existing Contact", async () => {
+    const first = await handler.handle(
+      validRequest({
+        commandId: "cmd-dup-phone-1",
+        contactSelection: { type: "CreateNewContact", displayName: "First Guest", phone: "0698765432" },
+      })
+    );
+    expect(first.ok).toBe(true);
+
+    // Sanity: the possible-match query the pilot/API would run BEFORE this
+    // second submission really would have found the first Contact.
+    const possibleMatches = await contactRepository.findPossibleMatches({ phoneNormalized: "+31698765432" });
+    expect(possibleMatches).toHaveLength(1);
+
+    // Staff explicitly chooses CreateNewContact anyway (e.g. two different
+    // people sharing a phone) — this must never be silently rewritten into
+    // an ExistingContact reuse.
+    const second = await handler.handle(
+      validRequest({
+        commandId: "cmd-dup-phone-2",
+        contactSelection: { type: "CreateNewContact", displayName: "Second Guest (shares a phone)", phone: "0698765432" },
+      })
+    );
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+
+    const savedFirst = await repository.findByCommandId("cmd-dup-phone-1");
+    const savedSecond = await repository.findByCommandId("cmd-dup-phone-2");
+    expect(savedFirst?.getContactId()).not.toBe(savedSecond?.getContactId());
+
+    const allMatches = await contactRepository.findPossibleMatches({ phoneNormalized: "+31698765432" });
+    expect(allMatches).toHaveLength(2); // two separate Contacts, not one
+  });
+
   // CAP-D01.01-R06 — the Service Period must validate against date/time/party size
   it("rejects creation when the Service Period is not valid for the request", async () => {
     servicePeriodReader.result = { isValid: false, reason: "Kitchen is closed at this time." };
