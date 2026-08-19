@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { CreateReservationHandler } from "../../application/command-handlers/CreateReservationHandler.js";
+import { CreateContactHandler } from "../../application/command-handlers/CreateContactHandler.js";
 import { InMemoryReservationRepository } from "../support/InMemoryReservationRepository.js";
-import { FakeContactReader, FakeServicePeriodReader, FakeDuplicateReservationChecker, FakeClosingDayStore } from "../support/FakePorts.js";
+import {
+  FakeContactRepository,
+  FakeTransactionManager,
+  FakeServicePeriodReader,
+  FakeDuplicateReservationChecker,
+  FakeClosingDayStore,
+} from "../support/FakePorts.js";
 import { staffActor, FUTURE_DATE, NOW } from "../support/factories.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 
@@ -31,7 +38,7 @@ function validRequest(overrides: Record<string, unknown> = {}) {
   return {
     commandId: "cmd-1",
     servicePeriodId: "sp-1",
-    contactId: "contact-1",
+    contactSelection: { type: "ExistingContact" as const, contactId: "contact-1" },
     reservationDate: FUTURE_DATE,
     partySize: 2,
     source: { category: ReservationSourceCategory.Website },
@@ -42,7 +49,7 @@ function validRequest(overrides: Record<string, unknown> = {}) {
 
 describe("CreateReservationHandler", () => {
   let repository: InMemoryReservationRepository;
-  let contactReader: FakeContactReader;
+  let contactRepository: FakeContactRepository;
   let servicePeriodReader: FakeServicePeriodReader;
   let duplicateChecker: FakeDuplicateReservationChecker;
   let closingDayStore: FakeClosingDayStore;
@@ -50,19 +57,25 @@ describe("CreateReservationHandler", () => {
 
   beforeEach(() => {
     repository = new InMemoryReservationRepository();
-    contactReader = new FakeContactReader();
+    contactRepository = new FakeContactRepository();
+    contactRepository.seed({ id: "contact-1", displayName: "Existing Guest", phoneRaw: "0612345678", phoneNormalized: "+31612345678" });
     servicePeriodReader = new FakeServicePeriodReader();
     duplicateChecker = new FakeDuplicateReservationChecker();
     closingDayStore = new FakeClosingDayStore();
+    const idGenerator = new SequentialIdGenerator();
+    const clock = new FixedClock();
+    const createContactHandler = new CreateContactHandler(contactRepository, idGenerator, clock);
     handler = new CreateReservationHandler(
       repository,
       duplicateChecker,
-      contactReader,
+      contactRepository,
+      createContactHandler,
       servicePeriodReader,
       closingDayStore,
-      new SequentialIdGenerator(),
+      idGenerator,
       new SequentialEventIdGenerator(),
-      new FixedClock()
+      clock,
+      new FakeTransactionManager()
     );
   });
 
@@ -82,7 +95,7 @@ describe("CreateReservationHandler", () => {
 
   // CAP-D01.01-AC02 — Reject Creation Without Required Information
   it("rejects a request missing required information without persisting anything", async () => {
-    const result = await handler.handle(validRequest({ commandId: "cmd-2", servicePeriodId: "", contactId: "" }));
+    const result = await handler.handle(validRequest({ commandId: "cmd-2", servicePeriodId: "", contactSelection: undefined }));
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -90,17 +103,52 @@ describe("CreateReservationHandler", () => {
     }
   });
 
-  // CAP-D01.01-R07 — the contact must actually exist
+  // CAP-D05.01-R01 — the referenced Contact must actually exist and be Active
   it("rejects creation when the referenced contact does not exist", async () => {
-    contactReader.contactExists = false;
+    contactRepository.forceMissing = true;
 
     const result = await handler.handle(validRequest({ commandId: "cmd-no-contact" }));
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R07")).toBe(true);
+      expect(result.violations.some((v) => v.ruleId === "CAP-D05.01-R01")).toBe(true);
     }
     expect(await repository.findByCommandId("cmd-no-contact")).toBeNull();
+  });
+
+  // CAP-D05.01 §11 — CreateNewContact path creates a real Contact record
+  // and snapshots its details onto the reservation.
+  it("creates a new Contact inline when contactSelection is CreateNewContact, and snapshots its details", async () => {
+    const result = await handler.handle(
+      validRequest({
+        commandId: "cmd-new-contact",
+        contactSelection: { type: "CreateNewContact", displayName: "Brand New Guest", phone: "06 12 34 56 78" },
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.contactName).toBe("Brand New Guest");
+
+    const saved = await repository.findByCommandId("cmd-new-contact");
+    expect(saved?.getContactPhoneSnapshot()).toBe("06 12 34 56 78");
+    // The new Contact is now findable by its resolved id.
+    const contactId = saved?.getContactId();
+    expect(contactId).toBeDefined();
+    expect(await contactRepository.findById(contactId as string)).not.toBeNull();
+  });
+
+  // CAP-D05.01-R01 — Name + Phone-only, Name + Email-only, and no contact method
+  it("rejects CreateNewContact with a name but no phone and no email", async () => {
+    const result = await handler.handle(
+      validRequest({ commandId: "cmd-no-method", contactSelection: { type: "CreateNewContact", displayName: "No Method Guest" } })
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D05.01-R01")).toBe(true);
+    }
+    expect(await repository.findByCommandId("cmd-no-method")).toBeNull();
   });
 
   // CAP-D01.01-R06 — the Service Period must validate against date/time/party size

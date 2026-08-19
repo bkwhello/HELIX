@@ -53,6 +53,8 @@ export class PrismaReservationRepository implements ReservationRepository {
     servicePeriodId: string;
     contactId: string;
     contactName: string | null;
+    contactPhoneSnapshot: string | null;
+    contactEmailSnapshot: string | null;
     reservationDate: Date;
     partySize: number;
     sourceCategory: string;
@@ -72,6 +74,8 @@ export class PrismaReservationRepository implements ReservationRepository {
       servicePeriodId: row.servicePeriodId,
       contactId: row.contactId,
       contactName: row.contactName ?? undefined,
+      contactPhoneSnapshot: row.contactPhoneSnapshot ?? undefined,
+      contactEmailSnapshot: row.contactEmailSnapshot ?? undefined,
       reservationDate: row.reservationDate,
       partySize: row.partySize,
       source: {
@@ -128,6 +132,8 @@ export class PrismaReservationRepository implements ReservationRepository {
               servicePeriodId: aggregate.getServicePeriodId(),
               contactId: aggregate.getContactId(),
               contactName: aggregate.getContactName(),
+              contactPhoneSnapshot: aggregate.getContactPhoneSnapshot(),
+              contactEmailSnapshot: aggregate.getContactEmailSnapshot(),
               status: aggregate.getStatus(),
               reservationDate: aggregate.getReservationDateTime(),
               partySize: aggregate.getPartySize(),
@@ -155,6 +161,8 @@ export class PrismaReservationRepository implements ReservationRepository {
               partySize: aggregate.getPartySize(),
               contactId: aggregate.getContactId(),
               contactName: aggregate.getContactName(),
+              contactPhoneSnapshot: aggregate.getContactPhoneSnapshot(),
+              contactEmailSnapshot: aggregate.getContactEmailSnapshot(),
               sourceCategory: aggregate.getSource().category,
               externalReference: aggregate.getSource().externalReference,
               importedBy: aggregate.getSource().importedBy,

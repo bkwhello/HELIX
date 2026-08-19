@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import { buildHarness, resetDatabase } from "./support/testHarness.js";
+import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
 import { Actor, ActorKind } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 
@@ -33,6 +33,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await resetDatabase(prisma);
+  await seedTestContact(prisma);
 });
 
 describe("PostgreSQL timestamptz round-trip across DST transitions", () => {
@@ -83,7 +84,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     const result = await orchestrator.createWithCapacity({
       commandId: cmd(),
       servicePeriodId: "sp-dinner",
-      contactId: "contact-1",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
       reservationDate: new Date("2026-03-29T16:00:00Z"),
       partySize: 2,
       source: { category: ReservationSourceCategory.Telephone },
@@ -99,7 +100,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     const result = await orchestrator.createWithCapacity({
       commandId: cmd(),
       servicePeriodId: "sp-dinner",
-      contactId: "contact-1",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
       reservationDate: new Date("2026-03-29T18:00:00Z"),
       partySize: 2,
       source: { category: ReservationSourceCategory.Telephone },
@@ -120,7 +121,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     const result = await orchestrator.createWithCapacity({
       commandId: cmd(),
       servicePeriodId: "sp-dinner",
-      contactId: "contact-1",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
       reservationDate: new Date("2026-10-25T17:00:00Z"),
       partySize: 2,
       source: { category: ReservationSourceCategory.Telephone },
@@ -136,7 +137,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     const result = await orchestrator.createWithCapacity({
       commandId: cmd(),
       servicePeriodId: "sp-dinner",
-      contactId: "contact-1",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
       reservationDate: new Date("2026-10-25T18:00:00Z"),
       partySize: 2,
       source: { category: ReservationSourceCategory.Telephone },
@@ -161,7 +162,7 @@ describe("Local-date grouping near midnight, real PostgreSQL — UTC calendar da
     const result = await orchestrator.createWithCapacity({
       commandId: cmd(),
       servicePeriodId: "sp-dinner",
-      contactId: "contact-1",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
       reservationDate: new Date("2026-03-28T23:15:00Z"),
       partySize: 2,
       source: { category: ReservationSourceCategory.Telephone },

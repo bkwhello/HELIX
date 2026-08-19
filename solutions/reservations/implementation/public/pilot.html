@@ -270,6 +270,8 @@
   .arrival-Expected { background: var(--status-grey-bg); color: var(--status-grey-text); }
   .edit-banner { display: none; margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 6px; background: var(--warn-bg); color: var(--warn-text); font-size: 0.9rem; }
   .edit-banner.active { display: block; }
+  .hint { font-size: 0.85rem; color: var(--warn-text); padding-top: 0.4rem; }
+  .link-button { background: none; border: none; padding: 0; color: var(--warn-text); text-decoration: underline; cursor: pointer; font-size: 0.85rem; text-align: left; }
   .occupancy-row { font-size: 0.9rem; }
   .occupancy-row td { padding: 0.4rem 0.3rem; }
   .occupancy-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
@@ -363,6 +365,17 @@
         <div>
           <label for="guest-phone">Telefoon</label>
           <input id="guest-phone" type="tel" required placeholder="06-12345678" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="guest-email">E-mail (optioneel)</label>
+          <input id="guest-email" type="email" placeholder="bijv. jan@voorbeeld.nl" />
+        </div>
+        <div>
+          <!-- CAP-D05.01 §12/§13 — non-blocking possible-match hint, populated after phone/email is entered. Staff explicitly chooses reuse vs new; nothing here is automatic. -->
+          <label>&nbsp;</label>
+          <div id="contact-match-hint" class="hint"></div>
         </div>
       </div>
 
@@ -585,6 +598,51 @@
   // recalls the whole reservation into this same form and re-registers it
   // via PATCH — one flow for any data-entry mistake, not many.
   let editingReservationId = null;
+  // CAP-D05.01 §13 — staff's explicit choice: null means "create a new
+  // Contact" (the default); set only by clicking a possible-match hint
+  // below. Never inferred automatically from matching phone/email alone.
+  let selectedExistingContactId = null;
+  const contactMatchHint = document.getElementById("contact-match-hint");
+
+  function clearContactMatchHint() {
+    selectedExistingContactId = null;
+    contactMatchHint.textContent = "";
+  }
+
+  async function checkPossibleContactMatches() {
+    clearContactMatchHint();
+    const phone = document.getElementById("guest-phone").value.trim();
+    const email = document.getElementById("guest-email").value.trim();
+    if (!phone && !email) return;
+    const params = new URLSearchParams();
+    if (phone) params.set("phone", phone);
+    if (email) params.set("email", email);
+    try {
+      const res = await fetch(`/contacts/possible-matches?${params.toString()}`, { headers: actorHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const matches = data.possibleMatches || [];
+      if (matches.length === 0) return;
+      // Non-blocking hint only — reuse happens ONLY if staff clicks it.
+      contactMatchHint.innerHTML = matches
+        .map(
+          (m) =>
+            `<button type="button" class="link-button" data-contact-id="${escapeHtml(m.id)}">Mogelijk dezelfde gast: ${escapeHtml(m.displayName)} (${escapeHtml(m.phone || m.email || "")}) — hergebruiken?</button>`
+        )
+        .join("<br/>");
+      contactMatchHint.querySelectorAll("button[data-contact-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedExistingContactId = btn.getAttribute("data-contact-id");
+          contactMatchHint.textContent = "Bestaand contact geselecteerd.";
+        });
+      });
+    } catch (err) {
+      // Best-effort only — never blocks reservation creation.
+    }
+  }
+  document.getElementById("guest-phone").addEventListener("blur", checkPossibleContactMatches);
+  document.getElementById("guest-email").addEventListener("blur", checkPossibleContactMatches);
+  document.getElementById("guest-name").addEventListener("input", () => clearContactMatchHint());
 
   function enterEditMode(r) {
     editingReservationId = r.id;
@@ -615,6 +673,7 @@
     cancelEditButton.style.display = "none";
     editBanner.className = "edit-banner";
     clearMessage(createMessage);
+    clearContactMatchHint();
   }
 
   cancelEditButton.addEventListener("click", exitEditMode);
@@ -679,11 +738,21 @@
         return;
       }
 
+      // CAP-D05.01 §13 — explicit, never inferred: reuse only if staff
+      // clicked a possible-match hint; otherwise always create a new Contact.
+      const contactSelection = selectedExistingContactId
+        ? { type: "ExistingContact", contactId: selectedExistingContactId }
+        : {
+            type: "CreateNewContact",
+            displayName: document.getElementById("guest-name").value.trim(),
+            phone: document.getElementById("guest-phone").value.trim() || undefined,
+            email: document.getElementById("guest-email").value.trim() || undefined,
+          };
+
       const body = {
         commandId: `pilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         servicePeriodId,
-        contactId: document.getElementById("guest-phone").value.trim(),
-        contactName: document.getElementById("guest-name").value.trim(),
+        contactSelection,
         reservationDate: new Date(datetimeValue).toISOString(),
         partySize: Number(document.getElementById("party-size").value),
         source: { category: document.getElementById("source").value },
@@ -709,8 +778,10 @@
       }
       document.getElementById("guest-name").value = "";
       document.getElementById("guest-phone").value = "";
+      document.getElementById("guest-email").value = "";
       document.getElementById("preferred-area").value = "";
       document.getElementById("notes").value = "";
+      clearContactMatchHint();
       await loadList();
       await loadOccupancy();
     } catch (err) {

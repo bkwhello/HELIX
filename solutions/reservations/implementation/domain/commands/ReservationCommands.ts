@@ -22,6 +22,9 @@ export interface CreateReservationCommand extends CommandEnvelope {
   readonly contactId: string;
   /** CAP-D01.01-R07: "Additional guest or contact information may exist" alongside the primary contact identity. Not required by R08 — the pilot UI enforces it operationally, not the domain. */
   readonly contactName?: string;
+  /** CAP-D05.01 — reservation-time contact snapshots (assignment §7/§8). Captured from the resolved Contact at booking time; later Contact edits must not rewrite these. */
+  readonly contactPhoneSnapshot?: string;
+  readonly contactEmailSnapshot?: string;
   readonly reservationDate: Date;
   readonly partySize: number;
   readonly source: ReservationSourceProps;
@@ -44,6 +47,9 @@ export interface ModifyReservationCommand extends CommandEnvelope {
     readonly contactId?: string;
     /** CAP-D01.01-R07: a mis-noted guest name is exactly the kind of correction staff need to make. */
     readonly contactName?: string;
+    /** CAP-D05.01 — the same kind of staff correction as contactName, applied to this reservation's own snapshot only. Does not re-validate against or write back to the Contact record — see rule-model.md CAP-D05.01-R04. */
+    readonly contactPhoneSnapshot?: string;
+    readonly contactEmailSnapshot?: string;
     /** CAP-D01.01-R12: e.g. staff logged it as Telephone but it was actually a Google booking. */
     readonly source?: ReservationSourceProps;
     /** CAP-D01.01-R20: a revalidated Service Period for a date/time change, or a standalone correction. */

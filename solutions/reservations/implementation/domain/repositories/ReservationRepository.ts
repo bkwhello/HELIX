@@ -19,9 +19,9 @@ export type SaveResult =
  * Port (interface). No implementation lives in domain/ — infrastructure/
  * provides the adapter (e.g. a Postgres-backed implementation).
  *
- * Aggregate persistence only. Duplicate detection, contact existence, and
+ * Aggregate persistence only. Duplicate detection, contact resolution, and
  * Service Period validation are separate ports (DuplicateReservationChecker,
- * ContactReader, ServicePeriodReader) — they are cross-capability queries,
+ * ContactRepository, ServicePeriodReader) — they are cross-capability queries,
  * not concerns of the Reservation aggregate's own repository.
  */
 export interface ReservationRepository {

@@ -25,10 +25,25 @@ datasource db {
 model Reservation {
   id                 String   @id
   servicePeriodId    String
+  // CAP-D05.01 — Reservation Contact Management. For a reservation
+  // created under this capability, this references a real Contact.id.
+  // Historical rows created before CAP-D05.01 existed may hold a legacy,
+  // unvalidated value (e.g. a raw phone number) — see
+  // R1_3_I1_CAP_D05_01_IMPLEMENTATION_REPORT.md §10 "Legacy contactId
+  // Compatibility". Deliberately NOT a foreign key: enforcing one would
+  // require backfilling or rejecting every pre-existing row, which this
+  // slice explicitly does not attempt.
   contactId          String
-  // CAP-D01.01-R07: "Additional guest or contact information may exist"
-  // alongside the primary contact identity (contactId).
+  // CAP-D01.01-R07 / CAP-D05.01 — reservation-time NAME snapshot. Already
+  // had snapshot semantics before CAP-D05.01 (never re-validated against
+  // the Contact on modify); evolved in place rather than duplicated.
   contactName        String?
+  // CAP-D05.01 — reservation-time PHONE/EMAIL snapshots, captured from the
+  // Contact at booking time. Updating the Contact later must not rewrite
+  // these — see domain-model.md's existing "Reservation Contact" concept
+  // and rule-model.md CAP-D05.01-R04.
+  contactPhoneSnapshot String?
+  contactEmailSnapshot String?
   status             String
   reservationDate    DateTime @db.Timestamptz
   partySize          Int
@@ -154,6 +169,67 @@ model CapacityCommitment {
   @@index([capacityPoolId, startTime, endTime])
   @@index([reservationId])
   @@index([commandId])
+}
+
+// CAP-D05.01 — Reservation Contact Management (R1.3-I1). Replaces the
+// UnvalidatedContactReader placeholder: a Reservation now references a
+// real, validated Contact record instead of an arbitrary string (in the
+// pilot, previously the guest's raw typed phone number).
+//
+// Deliberately minimal — this is NOT a guest CRM (CAP-D05.03 Guest
+// Preference Management and CAP-D05.04 Guest Profile Reference remain
+// Deferred). No VIP/spend/visit-history columns; no merge machinery.
+//
+// id is an internal HELIX-generated identity (CAP-D05.01-R02) — never
+// derived from phone/email/name, and never a Guestplan or other external
+// identifier (see the R1.3 architecture investigation §23 on the
+// CAP-D05.04 / CAP-D07.03 registry overlap — external references are
+// deliberately out of scope here).
+//
+// phone/email are both optional at the column level; CAP-D05.01-R01
+// (name + at least one of phone/email) is enforced in
+// domain/rules/ContactRules.ts, not by a database CHECK constraint —
+// consistent with how this codebase enforces cross-field rules elsewhere
+// (see CapacityCommitment's comment on why some invariants ARE
+// hand-written CHECK constraints: this one does not need that treatment
+// because it is not defending against a bypass of the aggregate/handler
+// layer the way concurrency-critical capacity invariants are).
+//
+// No uniqueness constraint on phoneNormalized/emailNormalized — see
+// rule-model.md CAP-D05.01-R03: a shared phone/email is a POSSIBLE
+// MATCH signal for staff, never proof of identity, so this schema must
+// not silently treat two guests sharing a phone as an error.
+model Contact {
+  id                   String    @id @default(cuid())
+  displayName          String    @map("display_name")
+  phoneRaw             String?   @map("phone_raw")
+  // Bounded NL/international normalizer — see
+  // domain/value-objects/PhoneNumber.ts. Not a maintained third-party
+  // parsing library: no evidence in this repository of a guest base
+  // broad enough to justify one yet (R1.3 architecture investigation §13).
+  phoneNormalized      String?   @map("phone_normalized")
+  emailRaw             String?   @map("email_raw")
+  emailNormalized      String?   @map("email_normalized")
+  // Active | Anonymized — see domain/value-objects/ContactStatus.ts.
+  // Anonymized, never deleted: a Reservation may still reference this id
+  // (CAP-D05.01-R? / INV-G06 in the architecture investigation) and must
+  // not be left with a dangling reference.
+  status               String    @default("Active")
+  createdBy            String    @map("created_by")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  // Retention anchor for the owner-confirmed 5-year PII policy (R1.3-I1
+  // assignment §"Retention anchor"). Updated when this Contact
+  // participates in a new reservation or is explicitly edited.
+  // AUTOMATED retention execution is explicitly deferred for this slice —
+  // see R1_3_I1_CAP_D05_01_IMPLEMENTATION_REPORT.md. This column exists
+  // so a later, separate piece of work has enough information to
+  // determine retention eligibility without redesigning this table.
+  lastRelevantActivityAt DateTime @map("last_relevant_activity_at") @db.Timestamptz
+
+  @@map("contacts")
+  @@index([phoneNormalized])
+  @@index([emailNormalized])
 }
 
 // R1.2 — Identity & Access. Real staff identity, replacing the

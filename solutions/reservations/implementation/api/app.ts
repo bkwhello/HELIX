@@ -10,7 +10,10 @@ import { ModifyReservationHandler } from "../application/command-handlers/Modify
 import { ConfirmReservationHandler } from "../application/command-handlers/ConfirmReservationHandler.js";
 import { CancelReservationHandler } from "../application/command-handlers/CancelReservationHandler.js";
 import { CompleteReservationHandler } from "../application/command-handlers/CompleteReservationHandler.js";
-import { ContactReader } from "../application/ports/ContactReader.js";
+import { ContactRepository, ContactRecord } from "../application/ports/ContactRepository.js";
+import { CreateContactHandler } from "../application/command-handlers/CreateContactHandler.js";
+import { normalizePhone } from "../domain/value-objects/PhoneNumber.js";
+import { normalizeEmail } from "../domain/value-objects/EmailAddress.js";
 import { ServicePeriodReader } from "../application/ports/ServicePeriodReader.js";
 import { DuplicateReservationChecker } from "../application/ports/DuplicateReservationChecker.js";
 import { ClosingDayStore } from "../application/ports/ClosingDayStore.js";
@@ -49,12 +52,22 @@ export const DEFAULT_SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000;
 export interface AppDependencies {
   repository: ReservationRepository;
   duplicateChecker: DuplicateReservationChecker;
-  contactReader: ContactReader;
+  /** CAP-D05.01 — Reservation Contact Management. Replaces the old ContactReader placeholder boundary; see infrastructure/persistence/PrismaContactRepository.ts. */
+  contactRepository: ContactRepository;
   servicePeriodReader: ServicePeriodReader;
   closingDayStore: ClosingDayStore;
   idGenerator: IdGenerator;
   eventIdGenerator: EventIdGenerator;
   clock: Clock;
+  /**
+   * CAP-D05.01 — required unconditionally (unlike `capacity.transactionManager`
+   * below, which only governs the optional CAP-D02.03 routes): creating a
+   * NEW Contact as part of a plain (non-capacity-aware) reservation create
+   * must be atomic with the reservation write even when `capacity` is not
+   * supplied at all — see CreateReservationHandler and the R1.3-I1 report,
+   * "Transaction Boundary".
+   */
+  transactionManager: TransactionManager;
   /**
    * CAP-D02.03 — optional so tests that don't need capacity-aware
    * routes at all can omit it. When omitted, the /availability/* routes
@@ -125,15 +138,21 @@ export function createApp(deps: AppDependencies): Express {
     res.redirect("/pilot.html");
   });
 
+  // CAP-D05.01 — the bounded Contact creation operation, composed into
+  // CreateReservationHandler (mirroring how AvailabilityOrchestrator
+  // composes CreateReservationHandler itself).
+  const createContactHandler = new CreateContactHandler(deps.contactRepository, deps.idGenerator, deps.clock);
   const createHandler = new CreateReservationHandler(
     deps.repository,
     deps.duplicateChecker,
-    deps.contactReader,
+    deps.contactRepository,
+    createContactHandler,
     deps.servicePeriodReader,
     deps.closingDayStore,
     deps.idGenerator,
     deps.eventIdGenerator,
-    deps.clock
+    deps.clock,
+    deps.transactionManager
   );
   const modifyHandler = new ModifyReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const confirmHandler = new ConfirmReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
@@ -196,6 +215,40 @@ export function createApp(deps: AppDependencies): Express {
       return null;
     }
     return { present: true, value: value as PreferredArea };
+  }
+
+  /**
+   * CAP-D05.01 — parses the request body's `contactSelection` into the
+   * discriminated union CreateReservationHandler expects (assignment
+   * §13 "Explicit Reuse vs Explicit New"). Returns null (after writing a
+   * 400) for any shape that is not unambiguously one or the other — this
+   * boundary must never guess.
+   */
+  function parseContactSelection(
+    value: unknown,
+    res: Response
+  ): { readonly type: "ExistingContact"; readonly contactId: string } | { readonly type: "CreateNewContact"; readonly displayName: string; readonly phone?: string; readonly email?: string } | null {
+    if (!value || typeof value !== "object") {
+      res.status(400).json({ message: "contactSelection is required and must be an object." });
+      return null;
+    }
+    const selection = value as { type?: string; contactId?: string; displayName?: string; phone?: string; email?: string };
+    if (selection.type === "ExistingContact") {
+      if (!selection.contactId) {
+        res.status(400).json({ message: "contactSelection of type ExistingContact requires contactId." });
+        return null;
+      }
+      return { type: "ExistingContact", contactId: selection.contactId };
+    }
+    if (selection.type === "CreateNewContact") {
+      if (!selection.displayName) {
+        res.status(400).json({ message: "contactSelection of type CreateNewContact requires displayName." });
+        return null;
+      }
+      return { type: "CreateNewContact", displayName: selection.displayName, phone: selection.phone, email: selection.email };
+    }
+    res.status(400).json({ message: `Unknown contactSelection.type: "${String(selection.type)}". Expected "ExistingContact" or "CreateNewContact".` });
+    return null;
   }
 
   app.get("/health", (_req: Request, res: Response) => {
@@ -295,8 +348,7 @@ export function createApp(deps: AppDependencies): Express {
       correlationId?: string;
       causationId?: string;
       servicePeriodId: string;
-      contactId: string;
-      contactName?: string;
+      contactSelection: unknown;
       reservationDate: string;
       partySize: number;
       source: { category: string; externalReference?: string; importedBy?: string };
@@ -314,14 +366,15 @@ export function createApp(deps: AppDependencies): Express {
 
     const preferredArea = parsePreferredArea(body.preferredArea, res);
     if (!preferredArea) return;
+    const contactSelection = parseContactSelection(body.contactSelection, res);
+    if (!contactSelection) return;
 
     const result = await createHandler.handle({
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
       servicePeriodId: body.servicePeriodId,
-      contactId: body.contactId,
-      contactName: body.contactName,
+      contactSelection,
       reservationDate: new Date(body.reservationDate),
       partySize: body.partySize,
       source: body.source as never,
@@ -381,6 +434,8 @@ export function createApp(deps: AppDependencies): Express {
         partySize?: number;
         contactId?: string;
         contactName?: string;
+        contactPhoneSnapshot?: string;
+        contactEmailSnapshot?: string;
         source?: { category: string; externalReference?: string; importedBy?: string };
         servicePeriodId?: string;
         tableAssignment?: string;
@@ -410,6 +465,8 @@ export function createApp(deps: AppDependencies): Express {
         partySize: body.changes?.partySize,
         contactId: body.changes?.contactId,
         contactName: body.changes?.contactName,
+        contactPhoneSnapshot: body.changes?.contactPhoneSnapshot,
+        contactEmailSnapshot: body.changes?.contactEmailSnapshot,
         source: body.changes?.source as never,
         servicePeriodId: body.changes?.servicePeriodId,
         tableAssignment: body.changes?.tableAssignment,
@@ -519,8 +576,7 @@ export function createApp(deps: AppDependencies): Express {
         correlationId?: string;
         causationId?: string;
         servicePeriodId: string;
-        contactId: string;
-        contactName?: string;
+        contactSelection: unknown;
         reservationDate: string;
         partySize: number;
         source: { category: string; externalReference?: string; importedBy?: string };
@@ -535,14 +591,15 @@ export function createApp(deps: AppDependencies): Express {
         res.status(422).json({ message: `preferredArea must be one of the capacity-managed areas for a capacity-aware create. Received: ${String(body.preferredArea)}.` });
         return;
       }
+      const contactSelection = parseContactSelection(body.contactSelection, res);
+      if (!contactSelection) return;
 
       const result = await availabilityOrchestrator.createWithCapacity({
         commandId: body.commandId,
         correlationId: body.correlationId,
         causationId: body.causationId,
         servicePeriodId: body.servicePeriodId,
-        contactId: body.contactId,
-        contactName: body.contactName,
+        contactSelection,
         reservationDate: new Date(body.reservationDate),
         partySize: body.partySize,
         source: body.source as never,
@@ -737,6 +794,26 @@ export function createApp(deps: AppDependencies): Express {
     res.status(200).json({ capacity: TEPPANYAKI_CAPACITY, days: rows });
   });
 
+  // CAP-D05.01 — possible-match discovery (assignment §12). Read-only,
+  // non-blocking: returns every Active Contact with an exact normalized
+  // phone or email match, for staff to review BEFORE explicitly choosing
+  // ExistingContact or CreateNewContact (assignment §13) — this route
+  // never creates, reuses, or merges anything itself.
+  app.get("/contacts/possible-matches", requireStaffSession, async (req: Request, res: Response) => {
+    const phoneParam = req.query["phone"];
+    const emailParam = req.query["email"];
+    const phoneNormalized = typeof phoneParam === "string" && phoneParam.length > 0 ? normalizePhone(phoneParam) : undefined;
+    const emailNormalized = typeof emailParam === "string" && emailParam.length > 0 ? normalizeEmail(emailParam) : undefined;
+    if (!phoneNormalized && !emailNormalized) {
+      res.status(200).json({ possibleMatches: [] });
+      return;
+    }
+    const matches = await deps.contactRepository.findPossibleMatches({ phoneNormalized, emailNormalized });
+    res.status(200).json({
+      possibleMatches: matches.map((c: ContactRecord) => ({ id: c.id, displayName: c.displayName, phone: c.phoneRaw, email: c.emailRaw })),
+    });
+  });
+
   // Express 5 forwards a rejected promise from any async handler above to
   // this error middleware automatically. Anything reaching here is an
   // infrastructure fault, not an expected domain rejection (those already
@@ -758,6 +835,8 @@ function serializeReservation(aggregate: {
   getServicePeriodId(): string;
   getContactId(): string;
   getContactName(): string | undefined;
+  getContactPhoneSnapshot(): string | undefined;
+  getContactEmailSnapshot(): string | undefined;
   getPartySize(): number;
   getReservationDateTime(): Date;
   getSource(): { category: string };
@@ -772,6 +851,8 @@ function serializeReservation(aggregate: {
     servicePeriodId: aggregate.getServicePeriodId(),
     contactId: aggregate.getContactId(),
     contactName: aggregate.getContactName(),
+    contactPhoneSnapshot: aggregate.getContactPhoneSnapshot(),
+    contactEmailSnapshot: aggregate.getContactEmailSnapshot(),
     partySize: aggregate.getPartySize(),
     reservationDate: aggregate.getReservationDateTime().toISOString(),
     sourceCategory: aggregate.getSource().category,

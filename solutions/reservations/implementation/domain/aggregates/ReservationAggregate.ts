@@ -43,6 +43,9 @@ export class ReservationAggregate {
     private contactId: string,
     /** CAP-D01.01-R07: mutable — a mis-noted name is exactly the kind of correction staff need to make. */
     private contactName: string | undefined,
+    /** CAP-D05.01 — reservation-time contact snapshots (assignment §7/§8/§9). Mutable for the same staff-correction reason as contactName; NOT re-derived from the Contact record after creation, so a later Contact edit never silently rewrites these — see rule-model.md CAP-D05.01-R04. */
+    private contactPhoneSnapshot: string | undefined,
+    private contactEmailSnapshot: string | undefined,
     private dateTime: ReservationDateTime,
     private partySize: PartySize,
     /** CAP-D01.01-R12: mutable — e.g. staff logged it as Telephone but it was actually a Google booking. */
@@ -76,6 +79,8 @@ export class ReservationAggregate {
     servicePeriodId: string;
     contactId: string;
     contactName?: string;
+    contactPhoneSnapshot?: string;
+    contactEmailSnapshot?: string;
     reservationDate: Date;
     partySize: number;
     source: import("../value-objects/ReservationSource.js").ReservationSourceProps;
@@ -102,6 +107,8 @@ export class ReservationAggregate {
       props.servicePeriodId,
       props.contactId,
       props.contactName,
+      props.contactPhoneSnapshot,
+      props.contactEmailSnapshot,
       dateTime.value,
       partySize.value,
       source.value,
@@ -181,6 +188,8 @@ export class ReservationAggregate {
       cmd.servicePeriodId,
       cmd.contactId,
       cmd.contactName,
+      cmd.contactPhoneSnapshot,
+      cmd.contactEmailSnapshot,
       dateTime,
       partySize,
       source,
@@ -210,6 +219,8 @@ export class ReservationAggregate {
       servicePeriodId: cmd.servicePeriodId,
       contactId: cmd.contactId,
       contactName: cmd.contactName,
+      contactPhoneSnapshot: cmd.contactPhoneSnapshot,
+      contactEmailSnapshot: cmd.contactEmailSnapshot,
       reservationDate: dateTime.toDate(),
       partySize: partySize.toNumber(),
       reservationSource: source.category,
@@ -298,6 +309,16 @@ export class ReservationAggregate {
       resultingValues["contactName"] = cmd.changes.contactName;
     }
 
+    if (cmd.changes.contactPhoneSnapshot !== undefined) {
+      previousValues["contactPhoneSnapshot"] = this.contactPhoneSnapshot;
+      resultingValues["contactPhoneSnapshot"] = cmd.changes.contactPhoneSnapshot;
+    }
+
+    if (cmd.changes.contactEmailSnapshot !== undefined) {
+      previousValues["contactEmailSnapshot"] = this.contactEmailSnapshot;
+      resultingValues["contactEmailSnapshot"] = cmd.changes.contactEmailSnapshot;
+    }
+
     if (cmd.changes.source !== undefined) {
       const sourceResult = ReservationSource.create(cmd.changes.source);
       if (!sourceResult.ok) {
@@ -348,6 +369,12 @@ export class ReservationAggregate {
     }
     if (cmd.changes.contactName !== undefined) {
       this.contactName = cmd.changes.contactName;
+    }
+    if (cmd.changes.contactPhoneSnapshot !== undefined) {
+      this.contactPhoneSnapshot = cmd.changes.contactPhoneSnapshot;
+    }
+    if (cmd.changes.contactEmailSnapshot !== undefined) {
+      this.contactEmailSnapshot = cmd.changes.contactEmailSnapshot;
     }
     if (cmd.changes.source !== undefined) {
       const r = ReservationSource.create(cmd.changes.source);
@@ -486,6 +513,14 @@ export class ReservationAggregate {
 
   getContactName(): string | undefined {
     return this.contactName;
+  }
+
+  getContactPhoneSnapshot(): string | undefined {
+    return this.contactPhoneSnapshot;
+  }
+
+  getContactEmailSnapshot(): string | undefined {
+    return this.contactEmailSnapshot;
   }
 
   getPreferredArea(): PreferredArea | undefined {

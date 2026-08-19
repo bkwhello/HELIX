@@ -7,6 +7,8 @@ interface StoredReservation {
   servicePeriodId: string;
   contactId: string;
   contactName: ReturnType<ReservationAggregate["getContactName"]>;
+  contactPhoneSnapshot: ReturnType<ReservationAggregate["getContactPhoneSnapshot"]>;
+  contactEmailSnapshot: ReturnType<ReservationAggregate["getContactEmailSnapshot"]>;
   reservationDate: Date;
   partySize: number;
   source: ReturnType<ReservationAggregate["getSource"]>;
@@ -66,6 +68,8 @@ export class InMemoryReservationRepository implements ReservationRepository {
       servicePeriodId: row.servicePeriodId,
       contactId: row.contactId,
       contactName: row.contactName,
+      contactPhoneSnapshot: row.contactPhoneSnapshot,
+      contactEmailSnapshot: row.contactEmailSnapshot,
       reservationDate: row.reservationDate,
       partySize: row.partySize,
       source: row.source,
@@ -119,6 +123,8 @@ export class InMemoryReservationRepository implements ReservationRepository {
       // arrivedAt are meant to change via modify() after creation — always
       // take the aggregate's current value, never fall back to the stored one.
       contactName: aggregate.getContactName(),
+      contactPhoneSnapshot: aggregate.getContactPhoneSnapshot(),
+      contactEmailSnapshot: aggregate.getContactEmailSnapshot(),
       source: aggregate.getSource(),
       preferredArea: aggregate.getPreferredArea(),
       notes: aggregate.getNotes(),

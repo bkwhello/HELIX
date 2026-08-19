@@ -1,7 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { buildHarness, resetDatabase } from "./support/testHarness.js";
-import { ContactReader } from "../../application/ports/ContactReader.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
@@ -18,10 +17,11 @@ const prisma = new PrismaClient();
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z");
 
-class AlwaysFailsContactReader implements ContactReader {
-  async exists(): Promise<boolean> {
-    return false;
-  }
+/** A real, valid CAP-D05.01 Contact these tests can reference by id — capacity failure injection is what's under test here, not contact behavior. */
+async function seedContact(id: string): Promise<void> {
+  await prisma.contact.create({
+    data: { id, displayName: "Failure Injection Guest", phoneRaw: "0600000000", phoneNormalized: "+31600000000", createdBy: "staff-1", lastRelevantActivityAt: NOW },
+  });
 }
 
 beforeAll(async () => {
@@ -32,6 +32,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await resetDatabase(prisma);
+  await seedContact("contact-1");
 });
 
 describe("Failure injection — fail AFTER capacity mutation, BEFORE reservation persistence", () => {
@@ -41,13 +42,12 @@ describe("Failure injection — fail AFTER capacity mutation, BEFORE reservation
     // that method's ordering) — CreateReservationHandler's own contact
     // check (step 4) runs after that and, forced to fail here, throws
     // OrchestratedValidationFailure from inside the same transaction.
-    const failingContactReader = new AlwaysFailsContactReader();
-    const { orchestrator } = buildHarness(prisma, NOW, { contactReader: failingContactReader });
+    const { orchestrator } = buildHarness(prisma, NOW);
 
     const result = await orchestrator.createWithCapacity({
       commandId: "fail-injection-cmd-1",
       servicePeriodId: "sp-dinner",
-      contactId: "nonexistent-contact",
+      contactSelection: { type: "ExistingContact", contactId: "nonexistent-contact" },
       reservationDate: new Date("2026-08-20T18:00:00Z"),
       partySize: 6,
       source: { category: ReservationSourceCategory.Telephone },
@@ -122,7 +122,7 @@ describe("Failure injection — fail AFTER reservation mutation, BEFORE the idem
         orchestrator.createWithCapacity({
           commandId: "fail-injection-cmd-2",
           servicePeriodId: "sp-dinner",
-          contactId: "contact-1",
+          contactSelection: { type: "ExistingContact", contactId: "contact-1" },
           reservationDate: new Date("2026-08-20T18:00:00Z"),
           partySize: 6,
           source: { category: ReservationSourceCategory.Telephone },
@@ -159,7 +159,7 @@ async function seedModifiableReservation(prismaClient: PrismaClient, now: Date):
   const request: CreateReservationRequest = {
     commandId: `mm-fi-seed-${Math.random().toString(36).slice(2)}`,
     servicePeriodId: "sp-dinner",
-    contactId: "contact-1",
+    contactSelection: { type: "ExistingContact", contactId: "contact-1" },
     reservationDate: new Date("2026-08-20T18:00:00Z"),
     partySize: 4,
     source: { category: ReservationSourceCategory.Telephone },

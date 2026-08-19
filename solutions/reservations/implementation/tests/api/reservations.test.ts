@@ -12,7 +12,8 @@ import { PrismaSessionRepository } from "../../infrastructure/persistence/Prisma
 import { PrismaLoginAttemptTracker } from "../../infrastructure/persistence/PrismaLoginAttemptTracker.js";
 import { ScryptPasswordHasher } from "../../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionTokenGenerator.js";
-import { UnvalidatedContactReader } from "../../infrastructure/UnvalidatedContactReader.js";
+import { PrismaContactRepository } from "../../infrastructure/persistence/PrismaContactRepository.js";
+import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
@@ -74,7 +75,8 @@ function buildApp() {
   const app = createApp({
     repository,
     duplicateChecker,
-    contactReader: new UnvalidatedContactReader(),
+    contactRepository: new PrismaContactRepository(prisma),
+    transactionManager: new PrismaTransactionManager(prisma),
     servicePeriodReader: new UnvalidatedServicePeriodReader(),
     closingDayStore,
     idGenerator: new SequentialIdGenerator(),
@@ -97,7 +99,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
   return {
     commandId: "http-cmd-1",
     servicePeriodId: "sp-1",
-    contactId: "contact-1",
+    contactSelection: { type: "ExistingContact", contactId: "contact-1" },
     reservationDate: FUTURE_DATE.toISOString(),
     partySize: 2,
     source: { category: "Telephone" },
@@ -150,6 +152,11 @@ beforeEach(async () => {
   // Reservation-domain tables only — staff_users/staff_sessions are
   // deliberately NOT reset per-test, so sharedAgent's session stays valid.
   await resetDatabase(prisma);
+  // CAP-D05.01 — validBody() references this Contact by id; resetDatabase
+  // truncates the contacts table too, so it must be re-seeded every test.
+  await prisma.contact.create({
+    data: { id: "contact-1", displayName: "HTTP Test Guest", phoneRaw: "0611111111", phoneNormalized: "+31611111111", createdBy: "staff-owner-test", lastRelevantActivityAt: NOW },
+  });
 });
 
 describe("GET /health", () => {
@@ -212,10 +219,19 @@ describe("POST /reservations", () => {
   });
 
   it("rejects a request missing required information with 422", async () => {
-    const res = await post(sharedAgent, "/reservations").send(validBody({ contactId: "" }));
+    const res = await post(sharedAgent, "/reservations").send(validBody({ servicePeriodId: "" }));
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R08")).toBe(true);
+  });
+
+  // CAP-D05.01 — contactSelection shape is validated at the API boundary,
+  // the same way preferredArea already is (see parsePreferredArea) —
+  // a structurally missing/invalid contact selection is a 400, not a 422.
+  it("rejects a request with no contactSelection at all with 400", async () => {
+    const res = await post(sharedAgent, "/reservations").send(validBody({ contactSelection: undefined }));
+
+    expect(res.status).toBe(400);
   });
 
   it("rejects a structurally invalid date with 422 (CAP-D01.01-R10)", async () => {
@@ -239,7 +255,11 @@ describe("POST /reservations", () => {
 
   it("accepts a guest name and a preferred area, returning both in the outcome", async () => {
     const res = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-area", contactName: "Jan Jansen", preferredArea: "Sushi" })
+      validBody({
+        commandId: "http-cmd-area",
+        contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000001" },
+        preferredArea: "Sushi",
+      })
     );
 
     expect(res.status).toBe(201);
@@ -423,7 +443,7 @@ describe("PATCH /reservations/:id — changing the preferred area after creation
 describe("PATCH /reservations/:id — correcting the guest name and source (CAP-D01.01-R07/R12)", () => {
   it("corrects a misspelled guest name", async () => {
     const created = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-name-edit", contactName: "Jan Jansen" })
+      validBody({ commandId: "http-cmd-name-edit", contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000002" } })
     );
 
     const patched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
@@ -467,7 +487,11 @@ describe("PATCH /reservations/:id — correcting the guest name and source (CAP-
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
   it("lists reservations for the requested date, including guest name and preferred area", async () => {
     const created = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-list", contactName: "Jan Jansen", preferredArea: "Teppanyaki" })
+      validBody({
+        commandId: "http-cmd-list",
+        contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000003" },
+        preferredArea: "Teppanyaki",
+      })
     );
     expect(created.status).toBe(201);
 

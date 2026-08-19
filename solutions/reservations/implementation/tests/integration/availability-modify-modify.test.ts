@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import { buildHarness, resetDatabase } from "./support/testHarness.js";
+import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
@@ -34,7 +34,7 @@ function baseCreateRequest(overrides: Partial<CreateReservationRequest> = {}): C
   return {
     commandId: cmd(),
     servicePeriodId: "sp-dinner",
-    contactId: "contact-1",
+    contactSelection: { type: "ExistingContact", contactId: "contact-1" },
     reservationDate: new Date("2026-08-20T18:00:00Z"),
     partySize: 4,
     source: { category: ReservationSourceCategory.Telephone },
@@ -66,6 +66,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await resetDatabase(prisma);
+  await seedTestContact(prisma);
 });
 
 describe("Modify vs Modify — Scenario A: same pool, time change vs time change", () => {
@@ -149,6 +150,7 @@ describe("Modify vs Modify — Scenario C: cross-pool Modify vs cross-pool Modif
   it("holds across 20 repeated iterations with zero flakes", async () => {
     for (let i = 0; i < 20; i += 1) {
       await resetDatabase(prisma);
+      await seedTestContact(prisma);
       const reservationId = await seedReservation({ commandId: `mm-c20-create-${i}` });
       const { orchestrator: orchA } = buildHarness(prisma, NOW);
       const { orchestrator: orchB } = buildHarness(prismaB, NOW);

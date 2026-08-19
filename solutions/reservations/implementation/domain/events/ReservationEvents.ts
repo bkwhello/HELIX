@@ -42,6 +42,9 @@ export interface ReservationCreated extends BaseEvent {
   readonly servicePeriodId: string;
   readonly contactId: string;
   readonly contactName?: string;
+  /** CAP-D05.01 — reservation-time contact snapshots, captured at creation. */
+  readonly contactPhoneSnapshot?: string;
+  readonly contactEmailSnapshot?: string;
   readonly reservationDate: Date;
   readonly partySize: number;
   readonly reservationSource: ReservationSourceCategory;

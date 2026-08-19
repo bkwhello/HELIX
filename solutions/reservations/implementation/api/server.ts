@@ -10,7 +10,7 @@ import { PrismaSessionRepository } from "../infrastructure/persistence/PrismaSes
 import { PrismaLoginAttemptTracker } from "../infrastructure/persistence/PrismaLoginAttemptTracker.js";
 import { ScryptPasswordHasher } from "../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../infrastructure/RandomSessionTokenGenerator.js";
-import { UnvalidatedContactReader } from "../infrastructure/UnvalidatedContactReader.js";
+import { PrismaContactRepository } from "../infrastructure/persistence/PrismaContactRepository.js";
 import { UnvalidatedServicePeriodReader } from "../infrastructure/UnvalidatedServicePeriodReader.js";
 import { SystemClock } from "../infrastructure/SystemClock.js";
 import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
@@ -26,14 +26,17 @@ const appOrigin = process.env["APP_ORIGIN"] ?? null;
 const app = createApp({
   repository: new PrismaReservationRepository(prisma),
   duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
-  // PLACEHOLDER adapters — see infrastructure/Unvalidated*.ts. Replace once
-  // Contact Management and Service Period Management exist as capabilities.
-  contactReader: new UnvalidatedContactReader(),
+  // CAP-D05.01 — real, PostgreSQL-backed Contact Management (R1.3-I1),
+  // replacing the old UnvalidatedContactReader placeholder.
+  contactRepository: new PrismaContactRepository(prisma),
+  // PLACEHOLDER adapter — see infrastructure/Unvalidated*.ts. Replace once
+  // Service Period Management exists as a capability.
   servicePeriodReader: new UnvalidatedServicePeriodReader(),
   closingDayStore: new PrismaClosingDayStore(prisma),
   idGenerator: new RandomIdGenerator(),
   eventIdGenerator: new RandomEventIdGenerator(),
   clock: new SystemClock(),
+  transactionManager: new PrismaTransactionManager(prisma),
   // CAP-D02.03 — mounts the /availability/* routes. Requires PostgreSQL
   // (pg_advisory_xact_lock, shared interactive transactions) — see
   // prisma/schema.prisma's header comment.

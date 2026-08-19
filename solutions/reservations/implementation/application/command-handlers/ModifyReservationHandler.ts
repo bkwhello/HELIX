@@ -19,6 +19,8 @@ export interface ModifyReservationRequest {
     readonly partySize?: number;
     readonly contactId?: string;
     readonly contactName?: string;
+    readonly contactPhoneSnapshot?: string;
+    readonly contactEmailSnapshot?: string;
     readonly source?: ReservationSourceProps;
     readonly servicePeriodId?: string;
     readonly tableAssignment?: string;

@@ -1,7 +1,7 @@
 /**
  * CAP-D01.01-R51 — a stopgap operational calendar (see rule-model.md §16b
  * for why this lives here rather than in Availability Management, which
- * doesn't exist yet). Unlike ContactReader/ServicePeriodReader, this one
+ * doesn't exist yet). Unlike ContactRepository/ServicePeriodReader, this one
  * is fully real, not a placeholder — "is this date marked closed" needs
  * no external capability to answer correctly.
  *

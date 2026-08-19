@@ -11,7 +11,8 @@ import { PrismaLoginAttemptTracker } from "../../infrastructure/persistence/Pris
 import { ScryptPasswordHasher } from "../../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionTokenGenerator.js";
 import { RandomIdGenerator } from "../../infrastructure/RandomIdGenerator.js";
-import { UnvalidatedContactReader } from "../../infrastructure/UnvalidatedContactReader.js";
+import { PrismaContactRepository } from "../../infrastructure/persistence/PrismaContactRepository.js";
+import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { bootstrapOwner } from "../../infrastructure/bootstrap/bootstrapOwner.js";
 import { LoginHandler } from "../../application/auth/LoginHandler.js";
@@ -375,7 +376,8 @@ describe("MANDATORY SPOOFING REGRESSION — x-actor-* headers must grant zero st
     return createApp({
       repository: new PrismaReservationRepository(prisma),
       duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
-      contactReader: new UnvalidatedContactReader(),
+      contactRepository: new PrismaContactRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
       servicePeriodReader: new UnvalidatedServicePeriodReader(),
       closingDayStore: new PrismaClosingDayStore(prisma),
       idGenerator: new RandomIdGenerator(),

@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import { buildHarness, resetDatabase } from "./support/testHarness.js";
+import { buildHarness, resetDatabase, seedTestContact } from "./support/testHarness.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
@@ -23,7 +23,7 @@ function baseRequest(overrides: Partial<CreateReservationRequest> = {}): CreateR
   return {
     commandId: `create-cmd-${requestCounter}`,
     servicePeriodId: "sp-dinner",
-    contactId: "contact-1",
+    contactSelection: { type: "ExistingContact", contactId: "contact-1" },
     reservationDate: new Date("2026-08-20T18:00:00Z"),
     partySize: 4,
     source: { category: ReservationSourceCategory.Telephone },
@@ -41,6 +41,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await resetDatabase(prisma);
+  await seedTestContact(prisma);
 });
 
 describe("AvailabilityOrchestrator.createWithCapacity — mandatory false-sold-out regression, real PostgreSQL", () => {

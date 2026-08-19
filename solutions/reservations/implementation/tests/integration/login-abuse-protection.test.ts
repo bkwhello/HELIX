@@ -12,7 +12,8 @@ import { PrismaLoginAttemptTracker } from "../../infrastructure/persistence/Pris
 import { ScryptPasswordHasher } from "../../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionTokenGenerator.js";
 import { RandomIdGenerator } from "../../infrastructure/RandomIdGenerator.js";
-import { UnvalidatedContactReader } from "../../infrastructure/UnvalidatedContactReader.js";
+import { PrismaContactRepository } from "../../infrastructure/persistence/PrismaContactRepository.js";
+import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
@@ -43,7 +44,8 @@ function buildApp(clock: MutableClock) {
   return createApp({
     repository: new PrismaReservationRepository(prisma),
     duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
-    contactReader: new UnvalidatedContactReader(),
+    contactRepository: new PrismaContactRepository(prisma),
+    transactionManager: new PrismaTransactionManager(prisma),
     servicePeriodReader: new UnvalidatedServicePeriodReader(),
     closingDayStore: new PrismaClosingDayStore(prisma),
     idGenerator: new RandomIdGenerator(),
