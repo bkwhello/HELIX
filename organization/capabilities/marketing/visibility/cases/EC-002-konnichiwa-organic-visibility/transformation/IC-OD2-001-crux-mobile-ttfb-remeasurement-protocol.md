@@ -68,6 +68,23 @@ One public, read-only, unauthenticated request was made to the PageSpeed Insight
 
 ---
 
+## Status Update — Replacement Attempt 1 Blocked (19 August 2026)
+
+*Status-only addendum. It does not alter any substantive Phase 1–14 content. Authority: decisions/DD-038 Case-Owner Decision; Attempt Record, transformation/IC-OD2-001-crux-remeasurement-replacement-attempt-1.md, 19 August 2026.*
+
+```yaml
+Status: Replacement Attempt Authorized (DD-038) — Attempt 1 Blocked (Exact 28-Day Window Not Visibly Confirmed)
+Replacement Attempt 1 Date: 2026-08-19
+Replacement Attempt 1 Method: Interactive PageSpeed Insights Interface (API v5 not used)
+Replacement Attempt 1 Result: Blocked — see transformation/IC-OD2-001-crux-remeasurement-replacement-attempt-1.md
+Replacement Attempts Remaining Under DD-038: 0
+Independent Follow-Up Gate: Required, not yet created
+```
+
+Under decisions/DD-038's authorization, one interactive PageSpeed Insights analysis was submitted for `https://konnichiwa.nl/` (Mobile, field data). Usable on-screen data was returned — unlike Attempt 1's HTTP 429 — but the source displayed only "Latest 28-day period," with no exact window start or end date visible, and could not be independently confirmed to be scoped to "Origin" rather than "This URL." Per decisions/DD-036 Part 10's fifteenth stop condition and decisions/DD-038's own binding conditions, this is a blocking condition: the attempt is used, no evidence is created, and no second attempt occurs. TTFB figures were visible (75th percentile 1.7 s; Good 27% / Needs Improvement 52% / Poor 22%, summing to 101% due to source rounding) but are recorded only as unclassified source data, never compared to the historical 26% baseline. Full detail: transformation/IC-OD2-001-crux-remeasurement-replacement-attempt-1.md. A separate, independent follow-up gate is required before any further action.
+
+---
+
 ## Precondition Check
 
 | # | Precondition | Result |

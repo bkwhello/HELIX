@@ -155,6 +155,32 @@ Whether this method satisfies the protocol's approved-source requirement is Pend
 
 ---
 
+## Status Update — IC-OD2-001 Replacement Attempt 1 Blocked (19 August 2026)
+
+*Status/reference-only addendum. It does not alter any precondition, requirement, candidate formulation, assumption register, attack, comparison, or challenge content above — all remain exactly as originally constructed. Authority: decisions/DD-038 Case-Owner Decision; transformation/IC-OD2-001-crux-remeasurement-replacement-attempt-1.md, 19 August 2026.*
+
+One interactive PageSpeed Insights analysis, authorized under decisions/DD-038, was submitted for `https://konnichiwa.nl/` (Mobile). Usable on-screen data returned, but the source displayed only "Latest 28-day period" with no exact window start/end date visible, and Origin-vs-URL scope could not be independently confirmed — a binding blocking condition. TTFB figures were visible (75th percentile 1.7 s; 27%/52%/22% Good/Needs Improvement/Poor) but recorded only as unclassified source data, never compared to the historical 26% baseline.
+
+```yaml
+od_002_stage_1_replacement_attempt_occurred: true
+od_002_stage_1_replacement_attempt_started: true
+od_002_stage_1_replacement_attempt_consumed: true
+od_002_stage_1_replacement_attempts_remaining: 0
+od_002_stage_1_replacement_execution_status: Blocked — Exact 28-Day Window Not Visibly Confirmed
+od_002_stage_1_replacement_attempt_completed: false
+od_002_stage_1_replacement_evidence_created: false
+od_002_stage_1_classification_status: Pending Independent Blocker Review
+od_002_stage_2_preparation_authorized: false
+od_002_feasibility_execution_authorized: false
+od_002_implementation_authorized: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Whether "replacement attempt completed" should read `true` or `false`, and how the Origin/URL-scope ambiguity should be treated, are open questions for a future, independent follow-up gate — not resolved by this addendum. No second request occurred. No evidence ID used. No commit or push occurred.
+
+---
+
 ## Precondition Check
 
 | # | Precondition | Result |
