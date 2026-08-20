@@ -47,7 +47,7 @@ beforeEach(async () => {
 });
 
 describe("AvailabilityOrchestrator.createWithCapacity — mandatory false-sold-out regression, real PostgreSQL", () => {
-  it("does not falsely reject C when A and B occupy non-overlapping slices of the requested interval (A 18:00-18:30/29, B 19:00-19:30/29, C 18:15-19:15/20, capacity 49)", async () => {
+  it("does not falsely reject C when A and B occupy non-overlapping slices of the requested interval (A 18:00-18:30/29, B 19:00-19:30/29, C 18:15-19:15/22, capacity 51)", async () => {
     const { orchestrator } = buildHarness(prisma, NOW);
 
     // A and B are seeded directly as real, persisted Committed rows rather
@@ -63,14 +63,17 @@ describe("AvailabilityOrchestrator.createWithCapacity — mandatory false-sold-o
     // PostgreSQL — for the request that actually goes through the
     // orchestrator (C).
     //
-    // Party sizes (29/29/20) are chosen, under R1.5's corrected 49-person
-    // Sushi capacity (originally 60 at R1.1 time), to preserve the exact
-    // boundary-exact "naive SUM would wrongly reject, correct MAX exactly
-    // fills capacity" shape the original 40/40/20-against-60 case
-    // demonstrated: a naive SUM(A,B,C) = 29+29+20 = 78 would incorrectly
-    // reject against 49, while the correct max-existing-occupancy-per-slice
-    // result is max(29, 29) = 29, so 29+20 = 49 — exactly at, not over,
-    // the corrected capacity.
+    // Party sizes (29/29/22) are chosen, under R1.5's reconciled 51-person
+    // Sushi capacity (originally 60 at R1.1 time, briefly 47 then 49
+    // during R1.5's own reconciliation passes — see
+    // R1_5_FLOOR_SEATING_IMPLEMENTATION_REPORT.md's dated correction
+    // addenda), to preserve the exact boundary-exact "naive SUM would
+    // wrongly reject, correct MAX exactly fills capacity" shape the
+    // original 40/40/20-against-60 case demonstrated: a naive
+    // SUM(A,B,C) = 29+29+22 = 80 would incorrectly reject against 51,
+    // while the correct max-existing-occupancy-per-slice result is
+    // max(29, 29) = 29, so 29+22 = 51 — exactly at, not over, the
+    // reconciled capacity.
     await prisma.capacityCommitment.create({
       data: {
         commitmentId: "seed-a",
@@ -101,9 +104,9 @@ describe("AvailabilityOrchestrator.createWithCapacity — mandatory false-sold-o
     // i.e. [18:15, 19:45): A overlaps only its first 15 minutes, B
     // overlaps only its last 30 minutes, and the two never coincide, so
     // the true max simultaneous occupancy is max(29, 29) = 29, not
-    // 29+29+20=78.
+    // 29+29+22=80.
     const c = await orchestrator.createWithCapacity(
-      baseRequest({ reservationDate: new Date("2026-08-20T18:15:00Z"), partySize: 20, servicePeriodId: "sp-c" })
+      baseRequest({ reservationDate: new Date("2026-08-20T18:15:00Z"), partySize: 22, servicePeriodId: "sp-c" })
     );
     expect(c.type).toBe("CREATED");
 
@@ -117,14 +120,14 @@ describe("AvailabilityOrchestrator.createWithCapacity — real capacity exhausti
   it("accepts a request that exactly fills remaining capacity, then rejects the next one", async () => {
     const { orchestrator } = buildHarness(prisma, NOW);
 
-    const first = await orchestrator.createWithCapacity(baseRequest({ partySize: 49 }));
+    const first = await orchestrator.createWithCapacity(baseRequest({ partySize: 51 }));
     expect(first.type).toBe("CREATED");
 
     const second = await orchestrator.createWithCapacity(baseRequest({ partySize: 1 }));
     expect(second.type).toBe("CAPACITY_UNAVAILABLE");
     if (second.type === "CAPACITY_UNAVAILABLE" && second.availability.type === "CAPACITY_EXHAUSTED") {
-      expect(second.availability.maxExistingOccupancy).toBe(49);
-      expect(second.availability.capacity).toBe(49);
+      expect(second.availability.maxExistingOccupancy).toBe(51);
+      expect(second.availability.capacity).toBe(51);
     }
 
     const rows = await prisma.capacityCommitment.findMany({ where: { status: "Committed" } });

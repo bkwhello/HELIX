@@ -14,7 +14,7 @@ function iv(id: string, startIso: string, endIso: string, partySize: number): Co
  * reached a concurrency test.
  */
 describe("AvailabilityEvaluator — mandatory false-sold-out regression (§9)", () => {
-  it("does NOT sum A(29) + B(29) + C(20) = 78; correctly finds max simultaneous occupancy = 29, so C is AVAILABLE at the corrected Sushi capacity (49, R1.5 — was 60 at R1.1 time)", () => {
+  it("does NOT sum A(29) + B(29) + C(20) = 78; correctly finds max simultaneous occupancy = 29, so C is AVAILABLE at the reconciled Sushi capacity (51, R1.5 — was 60 at R1.1 time, briefly 47 then 49 during R1.5's own reconciliation passes)", () => {
     const candidates = [iv("A", "2026-08-20T18:00:00Z", "2026-08-20T18:30:00Z", 29), iv("B", "2026-08-20T19:00:00Z", "2026-08-20T19:30:00Z", 29)];
 
     const result = evaluateSimultaneousOccupancy({
@@ -64,8 +64,8 @@ describe("AvailabilityEvaluator — Scenario B: actual overcapacity", () => {
 });
 
 describe("AvailabilityEvaluator — Scenario C/D: exact capacity boundary", () => {
-  it("accepts at exactly capacity (41 existing + 8 requested = 49, the corrected Sushi capacity — R1.5, was 60 at R1.1 time)", () => {
-    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 41)];
+  it("accepts at exactly capacity (43 existing + 8 requested = 51, the reconciled Sushi capacity — R1.5, was 60 at R1.1 time, briefly 47 then 49 during R1.5's own reconciliation passes)", () => {
+    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 43)];
     const result = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T18:00:00Z"),
       requestedDurationMinutes: 90,
@@ -75,14 +75,14 @@ describe("AvailabilityEvaluator — Scenario C/D: exact capacity boundary", () =
     expect(result.maxExistingOccupancy + 8).toBeLessThanOrEqual(CAPACITY_POOLS.Sushi.maximumCapacity);
   });
 
-  it("rejects at capacity + 1 (42 existing + 8 requested = 50)", () => {
-    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 42)];
+  it("rejects at capacity + 1 (44 existing + 8 requested = 52)", () => {
+    const candidates = [iv("X", "2026-08-20T18:00:00Z", "2026-08-20T19:30:00Z", 44)];
     const result = evaluateSimultaneousOccupancy({
       requestedStart: new Date("2026-08-20T18:00:00Z"),
       requestedDurationMinutes: 90,
       candidates,
     });
-    expect(result.maxExistingOccupancy + 8).toBe(50);
+    expect(result.maxExistingOccupancy + 8).toBe(52);
     expect(result.maxExistingOccupancy + 8).toBeGreaterThan(CAPACITY_POOLS.Sushi.maximumCapacity);
   });
 });

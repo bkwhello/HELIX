@@ -283,3 +283,55 @@ Up from 412 (this report's own original §30 figure) — the +16 delta is exactl
 New: `domain/availability/TeppanyakiSelfServicePacing.ts`, `tests/integration/teppanyaki-self-service-pacing.test.ts`, `tests/domain/teppanyaki-self-service-pacing.test.ts`. Modified: `application/availability/AvailabilityOrchestrator.ts` (two call sites, `createWithCapacity`/`modifyWithCapacity`), `domain/floor/PreferredResourceBlock.ts` (24-person entry removed, mechanism preserved). No Prisma schema change, no new migration — this correction is pure application/domain logic plus one static-config change, touching no persisted shape.
 
 **STOP CONDITION REACHED (correction).** No push. No deploy. No Guestplan changes. No website changes. One bounded local commit follows this addendum. Awaiting Chief Engineer review.
+
+---
+
+## Addendum 2 — Final Sushi Capacity Reconciliation (superseding, appended, dated after both entries above)
+
+**This addendum records a later, separate Chief Engineer/owner instruction ("CHIEF ENGINEER CORRECTION — R1.5 — Final Sushi Capacity Reconciliation"). Nothing above this line — §1–§36, the original STOP CONDITION notice, and Addendum 1 (Teppanyaki Self-Service Pacing Correction) — has been edited, reworded, or removed. Every finding, number, and risk recorded above reflects exactly what was true and known at the time it was written. Where the correction below supersedes something stated above, that supersession is recorded here, not by rewriting the original text.**
+
+### What changed
+
+This report's own §33 Risk #1 flagged, correctly, a genuine numeric discrepancy: the itemized Sushi floor inventory (15 numbered tables + 4 bar positions) sums to **51**, while `CAP-D02.03`'s live `CapacityPool.ts` commercial capacity had been set to **49** — itself the product of an earlier, even more incomplete calculation of **47** (missing the four bar positions) during an initial R1.5 architecture-investigation pass. Per this program's standing discipline, none of these conflicting figures was ever silently reconciled — each was flagged and left for explicit owner resolution.
+
+The owner has now explicitly resolved it, with a fully itemized, table-by-table inventory:
+
+- Table 1=4, Table 2=4, Table 3=4, Table 4=4, Table 5=2, Table 6=2, Table 7=2, Table 8=4, Table 9=4, Table 10=5, Table 11=2, Table 12=4, Table 13=2, Table 14=DOES NOT EXIST, Table 15=2, Table 16=2, Bar 17=1, Bar 18=1, Bar 19=1, Bar 20=1.
+- Numbered tables total: 47. Bar total: 4. **AUTHORITATIVE SUSHI PHYSICAL CAPACITY: 51.**
+
+**History of the three superseded values, for the record:**
+- **47** — an earlier, partial calculation from an R1.5 architecture-investigation pass, computed from an INCOMPLETE inventory that omitted the four one-person bar positions. Never owner-confirmed, never live in `CapacityPool.ts`.
+- **49** — a subsequent reconciliation attempt, itself an INCORRECT arithmetic read of the owner's own itemized table list (misread as 45+4=49 rather than the correct 47+4=51). This was briefly live in `CapacityPool.ts` as `CAP-D02.03`'s Sushi commercial capacity — this is the value this report's §4/§33 originally, correctly, flagged as inconsistent with the itemized inventory, but the flagged inconsistency's own resolution (49) was itself wrong.
+- **51** — the final, owner-confirmed authoritative figure. Both the physical inventory (`infrastructure/floor/floorSeedData.ts`, unchanged throughout every prior pass — the table-by-table data was never wrong, only the earlier arithmetic reads of it) and `CAP-D02.03`'s Sushi commercial capacity (`domain/availability/CapacityPool.ts`) now agree at 51.
+
+**No historical evidence was rewritten.** §33 Risk #1 above still reads exactly as originally written, describing the discrepancy as it stood at the time; this addendum records its resolution without altering that original text.
+
+### What was NOT changed (explicit instruction)
+
+Floor & Seating was not redesigned. Teppanyaki pacing was not modified again — `domain/availability/TeppanyakiSelfServicePacing.ts` and Addendum 1's decisions (physical capacity 40, self-service ceiling 32) are untouched by this correction. The E+F preferred-block withdrawal from Addendum 1 remains withdrawn.
+
+### Test evidence (T1–T5, correction §3/§4)
+
+New file `tests/integration/sushi-capacity-reconciliation.test.ts` — **6 tests**, real PostgreSQL:
+- **T1** — existing Sushi occupancy 50 (real overlapping `CapacityCommitment` interval) + request 1 → `CREATED`.
+- **T2** — existing Sushi occupancy 51 + request 1 → `CAPACITY_UNAVAILABLE` / `CAPACITY_EXHAUSTED`, `capacity: 51`.
+- **T3** — Teppanyaki remains: physical capacity 40 (`CAPACITY_POOLS.Teppanyaki.maximumCapacity`), self-service ceiling 32 (`TEPPANYAKI_SELF_SERVICE_CEILING`) — pure assertion, unaffected by this correction.
+- **T4** — Table 14 remains absent from the seeded floor (`prisma.table.findFirst({ operationalLabel: "Table 14" })` → `null`).
+- **T5** — the permanent drift-prevention check: the seeded Sushi `Table` rows' `nominalCapacity` sum, queried live from real PostgreSQL, equals `CAPACITY_POOLS.Sushi.maximumCapacity` (51). A companion Teppanyaki control test proves the Teppanyaki physical sum (40) is likewise consistent, and explicitly asserts it is NOT equal to the self-service ceiling (32) — the two concepts stay structurally distinct, never summed together, per the correction's own §4 instruction.
+
+Every other Sushi-capacity-dependent test across the suite (`availability-concurrency.test.ts`, `availability-create.test.ts`, `tests/domain/availability-evaluator.test.ts`) was rescaled from 49 to 51, preserving each test's original regression-detection intent — most notably the "Modify vs Create" concurrency test, whose boundary numbers were re-derived (40 initial / 45 modify-target / 15 create) so the outcome remains fully deterministic regardless of race order under the new capacity, rather than merely asserting "exactly one rejection."
+
+### Full regression (post-correction)
+
+```
+npm run typecheck   -> clean
+npm test             -> 37 test files, 434 tests, ALL PASSING
+```
+
+Up from 428 (Addendum 1's own figure) — the +6 delta is exactly the new `sushi-capacity-reconciliation.test.ts` file. **No previous invariant regressed** — every R1.1–R1.5 test, including both prior corrections, passes unchanged (with Sushi-capacity-dependent assertions correctly rescaled to 51, not loosened).
+
+### Files touched by this correction
+
+Modified: `domain/availability/CapacityPool.ts` (Sushi `maximumCapacity`: 49 → 51, header comment rewritten to document the full 60/47/49/51 history), `infrastructure/floor/floorSeedData.ts` (header comment only — marks the discrepancy RESOLVED; the itemized table data itself was never wrong and is unchanged), `tests/integration/availability-concurrency.test.ts`, `tests/integration/availability-create.test.ts`, `tests/domain/availability-evaluator.test.ts` (Sushi-capacity-dependent assertions rescaled 49 → 51). New: `tests/integration/sushi-capacity-reconciliation.test.ts` (T1–T5). No Prisma schema change, no new migration — this correction is a static-config value change plus test rescaling, touching no persisted shape.
+
+**STOP CONDITION REACHED (correction 2).** No push. No deploy. No Guestplan changes. No website changes. One bounded local commit follows this addendum. Awaiting Chief Engineer review.

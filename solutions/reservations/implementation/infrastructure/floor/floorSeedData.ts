@@ -4,33 +4,30 @@
  * — consumed by ops/floor/seedFloor.ts and by tests that need real,
  * known floor resources.
  *
- * IMPORTANT — a genuine, unresolved arithmetic discrepancy in the
- * owner-confirmed source data, deliberately NOT silently corrected here
- * (same discipline already applied throughout R1.5 to the Sushi-47-vs-60
- * and Teppanyaki-24-vs-20 findings — see
- * R1_5_FLOOR_SEATING_IMPLEMENTATION_REPORT.md §4 "Superseded Capacity
- * Values" / §33 "Remaining Risks" for the full account):
+ * RESOLVED — "Chief Engineer Correction — R1.5 Final Sushi Capacity
+ * Reconciliation." Historical account, preserved rather than deleted
+ * (same discipline applied throughout R1.5 to every prior numeric
+ * finding — see R1_5_FLOOR_SEATING_IMPLEMENTATION_REPORT.md's dated
+ * correction addenda for the full, unedited history):
  *
- *   The itemized per-table list below (verbatim from the Chief Engineer's
- *   own §4 table) sums to 51 nominal physical seats (15 numbered tables
- *   summing to 47, per the assignment's own numbers, + 4 bar seats = 51),
- *   NOT the 45+4=49 the assignment's own §5 "SUSHI CAPACITY PROOF"
- *   section separately asserts. Both cannot be simultaneously correct.
+ *   The itemized per-table list below sums to 51 nominal physical seats
+ *   (15 numbered tables summing to 47 + 4 bar seats = 51). An earlier
+ *   R1.5 architecture-investigation pass calculated 47 from an
+ *   INCOMPLETE inventory (missing the four bar positions) — never
+ *   owner-confirmed, never live in CapacityPool.ts. A subsequent
+ *   reconciliation set CAP-D02.03's Sushi capacity to 49, itself an
+ *   incorrect arithmetic read of this same itemized list (mistakenly
+ *   read as 45+4=49 rather than 47+4=51) — briefly live in
+ *   CapacityPool.ts, now superseded.
  *
- *   This module seeds the itemized per-table list EXACTLY as given
- *   (the more granular, specific, named-resource data), producing 51
- *   physical seats. CAP-D02.03's Sushi commercial capacity
- *   (domain/availability/CapacityPool.ts) is set to the explicitly,
- *   repeatedly, separately mandated value of 49, tied directly to
- *   mandatory regression tests (assignment §33) — unaffected by this
- *   discrepancy, because CanAccept (CAP-D02.03) and CanSeat (CAP-D04) are
- *   architecturally independent by design (final architecture §11/§17) —
- *   no test in this codebase computes Sushi capacity FROM the seeded
- *   Table rows, so this discrepancy cannot silently propagate into a
- *   wrong commercial-capacity number.
- *
- *   Neither number was altered to make them agree. Flagged for the
- *   Chief Engineer / owner to resolve.
+ *   The Chief Engineer's final reconciliation confirmed 51 as
+ *   authoritative for BOTH the physical inventory (this file, unchanged
+ *   throughout every prior pass) AND CAP-D02.03's Sushi commercial
+ *   capacity (domain/availability/CapacityPool.ts) — the two numbers now
+ *   agree, verified by an automated consistency check
+ *   (tests/integration/sushi-capacity-reconciliation.test.ts, T5)
+ *   specifically added to prevent this exact 47/49/51 drift from
+ *   silently recurring a fourth time.
  */
 export interface SeedTableConfig {
   readonly id: string;

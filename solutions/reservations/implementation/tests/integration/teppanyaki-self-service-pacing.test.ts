@@ -143,11 +143,11 @@ describe("T7 — occupancy 40 + staff party 1 = 41 -> CAPACITY_EXHAUSTED", () =>
 });
 
 describe("T8 — Sushi is unaffected by the Teppanyaki 80% pacing policy", () => {
-  it("a Sushi self-service request projected well past 80% of Sushi capacity (49) is NOT routed to staff on pacing grounds", async () => {
-    // 80% of Sushi's 49 would be ~39.2 — seed occupancy at 40 (already
-    // past that ratio) and request 1 more (41 total, still <= 49 physical
+  it("a Sushi self-service request projected well past 80% of Sushi capacity (51) is NOT routed to staff on pacing grounds", async () => {
+    // 80% of Sushi's 51 would be ~40.8 — seed occupancy at 42 (already
+    // past that ratio) and request 1 more (43 total, still <= 51 physical
     // capacity) to prove no Sushi-side pacing ceiling exists at all.
-    await seedExistingOccupancy(40, "Sushi");
+    await seedExistingOccupancy(42, "Sushi");
     const { orchestrator } = buildHarness(prisma, NOW);
     const result = await orchestrator.createWithCapacity(
       teppanyakiRequest({ partySize: 1, actor: guestChannelActor, preferredArea: "Sushi" })
@@ -155,15 +155,15 @@ describe("T8 — Sushi is unaffected by the Teppanyaki 80% pacing policy", () =>
     expect(result.type).toBe("CREATED");
   });
 
-  it("a Sushi request landing exactly at physical capacity (49) still only fails on CAPACITY_EXHAUSTED, never ROUTE_TO_STAFF for pacing reasons", async () => {
-    await seedExistingOccupancy(49, "Sushi");
+  it("a Sushi request landing exactly at physical capacity (51) still only fails on CAPACITY_EXHAUSTED, never ROUTE_TO_STAFF for pacing reasons", async () => {
+    await seedExistingOccupancy(51, "Sushi");
     const { orchestrator } = buildHarness(prisma, NOW);
     const result = await orchestrator.createWithCapacity(
       teppanyakiRequest({ partySize: 1, actor: guestChannelActor, preferredArea: "Sushi" })
     );
     expect(result.type).toBe("CAPACITY_UNAVAILABLE");
     if (result.type === "CAPACITY_UNAVAILABLE" && result.availability.type === "CAPACITY_EXHAUSTED") {
-      expect(result.availability.capacity).toBe(49);
+      expect(result.availability.capacity).toBe(51);
     }
   });
 });

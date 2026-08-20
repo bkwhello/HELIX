@@ -4,6 +4,7 @@ import { createTestPrismaClient } from "./support/testDatabaseSafety.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { CreateReservationRequest } from "../../application/command-handlers/CreateReservationHandler.js";
+import { CAPACITY_POOLS } from "../../domain/availability/CapacityPool.js";
 
 /**
  * CAP-D02.03 — the mandatory real-PostgreSQL concurrency matrix
@@ -66,10 +67,11 @@ beforeEach(async () => {
 
 describe("Concurrency — final-capacity race (general)", () => {
   it("of two concurrent requests that together exceed remaining capacity, exactly one succeeds", async () => {
-    // R1.5: Sushi capacity corrected 60 -> 49 (see CapacityPool.ts). Seed
-    // (35) + one winning request (10) = 45 <= 49; seed + BOTH would be 55
-    // > 49 — same "exactly one fits" shape as the original 45/10-against-60
-    // numbers, rescaled to the corrected capacity.
+    // R1.5: rescaled to the reconciled Sushi capacity of 51 (Chief
+    // Engineer Correction — R1.5 Final Sushi Capacity Reconciliation).
+    // Seed (35) + one winning request (10) = 45 <= 51; seed + BOTH would
+    // be 55 > 51 — same "exactly one fits" shape as before, just against
+    // the corrected capacity.
     await seedCommitment({ commitmentId: "seed", partySize: 35, commandId: "seed-cmd" });
     const { orchestrator: orchA } = buildHarness(prisma, NOW);
     const { orchestrator: orchB } = buildHarness(prismaB, NOW);
@@ -85,15 +87,15 @@ describe("Concurrency — final-capacity race (general)", () => {
     const committed = await prisma.capacityCommitment.findMany({ where: { status: "Committed" } });
     expect(committed).toHaveLength(2); // seed + exactly one winner
     const totalOccupancy = committed.reduce((sum, r) => sum + r.partySize, 0);
-    expect(totalOccupancy).toBeLessThanOrEqual(49);
+    expect(totalOccupancy).toBeLessThanOrEqual(CAPACITY_POOLS.Sushi.maximumCapacity);
   });
 });
 
 describe("Concurrency — exact-final-capacity race (boundary)", () => {
-  it("of two concurrent requests where only one can land exactly at capacity, exactly one succeeds and lands at exactly 49", async () => {
-    // R1.5: seed (41) + one winning request (8) = 49 exactly, rescaled from
-    // the original 52/8-against-60 boundary case.
-    await seedCommitment({ commitmentId: "seed", partySize: 41, commandId: "seed-cmd" });
+  it("of two concurrent requests where only one can land exactly at capacity, exactly one succeeds and lands at exactly 51", async () => {
+    // R1.5: rescaled to the reconciled Sushi capacity of 51. Seed (43) +
+    // one winning request (8) = 51 exactly.
+    await seedCommitment({ commitmentId: "seed", partySize: 43, commandId: "seed-cmd" });
     const { orchestrator: orchA } = buildHarness(prisma, NOW);
     const { orchestrator: orchB } = buildHarness(prismaB, NOW);
 
@@ -107,7 +109,7 @@ describe("Concurrency — exact-final-capacity race (boundary)", () => {
 
     const committed = await prisma.capacityCommitment.findMany({ where: { status: "Committed" } });
     const totalOccupancy = committed.reduce((sum, r) => sum + r.partySize, 0);
-    expect(totalOccupancy).toBe(49); // the winner lands EXACTLY at capacity, never over
+    expect(totalOccupancy).toBe(CAPACITY_POOLS.Sushi.maximumCapacity); // the winner lands EXACTLY at capacity, never over
   });
 });
 
@@ -159,16 +161,18 @@ describe("Concurrency — duplicate commandId", () => {
 
 describe("Concurrency — Modify vs Create", () => {
   it("of a concurrent Modify (party size increase) and a new Create for the same pool/date, exactly one exceeds capacity and is rejected", async () => {
-    // R1.5: rescaled from the original 40-initial/50-modify/15-create
-    // against 60 capacity to 30/35/20 against the corrected 49 capacity —
-    // same proof shape: modify-alone (35) and create-alone-against-nothing
-    // (20) each individually fit under 49, but whichever mover goes SECOND
-    // sees the first mover's already-committed result and is pushed over
-    // 49 (35+20=55), so exactly one of the two always fails, for either
-    // ordering — see the inline case analysis this test's own history
-    // (R1_5_FLOOR_SEATING_IMPLEMENTATION_REPORT.md) verified explicitly.
+    // R1.5: rescaled to the reconciled 51 Sushi capacity (Chief Engineer
+    // Correction — R1.5 Final Sushi Capacity Reconciliation). Numbers
+    // chosen (40 initial / 45 modify-target / 15 create) so the outcome
+    // is FULLY deterministic regardless of race order — not merely
+    // "exactly one fails" but "modify always wins, create always loses":
+    // modify-alone (0 other + 45 = 45) fits under 51; create-alone against
+    // the pre-existing 40 (40+15=55) already exceeds 51, and still
+    // exceeds it against the post-modify 45 (45+15=60) — so create fails
+    // whichever order the race resolves in, and the surviving committed
+    // total is deterministically 45.
     const { orchestrator: setupOrch } = buildHarness(prisma, NOW);
-    const created = await setupOrch.createWithCapacity(baseRequest({ partySize: 30 }));
+    const created = await setupOrch.createWithCapacity(baseRequest({ partySize: 40 }));
     expect(created.type).toBe("CREATED");
     if (created.type !== "CREATED") throw new Error("unreachable");
     const reservationId = created.outcome.reservationId;
@@ -181,26 +185,19 @@ describe("Concurrency — Modify vs Create", () => {
         commandId: cmd(),
         reservationId,
         actor: staffActor,
-        changes: { partySize: 35 },
+        changes: { partySize: 45 },
       }),
-      orchB.createWithCapacity(baseRequest({ partySize: 20 })),
+      orchB.createWithCapacity(baseRequest({ partySize: 15 })),
     ]);
 
-    // 49 capacity; the reservation starts at 30. Whichever operation runs
-    // first can succeed (35 alone against 0 other, or 30(pre-existing)+20=50...
-    // note create-first actually always fails here since 30+20=50>49 already
-    // — see the case analysis: order A (modify first) -> modify accepts
-    // (0+35<=49), create then sees 35+20=55>49 and rejects; order B (create
-    // first) -> create rejects immediately (30+20=50>49), modify then sees
-    // 0+35<=49 and accepts. Either order: exactly one rejection, and the
-    // surviving committed total is deterministically 35.
-    const outcomes = [modifyResult.type, createResult.type];
-    const rejectedCount = outcomes.filter((t) => t === "CAPACITY_UNAVAILABLE").length;
-    expect(rejectedCount).toBe(1);
+    // Deterministic regardless of ordering — see the comment above.
+    expect(modifyResult.type).toBe("MODIFIED");
+    expect(createResult.type).toBe("CAPACITY_UNAVAILABLE");
 
     const committed = await prisma.capacityCommitment.findMany({ where: { status: "Committed" } });
     const totalOccupancy = committed.reduce((sum, r) => sum + r.partySize, 0);
-    expect(totalOccupancy).toBeLessThanOrEqual(49);
+    expect(totalOccupancy).toBe(45);
+    expect(totalOccupancy).toBeLessThanOrEqual(CAPACITY_POOLS.Sushi.maximumCapacity);
   });
 });
 
