@@ -113,6 +113,34 @@ export class PrismaCommunicationOutboxRepository implements CommunicationOutboxR
    * honest at-least-once reclaim, documented in
    * domain/communications/CommunicationMessage.ts and the implementation
    * report).
+   *
+   * R1.6-B1 — `ORDER BY available_at ASC` alone is not a total order:
+   * two rows enqueued with the same `available_at` (routine — e.g. two
+   * confirmations queued from the same fixed/test clock, or simply two
+   * reservations created in the same request-handling instant) tie, and
+   * PostgreSQL does not guarantee a stable order for tied rows absent an
+   * explicit secondary key. `created_at` narrows most ties (real
+   * `now()`) but can itself tie when both rows are inserted inside the
+   * same transaction (Postgres resolves `now()` once per transaction).
+   * `id` (a `cuid()` primary key — unique by constraint, roughly
+   * insertion-ordered) is appended as the final, unconditionally unique
+   * tie-break, making the full `(available_at, created_at, id)` triple a
+   * true total order over the eligible set. This `ORDER BY` governs
+   * which rows the subquery's `LIMIT` selects (so ties are resolved
+   * deterministically even when there are more eligible rows than
+   * `batchSize`) — see the implementation report for why this is the
+   * smallest sufficient fix (claiming semantics, locking, batch size,
+   * and eligibility rules are all unchanged below).
+   *
+   * A second, separate step matters just as much: PostgreSQL's
+   * `UPDATE ... RETURNING` does NOT itself guarantee its result rows
+   * come back in the subquery's `ORDER BY` — that ordering guarantee
+   * only applies to a plain `SELECT` (the `RETURNING` docs describe the
+   * row order as unspecified). So the same `(available_at, created_at,
+   * id)` key is applied again, in application code, to the rows this
+   * query actually returns, before they are handed to the caller — this
+   * is what makes the caller-visible processing order deterministic,
+   * not merely the DB-internal selection.
    */
   async claimBatch(input: { readonly now: Date; readonly batchSize: number; readonly processingStalenessMs: number }): Promise<readonly CommunicationMessageRecord[]> {
     const staleThreshold = new Date(input.now.getTime() - input.processingStalenessMs);
@@ -125,7 +153,7 @@ export class PrismaCommunicationOutboxRepository implements CommunicationOutboxR
           (status IN ('Pending', 'FailedRetryable') AND available_at <= ${input.now})
           OR (status = 'Processing' AND claimed_at < ${staleThreshold})
         )
-        ORDER BY available_at ASC
+        ORDER BY available_at ASC, created_at ASC, id ASC
         LIMIT ${input.batchSize}
         FOR UPDATE SKIP LOCKED
       )
@@ -134,7 +162,14 @@ export class PrismaCommunicationOutboxRepository implements CommunicationOutboxR
         status, attempt_count, available_at, claimed_at, provider_message_id,
         last_error, idempotency_key, created_at, sent_at
     `;
-    return rows.map(toRecord);
+    const ordered = [...rows].sort((a, b) => {
+      const byAvailableAt = a.available_at.getTime() - b.available_at.getTime();
+      if (byAvailableAt !== 0) return byAvailableAt;
+      const byCreatedAt = a.created_at.getTime() - b.created_at.getTime();
+      if (byCreatedAt !== 0) return byCreatedAt;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    return ordered.map(toRecord);
   }
 
   async markSent(input: { readonly id: string; readonly providerMessageId: string; readonly sentAt: Date }): Promise<void> {
