@@ -40,6 +40,15 @@ export interface ReservationRepository {
   findByDate(date: Date): Promise<ReservationAggregate[]>;
 
   /**
+   * R1.6-B — supports the reminder scan (application/communications/CommunicationOutboxService.ts):
+   * every reservation, in any status, whose reservationDate falls in
+   * `[from, to)`. The caller (not this method) filters by status/
+   * eligibility — this is a plain range read, mirroring findByDate's own
+   * "returns everything in range, caller distinguishes status" contract.
+   */
+  findStartingBetween(from: Date, to: Date): Promise<ReservationAggregate[]>;
+
+  /**
    * CAP-D01.01-R44 — supports safe retry of a creation command: if
    * commandId was already applied, the caller should return this
    * reservation instead of generating and discarding a new identity.

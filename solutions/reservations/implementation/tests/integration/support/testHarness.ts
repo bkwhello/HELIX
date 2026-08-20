@@ -16,6 +16,11 @@ import { EventIdGenerator } from "../../../application/ports/EventIdGenerator.js
 import { Clock } from "../../../application/ports/Clock.js";
 import { ContactRepository } from "../../../application/ports/ContactRepository.js";
 import { truncateReservationDomainTables } from "./testDatabaseSafety.js";
+import { PrismaCommunicationOutboxRepository } from "../../../infrastructure/persistence/PrismaCommunicationOutboxRepository.js";
+import { PrismaGuestManagementCredentialRepository } from "../../../infrastructure/persistence/PrismaGuestManagementCredentialRepository.js";
+import { CommunicationOutboxService } from "../../../application/communications/CommunicationOutboxService.js";
+import { GuestManagementTokenService } from "../../../application/communications/GuestManagementTokenService.js";
+import { RandomSessionTokenGenerator } from "../../../infrastructure/RandomSessionTokenGenerator.js";
 
 let counter = 0;
 /** Distinct, human-inspectable IDs per test run — not cryptographically random, which is irrelevant for tests and would make failures harder to read. */
@@ -58,6 +63,20 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
   const clock = new MutableClock(now);
   const createContactHandler = new CreateContactHandler(contactRepository, idGenerator, clock);
 
+  // R1.6-B — real Prisma-backed communications infrastructure, wired by
+  // default so any integration test can inspect `communication_messages`/
+  // `guest_management_credentials` directly without extra harness setup.
+  // Harmless for tests that don't care: neither table has a foreign key
+  // to `reservations` (deliberately — see prisma/schema.prisma's own
+  // comments), and CreateReservationHandler's own eligibility gate means
+  // no row is ever created unless the reservation actually has a usable
+  // email (most existing tests' seeded "contact-1" has none — see
+  // seedTestContact below).
+  const outboxRepository = new PrismaCommunicationOutboxRepository(prisma);
+  const credentialRepository = new PrismaGuestManagementCredentialRepository(prisma);
+  const communicationOutboxService = new CommunicationOutboxService(outboxRepository, repository, clock);
+  const guestManagementTokenService = new GuestManagementTokenService(new RandomSessionTokenGenerator(), credentialRepository, clock);
+
   const createHandler = new CreateReservationHandler(
     repository,
     duplicateChecker,
@@ -68,7 +87,9 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     idGenerator,
     eventIdGenerator,
     clock,
-    transactionManager
+    transactionManager,
+    communicationOutboxService,
+    guestManagementTokenService
   );
   const modifyHandler = new ModifyReservationHandler(repository, eventIdGenerator, clock);
   const cancelHandler = new CancelReservationHandler(repository, eventIdGenerator, clock);
@@ -85,7 +106,21 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     cancelHandler
   );
 
-  return { repository, capacityRepository, transactionManager, closingDayStore, orchestrator, clock, idGenerator, createHandler, cancelHandler };
+  return {
+    repository,
+    capacityRepository,
+    transactionManager,
+    closingDayStore,
+    orchestrator,
+    clock,
+    idGenerator,
+    createHandler,
+    cancelHandler,
+    outboxRepository,
+    credentialRepository,
+    communicationOutboxService,
+    guestManagementTokenService,
+  };
 }
 
 /**

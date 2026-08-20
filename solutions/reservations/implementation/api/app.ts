@@ -34,6 +34,13 @@ import { CreateStaffUserHandler } from "../application/auth/CreateStaffUserHandl
 import { LoginThrottleGuard, LoginThrottleConfig } from "../application/auth/LoginThrottleGuard.js";
 import { LoginAttemptTracker } from "../application/ports/LoginAttemptTracker.js";
 import { Permission } from "../domain/rules/StaffAuthorizationPolicy.js";
+import { CommunicationLanguage, isCommunicationLanguage } from "../domain/value-objects/CommunicationLanguage.js";
+import { CommunicationOutboxRepository } from "../application/ports/CommunicationOutboxRepository.js";
+import { GuestManagementCredentialRepository } from "../application/ports/GuestManagementCredentialRepository.js";
+import { SessionTokenGenerator as GuestTokenGenerator } from "../application/ports/SessionTokenGenerator.js";
+import { CommunicationOutboxService } from "../application/communications/CommunicationOutboxService.js";
+import { GuestManagementTokenService } from "../application/communications/GuestManagementTokenService.js";
+import { ResendConfirmationHandler } from "../application/communications/ResendConfirmationHandler.js";
 import {
   SESSION_COOKIE_NAME,
   createRequireStaffSession,
@@ -77,6 +84,17 @@ export interface AppDependencies {
   capacity?: {
     readonly capacityRepository: CapacityRepository;
     readonly transactionManager: TransactionManager;
+  };
+  /**
+   * R1.6-B — optional, same "not available in this deployment" posture as
+   * `capacity` above: when omitted, confirmation/reminder enqueue is a
+   * no-op (CreateReservationHandler's own optional-dependency handling)
+   * and the resend route below is not mounted at all.
+   */
+  communications?: {
+    readonly outboxRepository: CommunicationOutboxRepository;
+    readonly credentialRepository: GuestManagementCredentialRepository;
+    readonly tokenGenerator: GuestTokenGenerator;
   };
   /**
    * R1.2 — Identity & Access. NOT optional: every deployment of this API
@@ -142,6 +160,19 @@ export function createApp(deps: AppDependencies): Express {
   // CreateReservationHandler (mirroring how AvailabilityOrchestrator
   // composes CreateReservationHandler itself).
   const createContactHandler = new CreateContactHandler(deps.contactRepository, deps.idGenerator, deps.clock);
+
+  // R1.6-B — only constructed when the deployment supplies communications
+  // infrastructure (see AppDependencies.communications doc comment above).
+  const communicationOutboxService = deps.communications
+    ? new CommunicationOutboxService(deps.communications.outboxRepository, deps.repository, deps.clock)
+    : undefined;
+  const guestManagementTokenService = deps.communications
+    ? new GuestManagementTokenService(deps.communications.tokenGenerator, deps.communications.credentialRepository, deps.clock)
+    : undefined;
+  const resendHandler = deps.communications
+    ? new ResendConfirmationHandler(deps.repository, deps.communications.outboxRepository, deps.idGenerator, deps.clock)
+    : null;
+
   const createHandler = new CreateReservationHandler(
     deps.repository,
     deps.duplicateChecker,
@@ -152,7 +183,9 @@ export function createApp(deps: AppDependencies): Express {
     deps.idGenerator,
     deps.eventIdGenerator,
     deps.clock,
-    deps.transactionManager
+    deps.transactionManager,
+    communicationOutboxService,
+    guestManagementTokenService
   );
   const modifyHandler = new ModifyReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const confirmHandler = new ConfirmReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
@@ -215,6 +248,16 @@ export function createApp(deps: AppDependencies): Express {
       return null;
     }
     return { present: true, value: value as PreferredArea };
+  }
+
+  /** R1.6-B — assignment §4: staff must be able to specify nl/en explicitly; a garbage value is rejected with a clear 400 rather than silently defaulted. Absent is fine — CreateReservationHandler/ReservationAggregate.create() apply DEFAULT_COMMUNICATION_LANGUAGE. */
+  function parseCommunicationLanguage(value: unknown, res: Response): { present: true; value: CommunicationLanguage } | { present: false } | null {
+    if (value === undefined || value === null || value === "") return { present: false };
+    if (typeof value !== "string" || !isCommunicationLanguage(value)) {
+      res.status(400).json({ message: `Unknown communicationLanguage: "${String(value)}". Expected "nl" or "en".` });
+      return null;
+    }
+    return { present: true, value };
   }
 
   /**
@@ -354,6 +397,7 @@ export function createApp(deps: AppDependencies): Express {
       source: { category: string; externalReference?: string; importedBy?: string };
       preferredArea?: string;
       notes?: string;
+      communicationLanguage?: string;
       isHistoricalCorrection?: boolean;
       historicalCorrectionReason?: string;
     };
@@ -366,6 +410,8 @@ export function createApp(deps: AppDependencies): Express {
 
     const preferredArea = parsePreferredArea(body.preferredArea, res);
     if (!preferredArea) return;
+    const communicationLanguage = parseCommunicationLanguage(body.communicationLanguage, res);
+    if (!communicationLanguage) return;
     const contactSelection = parseContactSelection(body.contactSelection, res);
     if (!contactSelection) return;
 
@@ -380,6 +426,7 @@ export function createApp(deps: AppDependencies): Express {
       source: body.source as never,
       preferredArea: preferredArea.present ? preferredArea.value : undefined,
       notes: body.notes,
+      communicationLanguage: communicationLanguage.present ? communicationLanguage.value : undefined,
       actor,
       isHistoricalCorrection: body.isHistoricalCorrection,
       historicalCorrectionReason: body.historicalCorrectionReason,
@@ -582,6 +629,7 @@ export function createApp(deps: AppDependencies): Express {
         source: { category: string; externalReference?: string; importedBy?: string };
         preferredArea?: string;
         notes?: string;
+        communicationLanguage?: string;
       };
 
       if (!req.staffPrincipal) return;
@@ -591,6 +639,8 @@ export function createApp(deps: AppDependencies): Express {
         res.status(422).json({ message: `preferredArea must be one of the capacity-managed areas for a capacity-aware create. Received: ${String(body.preferredArea)}.` });
         return;
       }
+      const communicationLanguage = parseCommunicationLanguage(body.communicationLanguage, res);
+      if (!communicationLanguage) return;
       const contactSelection = parseContactSelection(body.contactSelection, res);
       if (!contactSelection) return;
 
@@ -605,6 +655,7 @@ export function createApp(deps: AppDependencies): Express {
         source: body.source as never,
         preferredArea: body.preferredArea,
         notes: body.notes,
+        communicationLanguage: communicationLanguage.present ? communicationLanguage.value : undefined,
         actor,
       });
 
@@ -813,6 +864,36 @@ export function createApp(deps: AppDependencies): Express {
       possibleMatches: matches.map((c: ContactRecord) => ({ id: c.id, displayName: c.displayName, phone: c.phoneRaw, email: c.emailRaw })),
     });
   });
+
+  // R1.6-B — assignment §22/§23: staff-authenticated confirmation resend.
+  // Only mounted when the deployment supplies communications
+  // infrastructure (see AppDependencies.communications doc comment) —
+  // same "not available in this deployment" posture as the /availability/*
+  // routes above. CSRF is already covered globally (createCsrfGuard,
+  // applied before every route in this file) — no additional CSRF
+  // handling needed here specifically.
+  if (resendHandler) {
+    app.post(
+      "/reservations/:id/communications/confirmation/resend",
+      requireStaffSession,
+      requirePermission(Permission.CommunicationResend),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const result = await resendHandler.handle({ reservationId: paramId(req) });
+        switch (result.type) {
+          case "RESENT":
+            res.status(202).json({ status: "queued", messageId: result.messageId });
+            return;
+          case "NO_USABLE_EMAIL":
+            res.status(422).json({ message: "This reservation has no usable email address on file — confirmation cannot be resent." });
+            return;
+          case "RESERVATION_NOT_FOUND":
+            res.status(404).json({ message: "Reservation not found." });
+            return;
+        }
+      }
+    );
+  }
 
   // Express 5 forwards a rejected promise from any async handler above to
   // this error middleware automatically. Anything reaching here is an

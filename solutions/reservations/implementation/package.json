@@ -20,7 +20,8 @@
     "restore": "tsx ops/restore/restoreBackup.ts",
     "verify-integrity": "tsx ops/integrity/verifyIntegrity.ts",
     "service-snapshot": "tsx ops/snapshot/createServiceSnapshot.ts",
-    "recovery-drill": "tsx ops/recoveryDrill.ts"
+    "recovery-drill": "tsx ops/recoveryDrill.ts",
+    "process-communications": "tsx ops/communications/processOutbox.ts"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

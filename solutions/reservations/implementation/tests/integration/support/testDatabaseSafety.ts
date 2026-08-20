@@ -172,3 +172,9 @@ export async function truncateServicePeriodDomainTables(prisma: PrismaClient): P
   await assertSafeToReset(prisma);
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "service_period_override_windows", "service_period_overrides" RESTART IDENTITY CASCADE');
 }
+
+/** R1.6-B — the communication outbox and guest-management-credential tables. Deliberately NOT part of truncateReservationDomainTables — most tests never touch communications at all. */
+export async function truncateCommunicationDomainTables(prisma: PrismaClient): Promise<void> {
+  await assertSafeToReset(prisma);
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "communication_messages", "guest_management_credentials" RESTART IDENTITY CASCADE');
+}

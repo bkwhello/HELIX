@@ -25,6 +25,7 @@ const EXPECTED_MATRIX: Record<ActorRole, Partial<Record<Permission, boolean>>> =
     [Permission.SeatingMove]: true,
     [Permission.SeatingRelease]: true,
     [Permission.ResourceBlock]: true,
+    [Permission.CommunicationResend]: true,
   },
   [ActorRole.Manager]: {
     [Permission.ReservationView]: true,
@@ -43,6 +44,7 @@ const EXPECTED_MATRIX: Record<ActorRole, Partial<Record<Permission, boolean>>> =
     [Permission.SeatingMove]: true,
     [Permission.SeatingRelease]: true,
     [Permission.ResourceBlock]: true,
+    [Permission.CommunicationResend]: true,
   },
   [ActorRole.AssistantManager]: {
     [Permission.ReservationView]: true,
@@ -60,6 +62,7 @@ const EXPECTED_MATRIX: Record<ActorRole, Partial<Record<Permission, boolean>>> =
     [Permission.SeatingMove]: true,
     [Permission.SeatingRelease]: true,
     [Permission.ResourceBlock]: false,
+    [Permission.CommunicationResend]: true,
   },
   [ActorRole.Supervisor]: {
     [Permission.ReservationView]: true,
@@ -77,6 +80,7 @@ const EXPECTED_MATRIX: Record<ActorRole, Partial<Record<Permission, boolean>>> =
     [Permission.SeatingMove]: true,
     [Permission.SeatingRelease]: true,
     [Permission.ResourceBlock]: false,
+    [Permission.CommunicationResend]: true,
   },
   [ActorRole.ReservationAgent]: {
     [Permission.ReservationView]: true,
@@ -94,6 +98,7 @@ const EXPECTED_MATRIX: Record<ActorRole, Partial<Record<Permission, boolean>>> =
     [Permission.SeatingMove]: true,
     [Permission.SeatingRelease]: true,
     [Permission.ResourceBlock]: false,
+    [Permission.CommunicationResend]: true,
   },
   [ActorRole.Reception]: {
     [Permission.ReservationView]: true,
@@ -111,6 +116,7 @@ const EXPECTED_MATRIX: Record<ActorRole, Partial<Record<Permission, boolean>>> =
     [Permission.SeatingMove]: true,
     [Permission.SeatingRelease]: true,
     [Permission.ResourceBlock]: false,
+    [Permission.CommunicationResend]: true,
   },
 };
 

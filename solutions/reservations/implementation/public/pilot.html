@@ -894,6 +894,24 @@
     await loadList();
   }
 
+  // R1.6-B — assignment §24: a simple authenticated staff control, no
+  // Reservation edit. Does not send a real email in this phase (no
+  // provider is configured yet, assignment §46) — it durably queues a new
+  // confirmation attempt in the communications outbox.
+  async function resendConfirmation(r) {
+    const res = await fetch(`/reservations/${r.id}/communications/confirmation/resend`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showMessage(listMessage, data.message || "Kon bevestiging niet opnieuw versturen.", "error");
+      return;
+    }
+    showMessage(listMessage, "Bevestiging opnieuw ingepland voor verzending.", "ok");
+  }
+
   function renderList() {
     listBody.innerHTML = "";
 
@@ -1022,6 +1040,15 @@
           cancelButton.textContent = "Annuleren";
           cancelButton.addEventListener("click", () => cancelReservation(r));
           actionCell.appendChild(cancelButton);
+        }
+
+        if (r.status !== "Cancelled") {
+          const resendButton = document.createElement("button");
+          resendButton.type = "button";
+          resendButton.className = "secondary";
+          resendButton.textContent = "Bevestiging opnieuw versturen";
+          resendButton.addEventListener("click", () => resendConfirmation(r));
+          actionCell.appendChild(resendButton);
         }
 
         const editButton = document.createElement("button");

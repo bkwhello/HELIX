@@ -16,6 +16,7 @@ interface StoredReservation {
   notes: ReturnType<ReservationAggregate["getNotes"]>;
   tableAssignment: ReturnType<ReservationAggregate["getTableAssignment"]>;
   arrivedAt: ReturnType<ReservationAggregate["getArrivedAt"]>;
+  communicationLanguage: ReturnType<ReservationAggregate["getCommunicationLanguage"]>;
   createdBy: string;
   createdAt: Date;
   version: number;
@@ -61,6 +62,13 @@ export class InMemoryReservationRepository implements ReservationRepository {
       .map(([id, row]) => this.toAggregate(id, row));
   }
 
+  async findStartingBetween(from: Date, to: Date): Promise<ReservationAggregate[]> {
+    return [...this.byId.entries()]
+      .filter(([, row]) => row.reservationDate >= from && row.reservationDate < to)
+      .sort(([, a], [, b]) => a.reservationDate.getTime() - b.reservationDate.getTime())
+      .map(([id, row]) => this.toAggregate(id, row));
+  }
+
   private toAggregate(id: string, row: StoredReservation): ReservationAggregate {
     return ReservationAggregate.reconstitute({
       id,
@@ -77,6 +85,7 @@ export class InMemoryReservationRepository implements ReservationRepository {
       notes: row.notes,
       tableAssignment: row.tableAssignment,
       arrivedAt: row.arrivedAt,
+      communicationLanguage: row.communicationLanguage,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -130,6 +139,7 @@ export class InMemoryReservationRepository implements ReservationRepository {
       notes: aggregate.getNotes(),
       tableAssignment: aggregate.getTableAssignment(),
       arrivedAt: aggregate.getArrivedAt(),
+      communicationLanguage: aggregate.getCommunicationLanguage(),
       createdBy: existing?.createdBy ?? aggregate.getCreatedBy(),
       createdAt: existing?.createdAt ?? aggregate.getCreatedAt(),
       version: newVersion,

@@ -11,6 +11,7 @@ import { ActorKind } from "../value-objects/Actor.js";
 import { CompletionEvidence } from "../value-objects/CompletionEvidence.js";
 import { ReservationSourceCategory } from "../value-objects/ReservationSource.js";
 import { PreferredArea } from "../value-objects/PreferredArea.js";
+import { CommunicationLanguage } from "../value-objects/CommunicationLanguage.js";
 
 /**
  * event-model.md §4 common structure, mapped to this implementation:
@@ -57,6 +58,8 @@ export interface ReservationCreated extends BaseEvent {
   readonly preferredArea?: PreferredArea;
   /** CAP-D01.01-R36/R37 — operational context, not the authoritative allergy record. */
   readonly notes?: string;
+  /** R1.6-B — the reservation-time communication-language snapshot (assignment §10's "freeze for logical confirmation intent" list). */
+  readonly communicationLanguage: CommunicationLanguage;
 }
 
 /** CAP-D01.01-E02 — ReservationModified */

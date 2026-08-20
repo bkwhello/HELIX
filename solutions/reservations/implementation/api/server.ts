@@ -15,6 +15,8 @@ import { UnvalidatedServicePeriodReader } from "../infrastructure/UnvalidatedSer
 import { SystemClock } from "../infrastructure/SystemClock.js";
 import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
 import { RandomEventIdGenerator } from "../infrastructure/RandomEventIdGenerator.js";
+import { PrismaCommunicationOutboxRepository } from "../infrastructure/persistence/PrismaCommunicationOutboxRepository.js";
+import { PrismaGuestManagementCredentialRepository } from "../infrastructure/persistence/PrismaGuestManagementCredentialRepository.js";
 
 const prisma = new PrismaClient();
 // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §21 — same-origin deployment
@@ -43,6 +45,18 @@ const app = createApp({
   capacity: {
     capacityRepository: new PrismaCapacityRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
+  },
+  // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
+  // route. Real EmailDeliveryPort/provider selection remains a separate,
+  // later gate (assignment §46) — this deployment wires only the durable
+  // outbox/token persistence, never a real send; nothing here calls out
+  // to a mail provider. `tokenGenerator` reuses the exact same
+  // `RandomSessionTokenGenerator` mechanism as staff sessions (a
+  // different instance — guest tokens are never staff sessions).
+  communications: {
+    outboxRepository: new PrismaCommunicationOutboxRepository(prisma),
+    credentialRepository: new PrismaGuestManagementCredentialRepository(prisma),
+    tokenGenerator: new RandomSessionTokenGenerator(),
   },
   // R1.2 — Identity & Access. NODE_ENV=production is when the session
   // cookie's Secure flag is actually enforced (plain http://localhost in

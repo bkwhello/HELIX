@@ -7,6 +7,7 @@ import { ReservationSourceCategory } from "../../domain/value-objects/Reservatio
 import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { asPrismaTx } from "./PrismaTransactionManager.js";
+import { CommunicationLanguage, isCommunicationLanguage, DEFAULT_COMMUNICATION_LANGUAGE } from "../../domain/value-objects/CommunicationLanguage.js";
 
 /** Either a top-level PrismaClient or an interactive-transaction client — the write logic below only ever needs the model delegates both expose. */
 type PrismaWriteClient = Pick<Prisma.TransactionClient, "reservation" | "reservationEvent" | "appliedCommand">;
@@ -47,6 +48,14 @@ export class PrismaReservationRepository implements ReservationRepository {
     return rows.map((row) => this.toAggregate(row));
   }
 
+  async findStartingBetween(from: Date, to: Date): Promise<ReservationAggregate[]> {
+    const rows = await this.prisma.reservation.findMany({
+      where: { reservationDate: { gte: from, lt: to } },
+      orderBy: { reservationDate: "asc" },
+    });
+    return rows.map((row) => this.toAggregate(row));
+  }
+
   private toAggregate(row: {
     id: string;
     status: string;
@@ -64,6 +73,7 @@ export class PrismaReservationRepository implements ReservationRepository {
     notes: string | null;
     tableAssignment: string | null;
     arrivedAt: Date | null;
+    communicationLanguage: string;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -87,6 +97,7 @@ export class PrismaReservationRepository implements ReservationRepository {
       notes: row.notes ?? undefined,
       tableAssignment: row.tableAssignment ?? undefined,
       arrivedAt: row.arrivedAt ?? undefined,
+      communicationLanguage: isCommunicationLanguage(row.communicationLanguage) ? row.communicationLanguage : DEFAULT_COMMUNICATION_LANGUAGE,
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       version: row.version,
@@ -143,6 +154,7 @@ export class PrismaReservationRepository implements ReservationRepository {
               preferredArea: aggregate.getPreferredArea(),
               notes: aggregate.getNotes(),
               tableAssignment: aggregate.getTableAssignment(),
+              communicationLanguage: aggregate.getCommunicationLanguage(),
               createdBy: aggregate.getCreatedBy(),
               createdAt: aggregate.getCreatedAt(),
               version: 1,

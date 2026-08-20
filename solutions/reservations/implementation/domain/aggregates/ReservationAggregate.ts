@@ -6,6 +6,7 @@ import { ReservationDateTime } from "../value-objects/ReservationDateTime.js";
 import { ReservationSource } from "../value-objects/ReservationSource.js";
 import { Actor } from "../value-objects/Actor.js";
 import { PreferredArea } from "../value-objects/PreferredArea.js";
+import { CommunicationLanguage, DEFAULT_COMMUNICATION_LANGUAGE } from "../value-objects/CommunicationLanguage.js";
 import {
   CreateReservationCommand,
   ModifyReservationCommand,
@@ -58,6 +59,8 @@ export class ReservationAggregate {
     private tableAssignment: string | undefined,
     /** Operational, staff-toggled arrival marker — out of scope of this capability's formal rule model, like tableAssignment. Never set at creation; always undefined until a staff member marks the guest as arrived. */
     private arrivedAt: Date | undefined,
+    /** R1.6-B — guest-facing communication language, frozen at creation time (assignment §10). Never re-inferred; defaulted by create() only when the caller omits it entirely. */
+    private readonly communicationLanguage: CommunicationLanguage,
     private readonly createdBy: string,
     private readonly createdAt: Date,
     /**
@@ -88,6 +91,7 @@ export class ReservationAggregate {
     notes?: string;
     tableAssignment?: string;
     arrivedAt?: Date;
+    communicationLanguage?: CommunicationLanguage;
     createdBy: string;
     createdAt: Date;
     version: number;
@@ -116,6 +120,7 @@ export class ReservationAggregate {
       props.notes,
       props.tableAssignment,
       props.arrivedAt,
+      props.communicationLanguage ?? DEFAULT_COMMUNICATION_LANGUAGE,
       props.createdBy,
       props.createdAt,
       props.version
@@ -182,6 +187,8 @@ export class ReservationAggregate {
       return fail(ruleViolations);
     }
 
+    const communicationLanguage = cmd.communicationLanguage ?? DEFAULT_COMMUNICATION_LANGUAGE;
+
     const aggregate = new ReservationAggregate(
       id,
       ReservationStatus.Proposed,
@@ -197,6 +204,7 @@ export class ReservationAggregate {
       cmd.notes,
       undefined,
       undefined,
+      communicationLanguage,
       cmd.actor.id,
       cmd.now,
       0
@@ -229,6 +237,7 @@ export class ReservationAggregate {
       potentialDuplicateWarning: duplicateWarning !== null,
       preferredArea: cmd.preferredArea,
       notes: cmd.notes,
+      communicationLanguage,
     });
 
     return ok(aggregate);
@@ -537,6 +546,10 @@ export class ReservationAggregate {
 
   getArrivedAt(): Date | undefined {
     return this.arrivedAt;
+  }
+
+  getCommunicationLanguage(): CommunicationLanguage {
+    return this.communicationLanguage;
   }
 
   getPartySize(): number {

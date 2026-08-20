@@ -37,6 +37,14 @@ export const Permission = {
   SeatingMove: "seating.move",
   SeatingRelease: "seating.release",
   ResourceBlock: "resource.block",
+  // R1.6-B — CAP-D06.01-adjacent (assignment §22/§23). Its own dedicated
+  // permission, not folded into ReservationModify: a resend touches no
+  // Reservation business state at all (assignment §42 S7) — it is an
+  // operationally distinct action from modifying a reservation, matching
+  // this policy's own existing granularity (e.g. separate Confirm/Cancel/
+  // Complete permissions for actions that are all "do something to a
+  // reservation" but distinct in kind).
+  CommunicationResend: "communication.resend",
 } as const;
 
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -70,6 +78,7 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     // (Owner + Manager only) — a bigger operational decision than an
     // ordinary seating action, per assignment §30.
     Permission.ResourceBlock,
+    Permission.CommunicationResend,
   ]),
   [ActorRole.AssistantManager]: new Set([
     Permission.ReservationView,
@@ -83,6 +92,7 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.SeatingAssign,
     Permission.SeatingMove,
     Permission.SeatingRelease,
+    Permission.CommunicationResend,
   ]),
   [ActorRole.Supervisor]: new Set([
     Permission.ReservationView,
@@ -96,6 +106,7 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.SeatingAssign,
     Permission.SeatingMove,
     Permission.SeatingRelease,
+    Permission.CommunicationResend,
   ]),
   [ActorRole.ReservationAgent]: new Set([
     Permission.ReservationView,
@@ -108,6 +119,7 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.SeatingAssign,
     Permission.SeatingMove,
     Permission.SeatingRelease,
+    Permission.CommunicationResend,
     // No ReservationComplete — see R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §18.
   ]),
   [ActorRole.Reception]: new Set([
@@ -121,6 +133,7 @@ const ROLE_PERMISSIONS: Readonly<Record<ActorRole, ReadonlySet<Permission>>> = {
     Permission.SeatingMove,
     Permission.SeatingRelease,
     Permission.ReservationWalkinCreate,
+    Permission.CommunicationResend,
     // No ReservationComplete — see R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §18.
   ]),
 };

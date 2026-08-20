@@ -17,6 +17,9 @@ import { Clock } from "../ports/Clock.js";
 import { TransactionManager } from "../ports/TransactionManager.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { ReservationCommandRaceLost } from "../../infrastructure/persistence/PrismaReservationRepository.js";
+import { CommunicationLanguage } from "../../domain/value-objects/CommunicationLanguage.js";
+import { CommunicationOutboxService } from "../communications/CommunicationOutboxService.js";
+import { GuestManagementTokenService } from "../communications/GuestManagementTokenService.js";
 
 /**
  * CAP-D05.01 — the two, and only two, ways a reservation may reference a
@@ -42,6 +45,8 @@ export interface CreateReservationRequest {
   readonly preferredArea?: PreferredArea;
   /** CAP-D01.01-R36/R37: operational context (allergies, special requests). */
   readonly notes?: string;
+  /** R1.6-B — guest-facing communication language (assignment §3/§4). See CreateReservationCommand's own doc comment: absent only on a legacy/internal path, defaulted (never inferred) by ReservationAggregate.create(). */
+  readonly communicationLanguage?: CommunicationLanguage;
   readonly actor: Actor;
   readonly isHistoricalCorrection?: boolean;
   readonly historicalCorrectionReason?: string;
@@ -89,7 +94,17 @@ export class CreateReservationHandler {
     private readonly idGenerator: IdGenerator,
     private readonly eventIdGenerator: EventIdGenerator,
     private readonly clock: Clock,
-    private readonly transactionManager: TransactionManager
+    private readonly transactionManager: TransactionManager,
+    /**
+     * R1.6-B — optional and last, mirroring AvailabilityOrchestrator's own
+     * `seatingOrchestrator?` precedent (R1.5): every existing call site
+     * (R1.1-R1.6-A tests, api/app.ts, ops scripts) remains valid unchanged
+     * when omitted — confirmation enqueue simply does not happen, a
+     * behavior-neutral no-op, not a degraded/fake path.
+     */
+    private readonly communicationOutboxService?: CommunicationOutboxService,
+    /** R1.6-B — same optional-last precedent; token issuance is best-effort and non-transactional (see finalize() below), so its absence never affects reservation creation. */
+    private readonly guestManagementTokenService?: GuestManagementTokenService
   ) {}
 
   async handle(request: CreateReservationRequest): Promise<Result<CreateReservationOutcome>> {
@@ -215,6 +230,7 @@ export class CreateReservationHandler {
         source: request.source,
         preferredArea: request.preferredArea,
         notes: request.notes,
+        communicationLanguage: request.communicationLanguage,
         actor: request.actor,
         now: this.clock.now(),
         isHistoricalCorrection: request.isHistoricalCorrection,
@@ -261,6 +277,37 @@ export class CreateReservationHandler {
         // A freshly generated identity cannot legitimately conflict — IdGenerator
         // guarantees uniqueness — so this only signals an infrastructure fault.
         return fail([violation("CAP-D01.01-R05", "The reservation could not be created due to an unexpected concurrent write.")]);
+      }
+
+      // R1.6-B — assignment §6: "successful Reservation creation must
+      // atomically produce the logical confirmation intent." This is the
+      // ONLY branch reached on a genuinely new save (IDEMPOTENT_REPLAY and
+      // CONCURRENCY_CONFLICT both returned above), and it runs INSIDE the
+      // same `tx` the reservation write itself just committed to (either
+      // this handler's own self-opened transaction, or the caller's —
+      // see finalize()'s own doc comment above) — a rolled-back
+      // reservation transaction rolls this back with it, by construction,
+      // never a separate, unprotected post-commit write (INV-C02).
+      if (this.communicationOutboxService) {
+        await this.communicationOutboxService.enqueueConfirmationIfEligible({
+          reservationId: created.value.getId().toString(),
+          guestName: contactName,
+          contactEmailSnapshot,
+          reservationStart: created.value.getReservationDateTime(),
+          partySize: created.value.getPartySize(),
+          area: created.value.getPreferredArea(),
+          language: created.value.getCommunicationLanguage(),
+          tx,
+        });
+      }
+      // Guest-management token issuance is deliberately NOT part of the
+      // atomic transaction above (architecture report §23) — a best-effort
+      // foundational write; its absence never affects reservation
+      // durability. See the implementation report's Known Limitations for
+      // the accepted, narrow orphan-row risk if the surrounding
+      // transaction later rolls back for an unrelated reason.
+      if (this.guestManagementTokenService) {
+        await this.guestManagementTokenService.issue(created.value.getId().toString(), created.value.getReservationDateTime());
       }
 
       const warnings: RuleViolation[] = potentialDuplicateDetected

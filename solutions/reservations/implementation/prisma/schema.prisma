@@ -64,6 +64,11 @@ model Reservation {
   // tableAssignment, it's a pragmatic staff-facing field, not a modeled
   // check-in/Seating Management capability.
   arrivedAt          DateTime? @db.Timestamptz
+  // R1.6-B — guest-facing communication language ("nl" | "en"), frozen at
+  // creation time (domain/value-objects/CommunicationLanguage.ts).
+  // Defaults to "nl" for legacy/internal callers that predate this
+  // concept (assignment §4) — never inferred, only defaulted.
+  communicationLanguage String @default("nl") @map("communication_language")
   createdBy          String
   createdAt          DateTime @db.Timestamptz
   updatedAt          DateTime @updatedAt @db.Timestamptz
@@ -561,4 +566,73 @@ model ServicePeriodOverrideWindow {
 
   @@map("service_period_override_windows")
   @@index([overrideId])
+}
+
+// R1.6-B — CAP-D06.01/CAP-D06.02-adjacent. The transactional communication
+// outbox (architecture report §7/§37; assignment §5/§8). One row per
+// logical automatic confirmation/reminder OR staff-requested resend.
+// `payload` is a bounded, explicit content snapshot (guest name,
+// reservation reference, start instant, party size, area) — never a full
+// Contact/Reservation copy (assignment §8/§35) — captured at
+// enqueue time so a delayed retry's CONTENT never silently changes
+// because Contact/Reservation was edited afterward (assignment §10;
+// eligibility, unlike content, IS re-checked live at send time — see
+// application/communications/CommunicationWorker.ts).
+//
+// `idempotencyKey` is the actual duplicate-prevention guarantee (a
+// database UNIQUE constraint, not merely "code shouldn't call it twice",
+// assignment §21) — see domain/communications/CommunicationMessage.ts for
+// how each type's key is built.
+model CommunicationMessage {
+  id                String    @id @default(cuid())
+  reservationId     String    @map("reservation_id")
+  // "RESERVATION_CONFIRMATION" | "RESERVATION_REMINDER_24H" — see
+  // domain/communications/CommunicationMessage.ts's CommunicationType.
+  communicationType String    @map("communication_type")
+  // "nl" | "en" — a snapshot of Reservation.communicationLanguage at
+  // enqueue time (assignment §10).
+  language          String
+  recipientEmail    String    @map("recipient_email")
+  // JSON-encoded CommunicationMessagePayload (application/ports/CommunicationOutboxRepository.ts).
+  payload           String
+  // Pending | Processing | Sent | FailedRetryable | FailedPermanent | Cancelled.
+  status            String    @default("Pending")
+  attemptCount      Int       @default(0) @map("attempt_count")
+  availableAt       DateTime  @map("available_at") @db.Timestamptz
+  // Set when a worker claims this row (status -> Processing) — a stale
+  // Processing row (worker crashed mid-send) becomes reclaimable once
+  // this is older than the claim query's staleness threshold (assignment
+  // §20; CommunicationOutboxRepository.claimBatch's own doc comment).
+  claimedAt         DateTime? @map("claimed_at") @db.Timestamptz
+  providerMessageId String?   @map("provider_message_id")
+  // Short, classified failure text only — never a raw provider response
+  // body, which could itself echo back guest PII (assignment §35).
+  lastError         String?   @map("last_error")
+  idempotencyKey    String    @unique @map("idempotency_key")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  sentAt            DateTime? @map("sent_at") @db.Timestamptz
+
+  @@map("communication_messages")
+  @@index([reservationId])
+  @@index([status, availableAt])
+}
+
+// R1.6-B — guest-management token foundation (architecture report §22/§23;
+// assignment §25/§26). Only `tokenHash` is ever persisted (SHA-256, via
+// the existing domain/shared/hashSessionToken.ts — the same mechanism
+// StaffSession already relies on) — a database disclosure alone can never
+// yield a usable token (INV-C09). Deliberately a SEPARATE table from
+// StaffSession, never conflated with it: this is never staff
+// authentication, and is scoped to exactly one reservationId, not a
+// staff identity.
+model GuestManagementCredential {
+  id            String    @id @default(cuid())
+  reservationId String    @map("reservation_id")
+  tokenHash     String    @unique @map("token_hash")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz
+
+  @@map("guest_management_credentials")
+  @@index([reservationId])
 }

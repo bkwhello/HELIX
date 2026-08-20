@@ -2,6 +2,7 @@ import { Actor } from "../value-objects/Actor.js";
 import { ReservationSourceProps } from "../value-objects/ReservationSource.js";
 import { CompletionEvidence } from "../value-objects/CompletionEvidence.js";
 import { PreferredArea } from "../value-objects/PreferredArea.js";
+import { CommunicationLanguage } from "../value-objects/CommunicationLanguage.js";
 
 /**
  * Fields every domain command carries so the resulting event can be
@@ -32,6 +33,8 @@ export interface CreateReservationCommand extends CommandEnvelope {
   readonly preferredArea?: PreferredArea;
   /** CAP-D01.01-R36/R37: operational context (e.g. allergies, special requests) — never the authoritative allergy record, which belongs to Allergy and Critical Notes Management once that capability exists. */
   readonly notes?: string;
+  /** R1.6-B — guest-facing communication language (assignment §3/§4). Absent only on a legacy/internal path predating this concept; defaulted to DEFAULT_COMMUNICATION_LANGUAGE by ReservationAggregate.create(), never inferred. */
+  readonly communicationLanguage?: CommunicationLanguage;
   readonly actor: Actor;
   readonly now: Date;
   readonly isHistoricalCorrection?: boolean;
