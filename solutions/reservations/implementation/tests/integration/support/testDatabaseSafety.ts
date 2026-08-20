@@ -166,3 +166,9 @@ export async function truncateSeatingDomainTables(prisma: PrismaClient): Promise
     'TRUNCATE TABLE "seating_assignment_resources", "seating_assignments", "resource_blocks" RESTART IDENTITY CASCADE'
   );
 }
+
+/** R1.6-A — Service Period override tables. Never touches closing_days (see truncateReservationDomainTables) or the static weekly-schedule config (domain/availability/ServicePeriod.ts — not a database table). */
+export async function truncateServicePeriodDomainTables(prisma: PrismaClient): Promise<void> {
+  await assertSafeToReset(prisma);
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "service_period_override_windows", "service_period_overrides" RESTART IDENTITY CASCADE');
+}

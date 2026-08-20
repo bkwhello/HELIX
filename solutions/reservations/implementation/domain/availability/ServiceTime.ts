@@ -50,3 +50,32 @@ export function toLocalHourMinute(instant: Date): LocalHourMinute {
   const hour = Number(hourPart.value) % 24;
   return { hour, minute: Number(minutePart.value) };
 }
+
+/** `hour*60 + minute`, local Europe/Amsterdam minutes-since-midnight — the unit domain/availability/ServicePeriod.ts's BookingWindow operates in. */
+export function toLocalMinuteOfDay(instant: Date): number {
+  const { hour, minute } = toLocalHourMinute(instant);
+  return hour * 60 + minute;
+}
+
+/**
+ * `Date#getDay()` convention (0 = Sunday .. 6 = Saturday) from an already-
+ * correct local "YYYY-MM-DD" string (e.g. `toLocalServiceDate`'s own
+ * output). Constructing a UTC-midnight Date from the Y/M/D components of a
+ * string that is already the correct local calendar date is timezone-
+ * independent — no further conversion is needed once the correct Y-M-D
+ * triple is known.
+ */
+export function dayOfWeekFromLocalDate(localDate: string): number {
+  const [year, month, day] = localDate.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+/**
+ * `Date#getDay()` convention (0 = Sunday .. 6 = Saturday), derived via
+ * `toLocalServiceDate` rather than a second Intl weekday lookup — see
+ * `dayOfWeekFromLocalDate`'s own comment on why this cannot reintroduce
+ * the naive-UTC-slicing bug class this file's header warns about.
+ */
+export function toLocalDayOfWeek(instant: Date): number {
+  return dayOfWeekFromLocalDate(toLocalServiceDate(instant));
+}

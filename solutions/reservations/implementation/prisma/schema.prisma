@@ -503,3 +503,62 @@ model SeatingAssignmentResource {
   @@index([tableId])
   @@index([seatId])
 }
+
+// "Service Period" booking-window eligibility (R1.6-A, Chief Engineer
+// assignment). Date-specific EXCEPTION to the static weekly schedule in
+// domain/availability/ServicePeriod.ts — the weekly schedule itself is
+// static config (same "small, static, promote only when needed"
+// precedent as CapacityPool.ts), so only this override layer needs real
+// persistence.
+//
+// IMPORTANT — registry divergence, not silently resolved: this does NOT
+// implement the capability registry's actual CAP-D02.02 definition (a
+// live per-date service-session lifecycle — ServicePeriodCreated /
+// -Opened / -Closed, active floorplan selection; capability-registry.yaml.md
+// lines 372-415). That concept is unrelated and remains entirely unbuilt.
+// This instead answers a narrower, currently-unregistered question closer
+// to CAP-D02.01 Service Management's own "default operating times" rule
+// (registry lines 335-370). See
+// R1_6_A_SERVICE_PERIOD_IMPLEMENTATION_REPORT.md §2 for the full analysis.
+//
+// areaId reuses CapacityPoolId's exact string values ("Sushi" |
+// "Teppanyaki"), same precedent as Table.areaId — deliberately not a new
+// Area table. Always area-scoped (never a nullable "applies to all areas"
+// row) — the simplest correct representation (assignment §8): a single
+// `WHERE areaId = X AND date = Y` lookup, no fallback branching. `date` is
+// a plain calendar date, no time-of-day/timezone component — same
+// convention as ClosingDay.fromDate/toDate (see PrismaClosingDayStore.ts's
+// startOfDay comment on why a bare calendar date needs no local-time
+// conversion).
+model ServicePeriodOverride {
+  id        String   @id @default(cuid())
+  areaId    String   @map("area_id")
+  date      DateTime @db.Date
+  status    String   // "Open" | "Closed"
+  reason    String?
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  windows ServicePeriodOverrideWindow[]
+
+  @@map("service_period_overrides")
+  @@unique([areaId, date])
+}
+
+// One booking window (first/last valid START minute-of-day, local) for an
+// Open ServicePeriodOverride — absent entirely when the parent's status
+// is "Closed". firstStartMinute/lastStartMinute mirror
+// domain/availability/ServicePeriod.ts's BookingWindow shape exactly —
+// this table is that pure domain type's persisted form, nothing more.
+model ServicePeriodOverrideWindow {
+  id               String @id @default(cuid())
+  overrideId       String @map("override_id")
+  firstStartMinute Int    @map("first_start_minute")
+  lastStartMinute  Int    @map("last_start_minute")
+
+  override ServicePeriodOverride @relation(fields: [overrideId], references: [id], onDelete: Cascade)
+
+  @@map("service_period_override_windows")
+  @@index([overrideId])
+}

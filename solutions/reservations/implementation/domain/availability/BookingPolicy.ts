@@ -12,6 +12,24 @@
  * Owner-confirmed rules (Architecture Revision report): self-service party
  * size 1–8 (9+ routes to staff); same-day self-service cutoff at 17:00
  * Europe/Amsterdam; staff are exempt from both restrictions.
+ *
+ * R1.6-A CORRECTION (Chief Engineer "R1.6-A Service Period Management"
+ * assignment §11): the R1.6 architecture investigation found this file's
+ * same-day cutoff branch returned a distinct, hard-rejecting
+ * `REJECTED_CUTOFF` outcome, diverging from the owner's actual confirmed
+ * intent. Owner decision, now authoritative: same-day self-service after
+ * 17:00 is ROUTE_TO_STAFF ("please call Konnichiwa"), never a hard
+ * rejection — semantically identical to every other self-service routing
+ * reason this file already produces (party-size 9+), just a different
+ * `reason` string. `REJECTED_CUTOFF` has been removed from
+ * BookingPolicyOutcome entirely — nothing else in the codebase ever
+ * produced or depended on it as a distinct type (confirmed by a full
+ * repository grep before this change). The boundary CONDITION itself
+ * (`hour >= SAME_DAY_SELF_SERVICE_CUTOFF_HOUR`, i.e. exactly 17:00:00
+ * local is already at-or-after the cutoff) is unchanged — only the
+ * outcome type changed. This is the ONLY change this correction makes;
+ * party-size routing, the staff exemption, and the local-date boundary
+ * logic below are all untouched.
  */
 import {
   SELF_SERVICE_MIN_PARTY_SIZE,
@@ -20,10 +38,7 @@ import {
 } from "./CapacityPool.js";
 import { toLocalServiceDate, toLocalHourMinute } from "./ServiceTime.js";
 
-export type BookingPolicyOutcome =
-  | { readonly type: "ALLOWED" }
-  | { readonly type: "ROUTE_TO_STAFF"; readonly reason: string }
-  | { readonly type: "REJECTED_CUTOFF"; readonly reason: string };
+export type BookingPolicyOutcome = { readonly type: "ALLOWED" } | { readonly type: "ROUTE_TO_STAFF"; readonly reason: string };
 
 export function evaluateBookingPolicy(input: {
   readonly partySize: number;
@@ -61,8 +76,8 @@ export function evaluateBookingPolicy(input: {
     const { hour } = toLocalHourMinute(now);
     if (hour >= SAME_DAY_SELF_SERVICE_CUTOFF_HOUR) {
       return {
-        type: "REJECTED_CUTOFF",
-        reason: `Same-day self-service bookings close at ${SAME_DAY_SELF_SERVICE_CUTOFF_HOUR}:00 Europe/Amsterdam.`,
+        type: "ROUTE_TO_STAFF",
+        reason: `Same-day self-service bookings close at ${SAME_DAY_SELF_SERVICE_CUTOFF_HOUR}:00 Europe/Amsterdam; please contact Konnichiwa directly for availability.`,
       };
     }
   }

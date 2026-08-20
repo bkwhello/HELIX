@@ -163,7 +163,7 @@ describe("AvailabilityOrchestrator.createWithCapacity — booking policy is eval
     expect(rows).toHaveLength(0);
   });
 
-  it("rejects a same-day guest booking after the 17:00 Europe/Amsterdam cutoff, but allows staff to book the identical request", async () => {
+  it("routes a same-day guest booking after the 17:00 Europe/Amsterdam cutoff to staff (R1.6-A correction — never a hard rejection), but allows staff to book the identical request", async () => {
     // now = 2026-08-20T16:00:00Z = 18:00 CEST — past the 17:00 local cutoff
     const sameDayLate = new Date("2026-08-20T16:00:00Z");
     const { orchestrator: guestOrchestrator } = buildHarness(prisma, sameDayLate);
@@ -172,7 +172,7 @@ describe("AvailabilityOrchestrator.createWithCapacity — booking policy is eval
     );
     expect(guestResult.type).toBe("BOOKING_POLICY_REJECTED");
     if (guestResult.type === "BOOKING_POLICY_REJECTED") {
-      expect(guestResult.policy.type).toBe("REJECTED_CUTOFF");
+      expect(guestResult.policy.type).toBe("ROUTE_TO_STAFF");
     }
 
     const { orchestrator: staffOrchestrator } = buildHarness(prisma, sameDayLate);

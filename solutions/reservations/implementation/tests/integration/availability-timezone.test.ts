@@ -94,7 +94,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     expect(result.type).toBe("CREATED");
   });
 
-  it("rejects a same-day guest booking at 17:05 local (CEST, UTC+2) — a fixed +01:00 (CET) offset would wrongly compute this as 16:05 and allow it", async () => {
+  it("routes a same-day guest booking at 17:05 local (CEST, UTC+2) to staff — a fixed +01:00 (CET) offset would wrongly compute this as 16:05 and allow it", async () => {
     const now = new Date("2026-03-29T15:05:00Z"); // 17:05 CEST; would be 16:05 under the WRONG fixed CET offset
     const { orchestrator } = buildHarness(prisma, now);
     const result = await orchestrator.createWithCapacity({
@@ -109,7 +109,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     });
     expect(result.type).toBe("BOOKING_POLICY_REJECTED");
     if (result.type === "BOOKING_POLICY_REJECTED") {
-      expect(result.policy.type).toBe("REJECTED_CUTOFF");
+      expect(result.policy.type).toBe("ROUTE_TO_STAFF");
     }
   });
 });
@@ -131,7 +131,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     expect(result.type).toBe("CREATED");
   });
 
-  it("rejects a same-day guest booking at 17:05 local (CET, UTC+1)", async () => {
+  it("routes a same-day guest booking at 17:05 local (CET, UTC+1) to staff", async () => {
     const now = new Date("2026-10-25T16:05:00Z"); // 17:05 CET
     const { orchestrator } = buildHarness(prisma, now);
     const result = await orchestrator.createWithCapacity({
@@ -146,7 +146,7 @@ describe("Same-day cutoff through the full orchestrator, real PostgreSQL — 202
     });
     expect(result.type).toBe("BOOKING_POLICY_REJECTED");
     if (result.type === "BOOKING_POLICY_REJECTED") {
-      expect(result.policy.type).toBe("REJECTED_CUTOFF");
+      expect(result.policy.type).toBe("ROUTE_TO_STAFF");
     }
   });
 });

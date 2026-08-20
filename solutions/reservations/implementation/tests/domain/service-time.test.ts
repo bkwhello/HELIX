@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toLocalServiceDate, toLocalHourMinute } from "../../domain/availability/ServiceTime.js";
+import { toLocalServiceDate, toLocalHourMinute, toLocalDayOfWeek, dayOfWeekFromLocalDate } from "../../domain/availability/ServiceTime.js";
 
 /**
  * CAP-D02.03 §timezone — Europe/Amsterdam correctness, both 2026 DST
@@ -69,5 +69,53 @@ describe("toLocalServiceDate / toLocalHourMinute — 2026-10-25 fall-back transi
     const dayAfter = new Date("2026-10-26T12:00:00Z"); // now CET (UTC+1) -> 13:00
     expect(toLocalHourMinute(dayBefore)).toEqual({ hour: 14, minute: 0 });
     expect(toLocalHourMinute(dayAfter)).toEqual({ hour: 13, minute: 0 });
+  });
+});
+
+/**
+ * R1.6-A §15 DST testing — toLocalDayOfWeek/dayOfWeekFromLocalDate, added
+ * for domain/availability/ServicePeriod.ts's weekly-schedule selection.
+ * Both 2026 transition dates (March 29, October 25) are Sundays (this
+ * file's own header comment) — the EU DST rule transitions at 01:00 UTC
+ * on the last Sunday of March/October, so the transition instant itself
+ * always falls on a Sunday by construction; the discriminating case is
+ * the near-midnight boundary just before it, where the UTC calendar date
+ * and the Amsterdam local calendar date (and therefore weekday) disagree.
+ */
+describe("toLocalDayOfWeek / dayOfWeekFromLocalDate — ordinary instants", () => {
+  it("resolves an ordinary Thursday correctly (2026-01-15, per this file's own Jan-1-is-Thursday anchor)", () => {
+    const instant = new Date("2026-01-15T10:00:00Z"); // well inside local Jan 15
+    expect(toLocalDayOfWeek(instant)).toBe(4); // Thursday
+    expect(dayOfWeekFromLocalDate("2026-01-15")).toBe(4);
+  });
+});
+
+describe("toLocalDayOfWeek — 2026-03-29 spring-forward transition (CET -> CEST), both Sundays", () => {
+  it("correct local weekday and service date at the transition instant itself", () => {
+    const atTransition = new Date("2026-03-29T01:00:00Z"); // local 03:00 CEST, still March 29
+    expect(toLocalServiceDate(atTransition)).toBe("2026-03-29");
+    expect(toLocalDayOfWeek(atTransition)).toBe(0); // Sunday
+  });
+
+  it("no UTC-date shift near local midnight: local date/weekday is already Sunday the 29th while the UTC calendar date still reads Saturday the 28th", () => {
+    // 2026-03-28T23:15:00Z is CET (+1, transition hasn't happened yet) -> local 2026-03-29T00:15.
+    const instant = new Date("2026-03-28T23:15:00Z");
+    expect(toLocalServiceDate(instant)).toBe("2026-03-29");
+    expect(toLocalDayOfWeek(instant)).toBe(0); // Sunday, NOT Saturday (6) — a naive UTC-date read would wrongly report Saturday
+  });
+});
+
+describe("toLocalDayOfWeek — 2026-10-25 fall-back transition (CEST -> CET), both Sundays", () => {
+  it("correct local weekday and service date at the transition instant itself", () => {
+    const atTransition = new Date("2026-10-25T01:00:00Z"); // local 02:00 CET, still October 25
+    expect(toLocalServiceDate(atTransition)).toBe("2026-10-25");
+    expect(toLocalDayOfWeek(atTransition)).toBe(0); // Sunday
+  });
+
+  it("no UTC-date shift near local midnight: local date/weekday is already Sunday the 25th while the UTC calendar date still reads Saturday the 24th", () => {
+    // 2026-10-24T23:15:00Z is CEST (+2, still summer time) -> local 2026-10-25T01:15.
+    const instant = new Date("2026-10-24T23:15:00Z");
+    expect(toLocalServiceDate(instant)).toBe("2026-10-25");
+    expect(toLocalDayOfWeek(instant)).toBe(0); // Sunday, NOT Saturday (6)
   });
 });
