@@ -10,16 +10,19 @@
  * This is the ONLY place these three are composed — mirrors
  * AvailabilityOrchestrator's own "one place composes I/O + pure domain
  * logic" shape (CAP-D02.03), applied here to a narrower, capacity-free
- * concern. Not wired into CreateReservationHandler / AvailabilityOrchestrator
- * — see the implementation report's Known Limitations for why this is a
- * deliberate, bounded scope decision, not an oversight.
+ * concern.
+ *
+ * R1.6-C0 — now wired into AvailabilityOrchestrator.createWithCapacity as
+ * the sole ServicePeriod enforcement point for live reservation creation
+ * (see that file, and R1_6_C0_SERVICE_PERIOD_ENFORCEMENT_IMPLEMENTATION_REPORT.md).
  */
 import { CapacityPoolId } from "../../domain/availability/CapacityPool.js";
 import { toLocalServiceDate, dayOfWeekFromLocalDate, toLocalMinuteOfDay } from "../../domain/availability/ServiceTime.js";
 import {
   BookableStartTimesResult,
   DateOverride,
-  isMinuteBookable,
+  ServicePeriodEligibility,
+  evaluateMinuteEligibility,
   resolveDaySchedule,
   toBookableStartTimesResult,
 } from "../../domain/availability/ServicePeriod.js";
@@ -61,8 +64,20 @@ export class ServicePeriodService {
 
   /** Assignment §10 — IsStartTimeWithinServicePeriod(area, requestedStart). `requestedStart` is a real instant; converted to Europe/Amsterdam local terms internally (never UTC-sliced — ServiceTime.ts). */
   async isStartTimeWithinServicePeriod(area: CapacityPoolId, requestedStart: Date): Promise<boolean> {
+    return (await this.evaluateStartTimeEligibility(area, requestedStart)).type === "VALID";
+  }
+
+  /**
+   * R1.6-C0 — the richer three-way outcome Reservation creation
+   * enforcement needs (assignment §12/§9 of that assignment). The single
+   * canonical entry point AvailabilityOrchestrator.createWithCapacity
+   * calls before proceeding — see that file for the enforcement site
+   * itself and R1_6_C0_SERVICE_PERIOD_ENFORCEMENT_IMPLEMENTATION_REPORT.md
+   * for why this is the one, sole place this authority is consulted.
+   */
+  async evaluateStartTimeEligibility(area: CapacityPoolId, requestedStart: Date): Promise<ServicePeriodEligibility> {
     const localDate = toLocalServiceDate(requestedStart);
     const resolved = await this.resolveForLocalDate(area, localDate);
-    return isMinuteBookable(toLocalMinuteOfDay(requestedStart), resolved);
+    return evaluateMinuteEligibility(toLocalMinuteOfDay(requestedStart), resolved);
   }
 }

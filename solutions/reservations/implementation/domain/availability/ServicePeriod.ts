@@ -169,3 +169,32 @@ export function toBookableStartTimesResult(resolved: ResolvedDaySchedule): Booka
 export function isMinuteBookable(minute: number, resolved: ResolvedDaySchedule): boolean {
   return resolved.status === "Open" && isMinuteWithinDaySchedule(minute, resolved.windows);
 }
+
+/**
+ * R1.6-C0 — the richer, three-way outcome Reservation creation enforcement
+ * needs (assignment §12), distinguishing WHY a start is rejected rather
+ * than collapsing everything into a single boolean:
+ *
+ *   CLOSED               — the date itself is not open at all (ClosingDay,
+ *                           a Closed override, or an empty weekly day).
+ *   OUTSIDE_SERVICE_PERIOD — the date IS open, but this exact minute is
+ *                           not within any offered window (or is not
+ *                           grid-aligned).
+ *   VALID                — an authoritative, offered booking start.
+ *
+ * No fourth "CONFIGURATION_ERROR" branch is modeled here (see the
+ * implementation report's Fail-Closed Behavior section): every
+ * currently-reachable "no data" case in resolveDaySchedule already
+ * resolves to CLOSED (fail-closed, never silently VALID); a genuine
+ * infrastructure fault (e.g. the database is unreachable) propagates as
+ * a thrown exception through the async caller chain, which is itself
+ * fail-closed by construction — nothing durable can be created if the
+ * eligibility check itself never returns.
+ */
+export type ServicePeriodEligibility = { readonly type: "VALID" } | { readonly type: "OUTSIDE_SERVICE_PERIOD" } | { readonly type: "CLOSED" };
+
+/** Pure projection from a resolved day schedule + a specific local minute to the three-way R1.6-C0 outcome. */
+export function evaluateMinuteEligibility(minute: number, resolved: ResolvedDaySchedule): ServicePeriodEligibility {
+  if (resolved.status === "Closed") return { type: "CLOSED" };
+  return isMinuteWithinDaySchedule(minute, resolved.windows) ? { type: "VALID" } : { type: "OUTSIDE_SERVICE_PERIOD" };
+}

@@ -558,6 +558,22 @@
     return (violations || []).map((v) => `${v.ruleId}: ${v.message}`).join("\n");
   }
 
+  // R1.6-C0 — /availability/reservations can reject a create for four
+  // distinct reasons (violations, booking-policy routing, capacity
+  // exhaustion, or — new this phase — ServicePeriod), each with its own
+  // response shape (api/app.ts's own createWithCapacity switch). This is
+  // the minimum safe display behavior for the new outcome (assignment
+  // §25), not a redesign of the create form itself.
+  function creationErrorMessage(data) {
+    if (data.violations) return ruleMessages(data.violations);
+    if (data.policy) return data.policy.type === "ROUTE_TO_STAFF" ? `Doorverwijzen naar personeel: ${data.policy.reason || ""}` : data.policy.type;
+    if (data.availability) return `Geen capaciteit meer (${data.availability.maxExistingOccupancy}/${data.availability.capacity}).`;
+    if (data.servicePeriod) {
+      return data.servicePeriod.type === "CLOSED" ? "Gesloten op deze datum/tijd." : "Buiten de reserveringstijden.";
+    }
+    return data.message || "Onbekende fout.";
+  }
+
   function showMessage(el, text, kind) {
     el.textContent = text;
     el.className = "message " + kind;
@@ -760,7 +776,17 @@
         notes: document.getElementById("notes").value.trim() || undefined,
       };
 
-      const res = await fetch("/reservations", {
+      // R1.6-C0 — switched from the plain, capacity-unaware /reservations
+      // to the capacity-aware /availability/reservations: the "Voorkeur"
+      // (preferred-area) field above is already a REQUIRED Sushi/
+      // Teppanyaki select (see its <select required> in the form), so
+      // every submission through this form already has exactly the data
+      // this route requires — this is a routing fix, not a form redesign.
+      // This is what makes CAP-D02.03 capacity, Teppanyaki pacing, and
+      // (as of R1.6-C0) ServicePeriod enforcement actually apply to real
+      // staff bookings made through this page, not merely to code no
+      // pilot usage ever reached.
+      const res = await fetch("/availability/reservations", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...actorHeaders() },
         body: JSON.stringify(body),
@@ -768,7 +794,7 @@
       const data = await res.json();
 
       if (!res.ok) {
-        showMessage(createMessage, "Kon reservering niet aanmaken:\n" + ruleMessages(data.violations), "error");
+        showMessage(createMessage, "Kon reservering niet aanmaken:\n" + creationErrorMessage(data), "error");
         return;
       }
       if (data.warnings && data.warnings.length > 0) {

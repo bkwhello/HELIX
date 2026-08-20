@@ -55,6 +55,8 @@ import { RuleViolation, violation } from "../../domain/shared/Result.js";
 import { SeatingOrchestrator } from "../floor/SeatingOrchestrator.js";
 import { Actor, ActorKind } from "../../domain/value-objects/Actor.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
+import { ServicePeriodService } from "./ServicePeriodService.js";
+import { ServicePeriodEligibility } from "../../domain/availability/ServicePeriod.js";
 
 /** Thrown only inside a runInTransaction callback to force a rollback when a wrapped CAP-D01.01 handler rejects after a capacity write already happened in the same transaction. Never escapes this file. */
 class OrchestratedValidationFailure extends Error {
@@ -67,6 +69,8 @@ export type CreateWithCapacityResult =
   | { readonly type: "CREATED"; readonly outcome: CreateReservationOutcome }
   | { readonly type: "CAPACITY_UNAVAILABLE"; readonly availability: AvailabilityOutcome }
   | { readonly type: "BOOKING_POLICY_REJECTED"; readonly policy: BookingPolicyOutcome }
+  /** R1.6-C0 — CAP-D02 ServicePeriod authority rejected the requested start (never VALID here — VALID means enforcement proceeds normally). Distinct from BOOKING_POLICY_REJECTED: this asks "is this an offered booking start at all", not "which channel may complete it" — see AvailabilityOrchestrator's own enforcement-site comment and domain/availability/ServicePeriod.ts. */
+  | { readonly type: "SERVICE_PERIOD_REJECTED"; readonly eligibility: ServicePeriodEligibility }
   | { readonly type: "VALIDATION_FAILED"; readonly violations: readonly RuleViolation[] };
 
 export type ModifyWithCapacityResult =
@@ -104,7 +108,25 @@ export class AvailabilityOrchestrator {
      * assignment §27 ("cancellation must leave zero active
      * SeatingAssignments").
      */
-    private readonly seatingOrchestrator?: SeatingOrchestrator
+    private readonly seatingOrchestrator?: SeatingOrchestrator,
+    /**
+     * R1.6-C0 — CAP-D02 ServicePeriod authority. Optional and LAST (after
+     * `seatingOrchestrator`, preserving every existing positional call
+     * site's compatibility — the same "add capability, never break a
+     * caller" precedent `seatingOrchestrator` itself established in R1.5)
+     * so every pre-existing test harness that constructs this class
+     * directly for reasons unrelated to ServicePeriod (concurrency, DST,
+     * seating, communications) remains valid, unchanged, and unaffected
+     * by this enforcement — deliberately, not by oversight; see the
+     * implementation report's "Transaction Ordering"/consistency-model
+     * section for the evidenced reasoning (many pre-existing fixture
+     * times were chosen for unrelated testing purposes before
+     * ServicePeriod existed and would otherwise break). When omitted,
+     * `createWithCapacity` behaves exactly as before this assignment —
+     * never a silent, partial enforcement. `api/server.ts` (the actual
+     * runtime entry point) always supplies a real instance.
+     */
+    private readonly servicePeriodService?: ServicePeriodService
   ) {}
 
   /**
@@ -133,6 +155,32 @@ export class AvailabilityOrchestrator {
       };
     }
     const pool: CapacityPoolId = poolRaw;
+
+    // R1.6-C0 — CAP-D02 ServicePeriod authority, checked BEFORE
+    // BookingPolicy (assignment §10's own recommended order) and outside
+    // the transaction (same pre-transaction-check posture as the
+    // ClosingDayStore/BookingPolicy checks immediately below — a doomed
+    // request should never reach the capacity lock). Deliberately kept
+    // DISTINCT from BookingPolicy (assignment §4): this asks "is the
+    // requested start an offered booking start at all", never "which
+    // channel may complete it" — same-day-after-17:00 routing stays
+    // BookingPolicy's own concern entirely, untouched here (assignment §5).
+    //
+    // Bypassed only for an explicit historical correction
+    // (`isHistoricalCorrection`, CAP-D01.01's own pre-existing,
+    // reason-requiring flag — assignment §8's "live operational creation
+    // vs. historical data import/migration" distinction, reusing the one
+    // mechanism that already exists for it rather than inventing a
+    // second). WalkIn and every other ReservationSourceCategory receive
+    // the SAME enforcement as any other live creation — see the
+    // implementation report's WalkIn Decision / Source-Category Matrix
+    // for why no evidence justifies a source-based bypass.
+    if (this.servicePeriodService && !request.isHistoricalCorrection) {
+      const eligibility = await this.servicePeriodService.evaluateStartTimeEligibility(pool, request.reservationDate);
+      if (eligibility.type !== "VALID") {
+        return { type: "SERVICE_PERIOD_REJECTED", eligibility };
+      }
+    }
 
     const policy = evaluateBookingPolicy({
       partySize: request.partySize,

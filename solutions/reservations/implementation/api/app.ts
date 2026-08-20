@@ -41,6 +41,7 @@ import { SessionTokenGenerator as GuestTokenGenerator } from "../application/por
 import { CommunicationOutboxService } from "../application/communications/CommunicationOutboxService.js";
 import { GuestManagementTokenService } from "../application/communications/GuestManagementTokenService.js";
 import { ResendConfirmationHandler } from "../application/communications/ResendConfirmationHandler.js";
+import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
 import {
   SESSION_COOKIE_NAME,
   createRequireStaffSession,
@@ -84,6 +85,17 @@ export interface AppDependencies {
   capacity?: {
     readonly capacityRepository: CapacityRepository;
     readonly transactionManager: TransactionManager;
+    /**
+     * R1.6-C0 — CAP-D02 ServicePeriod authority. REQUIRED whenever
+     * `capacity` itself is supplied (unlike AvailabilityOrchestrator's own
+     * constructor parameter, which stays optional purely for backward
+     * compatibility with pre-existing test harnesses — see that file's
+     * doc comment): any real deployment that mounts the capacity-aware
+     * `/availability/*` routes at all must enforce ServicePeriod on every
+     * live creation through them (assignment §33 AC-C0-01/AC-C0-14) —
+     * there is no supported way to mount these routes without it.
+     */
+    readonly servicePeriodService: ServicePeriodService;
   };
   /**
    * R1.6-B — optional, same "not available in this deployment" posture as
@@ -204,7 +216,9 @@ export function createApp(deps: AppDependencies): Express {
         deps.clock,
         createHandler,
         modifyHandler,
-        cancelHandler
+        cancelHandler,
+        undefined, // seatingOrchestrator — no HTTP floor/seating routes are mounted yet (pre-existing, unrelated to R1.6-C0)
+        deps.capacity.servicePeriodService
       )
     : null;
 
@@ -668,6 +682,13 @@ export function createApp(deps: AppDependencies): Express {
           return;
         case "BOOKING_POLICY_REJECTED":
           res.status(422).json({ policy: result.policy });
+          return;
+        case "SERVICE_PERIOD_REJECTED":
+          // R1.6-C0 — assignment §12: never exposes internal implementation
+          // details; `eligibility.type` is already exactly the guest-safe
+          // vocabulary (OUTSIDE_SERVICE_PERIOD | CLOSED) a future public
+          // mapping would reuse unchanged.
+          res.status(422).json({ servicePeriod: result.eligibility });
           return;
         case "VALIDATION_FAILED":
           res.status(422).json({ violations: result.violations });

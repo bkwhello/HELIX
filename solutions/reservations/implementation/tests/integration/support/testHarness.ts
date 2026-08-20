@@ -21,6 +21,8 @@ import { PrismaGuestManagementCredentialRepository } from "../../../infrastructu
 import { CommunicationOutboxService } from "../../../application/communications/CommunicationOutboxService.js";
 import { GuestManagementTokenService } from "../../../application/communications/GuestManagementTokenService.js";
 import { RandomSessionTokenGenerator } from "../../../infrastructure/RandomSessionTokenGenerator.js";
+import { ServicePeriodService } from "../../../application/availability/ServicePeriodService.js";
+import { PrismaServicePeriodOverrideStore } from "../../../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 
 let counter = 0;
 /** Distinct, human-inspectable IDs per test run — not cryptographically random, which is irrelevant for tests and would make failures harder to read. */
@@ -48,6 +50,18 @@ export class MutableClock implements Clock {
 export interface HarnessOverrides {
   readonly contactRepository?: ContactRepository;
   readonly eventIdGenerator?: EventIdGenerator;
+  /**
+   * R1.6-C0 — opt-in real ServicePeriod enforcement. `false`/omitted by
+   * default so the ~500 pre-existing tests that predate ServicePeriod
+   * (many using fixture times chosen for unrelated testing purposes, e.g.
+   * concurrency/DST edge cases, not all of which fall within an
+   * authoritative booking window) remain entirely unaffected — see
+   * AvailabilityOrchestrator's own constructor doc comment and the
+   * R1.6-C0 implementation report's evidenced reasoning. Pass `true` for
+   * any NEW test that specifically exercises ServicePeriod-on-Create
+   * enforcement.
+   */
+  readonly enforceServicePeriod?: boolean;
 }
 
 export function buildHarness(prisma: PrismaClient, now: Date, overrides: HarnessOverrides = {}) {
@@ -94,6 +108,13 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
   const modifyHandler = new ModifyReservationHandler(repository, eventIdGenerator, clock);
   const cancelHandler = new CancelReservationHandler(repository, eventIdGenerator, clock);
 
+  // R1.6-C0 — real Prisma-backed ServicePeriod authority, wired ONLY when
+  // a test explicitly opts in (see HarnessOverrides.enforceServicePeriod's
+  // own doc comment for why this is not the default).
+  const servicePeriodService = overrides.enforceServicePeriod
+    ? new ServicePeriodService(closingDayStore, new PrismaServicePeriodOverrideStore(prisma))
+    : undefined;
+
   const orchestrator = new AvailabilityOrchestrator(
     repository,
     capacityRepository,
@@ -103,7 +124,9 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     clock,
     createHandler,
     modifyHandler,
-    cancelHandler
+    cancelHandler,
+    undefined, // seatingOrchestrator — not needed by this general-purpose harness (see tests/integration/support/floorTestHarness.ts for the R1.5 floor-specific one)
+    servicePeriodService
   );
 
   return {
@@ -120,6 +143,7 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     credentialRepository,
     communicationOutboxService,
     guestManagementTokenService,
+    servicePeriodService,
   };
 }
 

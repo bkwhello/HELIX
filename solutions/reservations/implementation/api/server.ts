@@ -17,6 +17,8 @@ import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
 import { RandomEventIdGenerator } from "../infrastructure/RandomEventIdGenerator.js";
 import { PrismaCommunicationOutboxRepository } from "../infrastructure/persistence/PrismaCommunicationOutboxRepository.js";
 import { PrismaGuestManagementCredentialRepository } from "../infrastructure/persistence/PrismaGuestManagementCredentialRepository.js";
+import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
+import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
 
 const prisma = new PrismaClient();
 // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §21 — same-origin deployment
@@ -45,6 +47,10 @@ const app = createApp({
   capacity: {
     capacityRepository: new PrismaCapacityRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
+    // R1.6-C0 — CAP-D02 ServicePeriod authority, mandatory whenever
+    // capacity-aware routes are mounted at all (AppDependencies.capacity's
+    // own doc comment).
+    servicePeriodService: new ServicePeriodService(new PrismaClosingDayStore(prisma), new PrismaServicePeriodOverrideStore(prisma)),
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
   // route. Real EmailDeliveryPort/provider selection remains a separate,
