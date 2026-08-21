@@ -95,3 +95,15 @@ Create one entry whenever: a top-three claim is made; causality is inferred from
 - Consequence if valid: any future reference to Konnichiwa's "current" review count must cite a specific value with its date and source rather than treating either figure as simply "the" current count. Neither figure is definitively wrong — both are supported at their own recorded date.
 - **No explanation for the 20-review difference is inferred.** Plausible, unconfirmed possibilities include genuine review growth over the 2-day gap, a difference between the general-search-results surface and the local-pack surface, or normal display-caching variation — none of these is adopted, ranked, or ruled out here.
 - Status: **Open — both values preserved, not reconciled.** Any artifact citing a review count must state which figure and which date it uses.
+
+## CR-007
+
+- Target artifact or claim: Konnichiwa's TheFork review count — publicly exposed review-count figures differ between TheFork surfaces (exact surfaces/values not yet individually captured with source/date pairs).
+- Challenger: weekly review W34 (measurement/2026-W34-visibility-brief.md, 21 August 2026).
+- Date: 21 August 2026.
+- Challenge: TheFork's 9.1/10 rating is a usable, single observed figure, but the review count shown differs depending on which TheFork surface is checked (e.g. restaurant profile page vs. search/listing surface) — mirroring, on a different platform, the same pattern already open in CR-006 for Google (605 vs. 625).
+- Evidence: no individually source-and-date-tagged screenshot pair exists yet for each conflicting TheFork surface — this is registered as a **measurement-method problem** (which surface, which date, which figure) per the source's own note, not as evidence that any one specific count is wrong.
+- Consequence if valid: TheFork review-count growth cannot currently be attributed week over week; any artifact citing a TheFork review count must state which surface and date it used, exactly as CR-006 already requires for Google.
+- **No specific count is treated as correct or incorrect here.** This is a data-quality/measurement-method issue, not a claim about which figure is accurate.
+- Resolution: open — requires a source-and-date-tagged capture of each TheFork surface's review-count display before reconciliation can even be attempted.
+- Status: **Open — review-count method conflict, not reconciled. Rating (9.1/10) is not affected and remains a usable single observation.**

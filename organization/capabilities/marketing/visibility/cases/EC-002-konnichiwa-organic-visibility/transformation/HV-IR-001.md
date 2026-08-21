@@ -44,7 +44,7 @@ Elke visibility-wijziging krijgt een Intervention Record, zodat later kan worden
 | Implementatiebewijs | `omakase-utrecht.php`, `teppanyaki-menu.php`, schema.org Menu/MenuItem-blokken |
 | Externe invloeden | Omakase-concurrentie ligt in Amsterdam, geen directe Utrecht-concurrent verandert tegelijk |
 | Resultaat | Nog niet gemeten — eerste meetronde dag 7 op 29 juli 2026 |
-| Verdict | **Live — Awaiting First Validation (dag 7: 29 juli 2026)** |
+| Verdict | **Live — Awaiting First Validation (dag 7: 29 juli 2026) — Overdue.** Vastgesteld 21 augustus 2026 (weekly review W34, measurement/2026-W34-visibility-brief.md): geen enkele validatieronde (dag 7/28/56) is uitgevoerd; alle beschikbare Search Console-evidence (evidence/raw/search-console-2026-07-23/) en de HV-TS-001-AI-testronde dateren beide van vóór of op de livegangsdatum (22 juli 2026) — er bestaat dus geen post-livegang herhaalmeting om op terug te vallen, gerecupereerd of anderszins. Herstel is deze week (W34) top-1-prioriteit: (1) eerst CR-004's confounderscheck (Amsterdam-concurrentie, seizoen, reviewactiviteit) opnieuw tegen de huidige datum beoordelen, (2) dan een nieuwe Search Console-export voor "omakase Utrecht"/"teppanyaki Utrecht" en een herhaling van de HV-TS-001-scenario's uitvoeren. Geen verdict wordt toegekend voordat die twee stappen zijn afgerond (HV-MP-001 §13, No False Attribution) — dit blijft **Live — Awaiting First Validation**, nu expliciet als **Overdue** gemarkeerd, geen Earned/Provisionally Earned/Inconclusive/Not Earned/Harmful-verdict wordt hier vooruitgelopen. |
 
 ---
 

@@ -12,6 +12,6 @@ From the new case-establishment source, §13. All Candidate; must be validated t
 | WO-005 | Content and Landing Page Backlog | Candidate — see design/HV-VCM-001.md backlog |
 | WO-006 | Review Acquisition Routine | Candidate — not yet built |
 | WO-007 | Local Authority and Citation Register | Candidate — not yet built |
-| WO-008 | Weekly Visibility Brief | Candidate — format defined in decisions/DD-003-weekly-operating-loop.md, no issue produced yet |
+| WO-008 | Weekly Visibility Brief | Candidate — format defined in decisions/DD-003-weekly-operating-loop.md; first issue produced: measurement/2026-W34-visibility-brief.md (period 2026-W34). Cadence remains governed by decisions/DD-003-weekly-operating-loop.md; maximum three weekly priorities remains authoritative. |
 | WO-009 | Weekly Marketing Action Plan | Candidate — not yet built |
 | WO-010 | Transformation Measurement Record | Candidate — see transformation/HV-IR-001.md |
