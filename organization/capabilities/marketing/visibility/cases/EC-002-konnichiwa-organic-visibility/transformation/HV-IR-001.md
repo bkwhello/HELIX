@@ -112,6 +112,75 @@ Zie-ook: het cookiebanner-mechanisme in `header.php` is bij inspectie zelf corre
 
 ---
 
+## HV-INT-006 — Consent-bridge (`propagateConsent()`) inline in header.php, buiten dit register om geïmplementeerd
+
+| Veld | Waarde |
+|---|---|
+| Datum goedgekeurd | Niet vastgelegd in dit register — geïmplementeerd vóór registratie, ontdekt via productie-validatie op 23 augustus 2026 (observations/O-016.md, EV-034). |
+| Datum geïmplementeerd | Onbekend exact — Kelvin bevestigt (24 augustus 2026): inline blok in `header.php` toegevoegd, gewijzigd bestand handmatig via FileZilla naar productie geüpload. Niet via dit repository's git-workflow gecommit — diagnosis/HV-CSD-001…md (EV-035) bevestigde 23 augustus dat de repo-versie van `header.php` deze code niet bevat. |
+| Gerelateerd defect | Bedoeld als oplossing voor de bevinding in diagnosis/HV-CSD-001-consent-architecture-divergence.md ("Architecture Recommendation", Option C): Complianz-acceptatie resulteerde niet in een Google Consent Mode-update. |
+| Gerelateerde claim | Een expliciete bridge (`propagateConsent()`, luisterend op `cmplz_status_change`, roept `gtag('consent','update',...)` aan) zou de ontbrekende koppeling tussen Complianz en Google Consent Mode herstellen zonder Complianz Premium. |
+| Gerelateerde pagina/bron | Sitebreed via `header.php` (`<head>`-blok) |
+| Baseline | observations/O-015.md, EV-030: na Complianz Accept bleven alle vier Google Consent Mode `update`-waarden `undefined`. |
+| Verwacht effect | Na Complianz Accept: alle vier Google Consent Mode `update`-waarden naar `granted`/overeenkomstige staat, GA4/Ads-metingen werken zoals bedoeld na toestemming. |
+| Eigenaar | Kelvin (implementatie en FTP-publicatie door Kelvin, buiten Claude/dit repository om) |
+| Implementatiebewijs | **Bijgewerkt 26 augustus 2026 (observations/O-017.md, EV-042):** gecommit en gepusht naar `origin/main` als `c9f6a5681ca7885e7ca12b1fb3a2a2ce49bc2745` (geïsoleerde cherry-pick van lokale commit `81316c851589ff585f4271a64a33f4f5e12efe93`, schone fast-forward vanaf `b142905ff8b1509cf37d38a2ac204c0668ebe94f`, geen force/merge/rebase). Onafhankelijk herbevestigd live op productie via een verse FTP-pull (26 augustus), byte-voor-byte identiek aan het eerder voorbereide bestand. |
+| Resultaat | **Validatie mislukt (observations/O-016.md, EV-034, 23 augustus 2026):** `cmplz_has_consent('statistics')`/`('marketing')` beide `true` na Accept, maar alle vier `gtag('consent','update',...)`-waarden blijven `undefined` — ook na handmatige `cmplz_status_change`-dispatch. **Nadien opgelost — zie het eindverdict onderaan deze sectie.** |
+| Verdict | **Root Cause Confirmed and Corrected — Fix Validated End-to-End in Production, Repository Reconciliation Complete (26 augustus 2026).** Zie de status- en eindverdicht-tabellen hieronder voor de volledige validatie- en reconciliatie-geschiedenis; deze cel is bijgewerkt om tegenspraak met die latere vaststelling te voorkomen. |
+
+**Vereiste validatiematrix (Case Owner-specificatie, 24 augustus 2026) — uit te voeren door Kelvin ná FTP-upload van het gecorrigeerde bestand, resultaten te rapporteren voor vastlegging:**
+
+| # | Scenario | Te verifiëren |
+|---|---|---|
+| A | Fresh visitor | Precies 1 GTM-script/bootstrap; Complianz is de enige banner; `analytics_storage`/`ad_storage`/`ad_user_data`/`ad_personalization` = `denied` |
+| B | Accept | `cmplz_has_consent('statistics')`/`('marketing')` = `true`; Google Consent Mode `update` niet langer `undefined`; `analytics_storage` → `granted`; marketing-gemapte staten gedragen zich zoals ontworpen; GA4-meting zichtbaar |
+| C | Decline | Complianz-consent blijft/wordt `denied`; `analytics_storage` blijft/wordt `denied`; advertentie-gerelateerde staten blijven/worden `denied`; geen ongepaste `granted`-staat overleeft |
+| D | Returning visitor — eerder geaccepteerd | Na herlaad: Complianz herstelt staat; bridge propageert opgeslagen staat; Google Consent Mode bereikt correcte `granted`/`denied`-staat |
+| E | Returning visitor — eerder geweigerd | Na herlaad: Google Consent Mode blijft `denied` |
+| F | Revoke / voorkeurswijziging | Eerder verleende consent kan worden ingetrokken; Google Consent Mode keert terug naar `denied` |
+
+Bij falen van één scenario: **STOP** — geen tweede correctieve productiewijziging zonder nieuwe Case-Owner-goedkeuring.
+
+**Status per 24 augustus 2026 (observations/O-017.md, EV-038):**
+
+| # | Scenario | Resultaat |
+|---|---|---|
+| A | Fresh visitor | **PASS** |
+| B | Accept | **PASS** — alle vier `update`-waarden → `true` |
+| C | Decline | **PASS** — alle vier `update`-waarden → `false` |
+| D | Returning visitor — geaccepteerd | **PASS** — na herlaad zonder cookies te wissen: staat blijft `true`, Consent Mode keert terug naar `granted`, GTM blijft 1x |
+| E | Returning visitor — geweigerd | **PASS** — na herlaad: staat blijft `false`; `update` kan `undefined` blijven (geen nieuwe update nodig, `default` is al `denied`) — dit is verwacht gedrag, geen defect; GTM blijft 1x |
+| F | Revoke / voorkeurswijziging | **PASS** — na intrekken van Statistics/Marketing: alle vier `update`-waarden → `false` |
+| — | Measurement behaviour (GA4) | **PASS** — Accepted: granted, `page_view` gemeten; Denied: `gcs=G100`/`npa=1` (verwacht, cookieless); Revoked: keert terug naar dezelfde restricted-staat; geen dubbele meting waargenomen |
+
+**Alle poorten afgerond, 26 augustus 2026 (observations/O-017.md, EV-041).** Root cause (EV-037) hiermee bevestigd over de volledige levenscyclus (accept/deny/herlaad/revoke) én bevestigd tot en met daadwerkelijk GA4-meetgedrag, ongewijzigd t.o.v. de oorspronkelijke vaststelling.
+
+**HV-INT-006 eindverdict: Root Cause Confirmed and Corrected — Fix Validated End-to-End in Production.** Alle zes gedragsscenario's plus de meetgedrag-poort: PASS. **HV-CSD-001 is hiermee CLOSED** (diagnosis/HV-CSD-001-consent-architecture-divergence.md).
+
+**Repository-reconciliatie, apart afgerond op 26 augustus 2026 (observations/O-017.md, EV-042) — niet gelijktijdig met bovenstaande productie-sluiting, wel dezelfde dag.** Productie is onafhankelijk herbevestigd via een verse FTP-pull, byte-voor-byte identiek aan het eerder voorbereide bestand. De fix is vervolgens gecommit en gepusht naar `origin/main` als `c9f6a5681ca7885e7ca12b1fb3a2a2ce49bc2745` (schone fast-forward vanaf `b142905ff8b1509cf37d38a2ac204c0668ebe94f`, geen force/merge/rebase/amend/squash) — geïsoleerd via een apart worktree/branch specifiek om een onafhankelijke, reeds bestaande divergentie in de lokale repository-geschiedenis (twee lokale commits die al elders gepushte wagyu/sake-content dupliceren) niet mee te pushen. Die divergentie, en de bestaande niet-gecommitte werkboom-wijzigingen (taalschakelaar, `.footer__social`-CSS, ongerelateerde paginatemplates), blijven een **apart, onopgelost traject** — bewust niet aangeraakt in dit werk.
+
+**Losstaande waarneming, niet onderdeel van HV-CSD-001:** tijdens het testen was een console-foutmelding zichtbaar — `TypeError: section.querySelectorAll is not a function`. Niet gediagnosticeerd, niet opgelost, geen causaal verband met de consent-bridge vastgesteld. Geregistreerd als losstaand vervolgpunt (observations/O-017.md, EV-040).
+
+**Bijwerking, procesbevinding (geen technische bug):** dit is de eerste interventie in dit register die buiten de HELIX-gedocumenteerde workflow om is geïmplementeerd en gepubliceerd — ontdekt achteraf, via een validatiefout, niet via een vooraf goedgekeurde HV-INT-aanvraag. Dit register kon de wijziging daardoor niet vooraf vastleggen (geen "Datum goedgekeurd", geen implementatiebewijs beschikbaar bij aanmaak van dit item). Zie diagnosis/HV-CSD-001-consent-architecture-divergence.md voor de volledige technische reconstructie.
+
+---
+
+## HV-INT-007 — Header-logo/zijbalk-mismatch: HTML bijgewerkt naar reeds-live CSS
+
+| Veld | Waarde |
+|---|---|
+| Datum goedgekeurd | 24 augustus 2026 (Kelvin, na melding "logo veel te groot" ná upload van HV-INT-006) |
+| Gerelateerd defect | Ontdekt bij validatie van HV-INT-006: productie-`header.php` gebruikte nog de oude zijbalk-opmaak (`aside#side-nav`, `.side-nav__content--logo`), terwijl productie's `build/index.css` al eerder — los van dit onderzoek — volledig was bijgewerkt naar het nieuwe ontwerp (`.header__logo`, geen `#side-nav`/`.side-nav__content--logo`-regels meer). Zonder eigen CSS-regel viel het logo terug op de generieke `img { width:100%; }`-regel → veel te groot. **Bevestigd: niet veroorzaakt door HV-INT-006** — het gecorrigeerde bestand week alleen 3 tokens af van wat Kelvin als "huidige productie" aanleverde, en die 3 tokens zaten uitsluitend in JavaScript. |
+| Kelvin bevestigt | De zijbalk hoort inderdaad weg te zijn — dat is de gewenste, huidige koers (bevestigd 24 augustus). |
+| Fix | HTML bijgewerkt naar de reeds in de lokale git-werkkopie voorbereide (nooit geüploade) versie: `<aside id="side-nav">`-blok verwijderd, logo verplaatst naar `<a class="header__logo">` in de header-balk — exact het stuk uit de al bestaande, niet-gecommitte lokale wijziging, **exclusief** de taalkeuzeschakelaar (Polylang) die in dezelfde lokale wijziging zat. |
+| Taalkeuzeschakelaar | Expliciet **niet** meegenomen — apart, later, pas zodra de Engelse vertaling er is (Kelvins instructie). |
+| Geen CSS-wijziging nodig | De CSS voor `.header__logo` staat al goed live op productie. |
+| Implementatiebewijs | `outputs/header-corrected-20260824-v2-sidebar-fix.php` (bevatte zowel de HV-INT-006 bridge-fix als deze HTML-correctie). **Bevestigd live 26 augustus 2026 (observations/O-017.md, EV-042):** een verse FTP-pull van productie was byte-voor-byte identiek aan dit bestand — `header__logo` aanwezig, `aside#side-nav` afwezig, geverifieerd via directe diff, geen onbekende afwijking. Gecommit en gepusht naar `origin/main` als `c9f6a5681ca7885e7ca12b1fb3a2a2ce49bc2745`, samen met de HV-INT-006-wijziging. |
+| Resultaat | **Bevestigd (26 augustus 2026, EV-042):** logo op normale grootte, geen zijbalk zichtbaar — visueel bevestigd via de onafhankelijk herbevestigde productie-HTML. De HV-INT-006-validatiematrix (A–F plus meetgedrag) is inmiddels ook volledig afgerond, allen PASS (zie HV-INT-006 hierboven). |
+| Verdict | **Root Cause Confirmed and Corrected — Fix Validated in Production, Repository Reconciliation Complete (26 augustus 2026).** |
+
+---
+
 ## Wat hierna gebeurt
 
 Dezelfde evidence/HV-IV-003.md-zoekopdrachten en evidence/HV-IV-004.md-AI-vragen herhalen op dag 7, 28, 56, 90, resultaat + confidence + verdict invullen (Earned/Provisionally Earned/Inconclusive/Not Earned/Harmful, measurement/HV-MP-001.md §13). Geen verdict vóór livegang (HV-MP-001 §13, No False Attribution).
