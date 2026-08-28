@@ -36,6 +36,125 @@ od_002_cand3_collection_started: false
 
 The Stage 1 specification (design/OD2-CAND-3-cache-state-evidence-specification.md) has been prepared, independently gate-reviewed (decisions/DD-026, Passed With Conditions, corrected twice), and **APPROVED WITH CONDITIONS FOR BOUNDED EVIDENCE COLLECTION** (decisions/DD-026, Case-Owner Decision, Kelvin Wong, 3 August 2026) — subject to twenty-seven binding conditions. This approval does not itself constitute evidence collection: no CSE item has been collected, no account or system has been accessed, and `od_002_cand3_collection_started` remains `false`. Collection begins only when Kelvin personally accesses the applicable accounts and supplies evidence — Claude is not authorized for direct authenticated access (`od_002_cand3_direct_authenticated_access_authorized: false`). Stage 2 has not started and requires its own new, separate case-owner authorization regardless of Stage 1's eventual outcome (CS-1, CS-3, "Configured Cache Confirmed — Delivered Miss Observed for Bounded Request(s)," "Configured Cache Confirmed — Delivery Unconfirmed," CS-2, or CS-4). Transformation and external changes remain unauthorized. All DD-018, DD-022, DD-025, and DD-026 conditions remain binding. See decisions/DD-025's Case-Owner Selection section and decisions/DD-026's Gate Verdict and Case-Owner Decision for the complete decision record.
 
+### Status Update — Stage 1 Closed, Stage 2 Specification Prepared (13 August 2026)
+
+*Second status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above — all remain exactly as originally constructed.*
+
+Stage 1 (OD2-CAND-3) closed **Completed — Evidence Insufficient / Approved Evidence Exhausted** across three evidence-intake rounds (design/EC-002-OD2-CAND-3-Evidence-Intake.md; decisions/DD-027, DD-028) — bounded overall outcome **CS-4 — Insufficient Evidence**, `Accepted With Conditions` (decisions/DD-028). The authoritative layer matrix: WordPress = Not Present Within Inspected Plugin List / Unconfirmed; host/reverse-proxy (Varnish, konnichiwa.nl) = Unconfirmed / Unconfirmed; CDN/edge = Confirmed Disabled within the inspected DirectAdmin account scope / Unconfirmed. The domain-specific Varnish state remains the case's primary open unknown.
+
+decisions/DD-029 (OD2-CAND-2 Stage 2 Authorization Gate) independently assessed readiness to begin Stage 2 — twelve-item G-01–G-12 matrix, no failures; eight candidate backend/origin evidence classes (BE-01–BE-08) assessed, none Essential; ten-item independent challenge, seven Survive, three Survive with Narrowing. **Recommendation: RECOMMEND AUTHORIZED WITH CONDITIONS, specification preparation only.** Kelvin Wong then issued **AUTHORIZED WITH CONDITIONS TO PREPARE STAGE 2 SPECIFICATION** (decisions/DD-029, Case-Owner Decision, 13 August 2026), nine binding conditions.
+
+**design/OD2-CAND-2-origin-backend-evidence-observability-specification.md has now been prepared** (13 August 2026) under that authorization — a specification only, carrying forward all nine decisions/DD-029 conditions and all BE-01–BE-08 classifications unmodified. It does not authorize evidence collection, authenticated access, Diagnosis reopening, implementation, Transformation, or external changes.
+
+```yaml
+od_002_cand3_stage_1_status: Completed — Evidence Insufficient / Approved Evidence Exhausted
+od_002_stage_2_authorization_gate: Authorized With Conditions — Specification Preparation Only (decisions/DD-029)
+od_002_stage_2_specification_created: true
+od_002_stage_2_specification_status: Prepared — Evidence Collection Not Authorized
+od_002_stage_2_evidence_collection_authorized: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: an independent readiness review of the Stage 2 specification — not created by this task.
+
+### Status Update — Stage 2 Specification Independently Reviewed (13 August 2026)
+
+*Third status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+decisions/DD-030 (OD2-CAND-2 Specification Readiness Gate) independently reviewed design/OD2-CAND-2-origin-backend-evidence-observability-specification.md across authority/scope, the BE-01–BE-08 manifest, evidence-class separation, privacy/security, outcome routing, mechanism-discrimination usefulness, a fifteen-attack independent challenge, and a twelve-item G-01–G-12 matrix. **Three genuine, bounded defects were found and corrected directly in the specification**, each preserved inline with dated attribution: a BE-07 Class 4/Class 6 cross-reference contradiction; a scope-precision gap where Phase 2's question named six mechanisms but the BE manifest addresses only two (CE-DQ4-A/B), now explicitly disclaimed for CE-DQ4-C/E/F/G; and a missing server-file-path redaction category (already named as a risk in decisions/DD-029's own G-08 table but absent from the specification's Phase 5 list). No BE item was found Essential — Evidence Insufficient remains a fully legitimate outcome. **Gate Verdict: PASSED WITH CONDITIONS.**
+
+```yaml
+od_002_stage_2_specification_status: Prepared — Readiness Reviewed, Decision Pending
+od_002_stage_2_specification_readiness_gate: DD-030 — Passed With Conditions
+od_002_stage_2_evidence_collection_authorized: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: Kelvin's explicit response to decisions/DD-030's requested case-owner response (APPROVED FOR BOUNDED STAGE 2 EVIDENCE COLLECTION / WITH CONDITIONS / NOT APPROVED) — not recorded by this task.
+
+### Status Update — OD-002 Design Establishment Gate Reviewed (13 August 2026)
+
+*Sixth status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+decisions/DD-032 independently reviewed whether OD-002's Organizational Design may be established, given OD2-CAND-3 Stage 1 (complete, accepted CS-4) and OD2-CAND-2 Stage 2 Round 1 (complete, accepted Evidence Insufficient). All twenty preconditions passed. All seventeen OD2-REQ items and all nine OD2-AS items were independently reviewed — no requirement failed (five Conditional Pass, future-facing and untested rather than violated); no assumption was promoted from Needs More Evidence/Unassessed/Unassessable/Aging to fact. A twenty-item G-01–G-20 matrix found no failures (three Pass With Conditions: Stage 1/Stage 2 completion integrity, measurement/observability completeness). An eighteen-item independent challenge found **all eighteen Survive, none Rejected, none requiring narrowing**.
+
+**Gate Verdict: PASSED WITH CONDITIONS. Recommendation: RECOMMEND ESTABLISHED WITH CONDITIONS**, with one sole authoritative Design statement (Confidence: Medium-Low) — a bounded measurement-and-observability Design that explicitly does not establish caching absence, Varnish activity, backend slowness, the TTFB tail's cause, any required intervention, or any ranking/conversion/revenue/reservation benefit. Ten binding conditions recorded if established. **This recommendation is not the case-owner decision.**
+
+```yaml
+od_002_design_establishment_gate: DD-032 — Passed With Conditions
+od_002_design_establishment_recommendation: Recommend Established With Conditions
+od_002_design_establishment_decision: Pending
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: Kelvin's explicit response to decisions/DD-032 (ESTABLISHED / ESTABLISHED WITH CONDITIONS / NOT ESTABLISHED) — not recorded by this task.
+
+### Status Update — OD-002 Design Established With Conditions (13 August 2026)
+
+*Seventh and final status-only addendum for this milestone. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+decisions/DD-032's Case-Owner Decision: Kelvin Wong issued **ESTABLISHED WITH CONDITIONS**. **OD-002 now has an Established Organizational Design (Conditional), Authority: decisions/DD-032 Case-Owner Decision, Confidence: Medium-Low** — the sole authoritative Design statement is decisions/DD-032's own (preserved verbatim there): a bounded measurement-and-observability Design targeting the 26% CrUX poor-mobile-TTFB share, which does not establish caching absence, Varnish activity, backend slowness, the TTFB tail's cause, any required intervention, or any ranking/conversion/revenue/reservation benefit. **CE-DQ4-C/E/F/G remain uninvestigated** (canonical phrasing, decisions/DD-032). Ten original plus sixteen additional binding conditions apply, verbatim, separately provenanced.
+
+```yaml
+od_002_design_establishment_decision: Established With Conditions
+od_002_design_established: true
+od_002_design_establishment: Conditional
+od_002_design_authority: DD-032 Case-Owner Decision
+od_002_design_confidence: Medium-Low
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+**This establishment does not authorize Transformation, external changes, or any technical intervention.** Next action: prepare an independent Transformation Authorization Readiness Gate for the established OD-002 Design **only if explicitly instructed by the case owner** — not created by this task.
+
+### Status Update — Bounded Stage 2 Evidence Collection Authorized (13 August 2026)
+
+*Fourth status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+decisions/DD-030's Case-Owner Decision: Kelvin Wong issued **APPROVED WITH CONDITIONS FOR BOUNDED STAGE 2 EVIDENCE COLLECTION** — BE-01–BE-08 only, Owner-Supplied Redacted Evidence Only, not unrestricted Stage 2 execution. Condition Set A (nine, decisions/DD-029) and Set B (seven, decisions/DD-030) recorded verbatim, separately provenanced, plus seventeen new additional binding conditions (collection scope, missing-evidence discipline, phpMyAdmin exclusion, access/mutation prohibitions, privacy exclusions, evidence-class separation, CE-DQ4-A/B-only scope, stop rules).
+
+```yaml
+od_002_stage_2_specification_status: Approved With Conditions — Bounded Evidence Collection Authorized
+od_002_stage_2_evidence_collection_authorized: true
+od_002_stage_2_evidence_collection_decision: Approved With Conditions
+od_002_stage_2_collection_mode: Owner-Supplied Redacted Evidence Only
+od_002_stage_2_collection_started: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: prepare a bounded BE-01–BE-08 Evidence Intake request/package under decisions/DD-030 — not created by this task; evidence collection does not begin until that intake task is separately started.
+
+### Status Update — Evidence Intake Request Package Prepared (13 August 2026)
+
+*Fifth status-only addendum. It does not alter any requirement, candidate formulation, attack, comparison, or future-evaluation-design content in Phases 1 through 8 above.*
+
+design/OD2-CAND-2-stage-2-evidence-intake-request.md has been prepared under decisions/DD-030's Case-Owner Decision — a checklist/request package only, offering Kelvin a safe, concrete way to supply any already-available, redacted BE-01–BE-08 evidence, or record Not Available/Unknown/Declined for any item. No BE item is marked Essential. phpMyAdmin remains excluded, with no navigation instructions or SQL content anywhere in the package. No evidence has been collected, no evidence ID assigned, and no classification performed.
+
+```yaml
+od_002_stage_2_evidence_intake_package_created: true
+od_002_stage_2_evidence_intake_package_status: Prepared — Awaiting Owner-Supplied Evidence
+od_002_stage_2_collection_started: false
+od_002_stage_2_evidence_received: false
+od_002_stage_2_evidence_classified: false
+od_002_stage_2_authorized: false
+od_002_design_established: false
+transformation_authorized: false
+external_changes_authorized: false
+```
+
+Next action: Kelvin supplies any available, redacted BE-01–BE-08 evidence or records Not Available/Unknown; no direct agent access.
+
 ---
 
 ## Precondition Verdict

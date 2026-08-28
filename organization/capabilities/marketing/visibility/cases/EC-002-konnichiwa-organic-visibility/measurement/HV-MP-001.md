@@ -79,6 +79,8 @@ Required tracking events: `reservation_click`, `reservation_widget_open`, `phone
 
 **Implementation status (22 juli 2026):** most `data-track` attributes in place, pending GA4 connection in GTM (`GTM-WXH5P6SN`). Three gaps: no `directions_click` target exists (no Maps link on site); no `private_dining_enquiry` target exists (no CTA on the Private Dining card); catering form (`page-catering.php`) has no `action`/handler — submissions are lost. See `observations/O-011.md`.
 
+**Superseded by production verification dated 2026-08-21 (see observations/O-014.md, EV-025–EV-028).** All three gaps listed above were no longer present in production as of that date — the statement above remains historically accurate for 22 July 2026 and is not rewritten. No client-side or GTM-side mechanism confirming any of the six customer-action events actually reaches GA4 was found as of the same date; see O-014.md for the full finding, including an unresolved consent-architecture risk (Measurement Integrity Risk: HIGH) that applies across all customer-action measurement.
+
 ---
 
 # 9. AI Visibility Test Protocol

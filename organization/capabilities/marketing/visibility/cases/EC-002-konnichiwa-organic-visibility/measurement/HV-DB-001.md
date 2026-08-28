@@ -67,6 +67,27 @@ Nog steeds geen samengesteld "Visibility Score" of "Overall Confidence"-percenta
 
 Deze regeneratie betreft alleen dit bronbestand. De gepubliceerde Owner View (bovenstaande link) en het Command Center-artefact zijn nog niet opnieuw gepubliceerd tegen deze v5-inhoud — dat is een aparte, nog niet uitgevoerde stap.
 
+## v6 (21 augustus 2026) — weekly review W34
+
+Reden: eerste wekelijkse review (decisions/DD-003) sinds case-establishment; zie measurement/2026-W34-visibility-brief.md voor de volledige brief. Deze regeneratie voegt twee nieuwe databronregels toe en laat Measurement Readiness ongewijzigd.
+
+### Databronstatus — nieuwe/gewijzigde regels sinds v5
+
+| Bron | Status | Laatst gemeten | Kernbevinding |
+|---|---|---|---|
+| Google Bedrijfsprofiel — reviews/rating (Owner Declaration, 21 aug 2026) | **Measured** | 21 augustus 2026 | 4,1★ / 626 reviews. Geregistreerd als **+1 t.o.v. de vorige 625-waarneming via dezelfde methode** (Owner Declaration, lokaal paneel, observations/O-003.md-addendum, 24 juli 2026) — niet t.o.v. de 605-waarneming (evidence/HV-IV-001.md, algemene zoekresultaten, andere methode). Challenge Evidence/CR-register.md CR-006 (605 vs. 625) blijft **open, niet opgelost**; deze nieuwe waarneming lost dat verschil niet op en mag er niet stilzwijgend mee vermengd worden. Ratingverandering: geen. |
+| TheFork — rating en review-aantal | **Measured, gedeeltelijk** | 21 augustus 2026 | Rating 9,1/10 bruikbaar. Review-aantal **bronconflicterend** — verschillende TheFork-oppervlakken tonen verschillende aantallen. Zie Challenge Evidence/CR-register.md CR-007 (nieuw). Geen enkel aantal wordt hier als "het" aantal gekozen. |
+
+Duiding (Reputation, niet samengevoegd tot één cijfer, HV-MP-001 §4): het +1-review-signaal en de stabiele rating zijn een **andere metriek-familie** dan claims/OC-002's engagement-daling (interacties, websiteklikken, routes, telefoontjes, menuweergaven, afspraken) — zie de toegevoegde scope-notitie in claims/OC-002-competing-explanations-register.md. Eén cijfer omhoog bij reviews weerlegt of bevestigt OC-002 niet; het is een apart, smal gemeten signaal.
+
+Measurement Readiness: **blijft 51%** (v4, GA4-koppeling) — er bestaat geen vastgelegde berekeningsformule om een nieuw percentage af te leiden uit de bevindingen van deze week. Status: **Awaiting remeasurement.** Geen nieuw percentage wordt uitgevonden.
+
+Nieuwe/bijgewerkte artefacten deze week: measurement/HV-SCR-001-source-consistency-register.md (nieuw — neutrale registratie van naam/adres/telefoon/uren per bron, geen correctie of schadeclaim), design/HV-CHM-001-canonical-hours-model.md (nieuw — intern ontwerp, niet gepubliceerd), transformation/HV-IR-001.md HV-INT-002 (validatie dag 7 blijkt niet uitgevoerd — nu geregistreerd als achterstallig, herstelactie gepland).
+
+### Wat hier bewust niet in staat
+
+Nog steeds geen samengesteld "Visibility Score" of "Overall Confidence"-percentage (ongewijzigd t.o.v. v5). Geen nieuwe entity-naming-correctie of -classificatie — diagnosis/OD-003 en decisions/DD-022 blijven autoritatief; het Source Consistency Register registreert alleen, het herclassificeert niets.
+
 ## Bijwerken
 
 Los gepubliceerde pagina's, geen bestanden die automatisch meelopen met de case. Bijwerken zodra echte cijfers binnenkomen (na exports/validatierondes).
