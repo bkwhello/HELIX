@@ -24,6 +24,7 @@ import { CapacityRepository } from "../domain/repositories/CapacityRepository.js
 import { TransactionManager } from "../application/ports/TransactionManager.js";
 import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
 import { SeatingOrchestrator } from "../application/floor/SeatingOrchestrator.js";
+import { SeatingAvailabilityService } from "../application/floor/SeatingAvailabilityService.js";
 import { FloorRepository } from "../domain/repositories/FloorRepository.js";
 import { isCapacityPoolId } from "../domain/availability/CapacityPool.js";
 import { StaffUserRepository } from "../domain/repositories/StaffUserRepository.js";
@@ -240,6 +241,12 @@ export function createApp(deps: AppDependencies): Express {
     deps.capacity && deps.floor
       ? new SeatingOrchestrator(deps.floor.floorRepository, deps.capacity.transactionManager, deps.idGenerator, deps.clock)
       : undefined;
+
+  // P1-B4-A — a pure read; needs floor infrastructure only, deliberately
+  // NOT gated on deps.capacity the way seatingOrchestrator above is (this
+  // never writes, never opens a transaction, so there is no shared
+  // transaction manager to reuse). See AppDependencies.floor doc comment.
+  const seatingAvailabilityService = deps.floor ? new SeatingAvailabilityService(deps.repository, deps.floor.floorRepository) : undefined;
 
   // CAP-D02.03 — only constructed when the deployment supplies capacity
   // infrastructure (see AppDependencies.capacity doc comment above).
@@ -516,6 +523,53 @@ export function createApp(deps: AppDependencies): Express {
     }
     res.status(200).json(serializeReservation(aggregate));
   });
+
+  // P1-B4-A — CAP-D03.03/CAP-D04.01 read-only discovery: "which physical
+  // floor resources are currently suitable and available for THIS
+  // Reservation?" Reservation-driven by design — the only client input is
+  // the reservation id in the path; area, party size, and the evaluated
+  // interval are all derived server-side from the authoritative
+  // Reservation (SeatingAvailabilityService), never accepted from the
+  // caller, so nothing here can be manipulated to make resources appear
+  // available. Advisory only (see that service's own doc comment) — this
+  // performs no writes and opens no transaction; a future seating-write
+  // operation revalidates everything under SeatingOrchestrator.assignSeating()'s
+  // own locks. Permission.SeatingView, not ReservationView — viewing floor
+  // availability is a distinct action from viewing the reservation record
+  // itself, matching this policy's existing granularity.
+  if (seatingAvailabilityService) {
+    app.get(
+      "/reservations/:id/seating/available-resources",
+      requireStaffSession,
+      requirePermission(Permission.SeatingView),
+      async (req: Request, res: Response) => {
+        const idResult = ReservationId.create(paramId(req));
+        if (!idResult.ok) {
+          res.status(400).json({ violations: idResult.violations });
+          return;
+        }
+        const result = await seatingAvailabilityService.getAvailableResourcesForReservation(idResult.value);
+        if (result.type === "RESERVATION_NOT_FOUND") {
+          res.status(404).json({ message: "Reservation not found." });
+          return;
+        }
+        if (result.type === "NO_MANAGED_AREA") {
+          res.status(200).json({ type: "NO_MANAGED_AREA", reservationId: paramId(req) });
+          return;
+        }
+        res.status(200).json({
+          type: "FOUND",
+          reservationId: result.reservationId,
+          area: result.area,
+          partySize: result.partySize,
+          intervalStart: result.intervalStart.toISOString(),
+          intervalEnd: result.intervalEnd.toISOString(),
+          assignmentStatus: result.assignmentStatus,
+          availableResources: result.availableResources,
+        });
+      }
+    );
+  }
 
   // See the P0 retirement doc comment above `POST /reservations` — same
   // reasoning applies here: ModifyReservationHandler has no capacity
