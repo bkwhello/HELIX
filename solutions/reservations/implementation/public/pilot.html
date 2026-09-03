@@ -1257,6 +1257,60 @@
     await loadList();
   }
 
+  // P1-B5 — CAP-D04.01 staff-confirmed No-Show release. Composes the
+  // existing POST /reservations/:id/seating/no-show directly — no new
+  // seating model. An authoritative refresh (the same B4-A
+  // available-resources GET the Plaatsen panel already uses) happens
+  // FIRST, at click time, so this never assumes an active assignment
+  // exists just because the button was shown; only Reservation.status
+  // gates whether the button appears at all (see renderList() above).
+  // Releasing a No-Show never changes Reservation.status or
+  // CapacityCommitment — only the SeatingAssignment itself — so this
+  // function never touches or re-derives either.
+  async function markNoShow(r) {
+    const who = r.contactName || r.contactId;
+    const availRes = await fetch(`/reservations/${r.id}/seating/available-resources`, { headers: actorHeaders() });
+    if (availRes.status === 401 || availRes.status === 403) {
+      showMessage(listMessage, "Je hebt geen rechten om dit te controleren.", "error");
+      return;
+    }
+    if (!availRes.ok) {
+      showMessage(listMessage, "Kon toewijzingsstatus niet controleren.", "error");
+      return;
+    }
+    const availData = await availRes.json();
+    if (availData.type !== "FOUND" || availData.assignmentStatus === "Unassigned") {
+      showMessage(listMessage, `Reservering van ${who} heeft geen actieve toewijzing om als no-show te markeren.`, "warn");
+      return;
+    }
+
+    if (!confirm(`Reservering van ${who} als no-show markeren? De tafel/zitplaats wordt vrijgegeven.`)) return;
+
+    const res = await fetch(`/reservations/${r.id}/seating/no-show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.type === "NO_ACTIVE_ASSIGNMENT") {
+        // The assignment was released some other way between our check
+        // above and this call (e.g. another staff member) — not an
+        // error, just already done.
+        showMessage(listMessage, `Reservering van ${who} heeft al geen actieve toewijzing meer.`, "warn");
+      } else if (res.status === 401 || res.status === 403) {
+        showMessage(listMessage, "Je hebt geen rechten om als no-show te markeren.", "error");
+      } else {
+        showMessage(listMessage, data.message || "Kon niet als no-show markeren.", "error");
+      }
+      return;
+    }
+
+    showMessage(listMessage, `Reservering van ${who} gemarkeerd als no-show; plek vrijgegeven.`, "ok");
+    await loadList();
+    await loadOccupancy();
+  }
+
   // P1-A — Completion is a terminal, irreversible transition
   // (CAP-D01.01-R31, no undo path) and CAP-D01.01-R30 requires a real
   // reason for a manual completion. The pilot has no POS settlement or
@@ -1460,6 +1514,19 @@
           seatButton.textContent = "Plaatsen";
           seatButton.addEventListener("click", () => openSeatingPicker(r.id));
           actionCell.appendChild(seatButton);
+        }
+        // P1-B5 — same status gate as Plaatsen/Cancel above; whether an
+        // active assignment actually exists is NOT pre-checked from list
+        // data here either — markNoShow() itself performs the real,
+        // authoritative check (B4-A's own assignmentStatus) the moment
+        // staff actually clicks. UI visibility is convenience only.
+        if (r.status === "Proposed" || r.status === "Confirmed") {
+          const noShowButton = document.createElement("button");
+          noShowButton.type = "button";
+          noShowButton.className = "cancel-button";
+          noShowButton.textContent = "No-show";
+          noShowButton.addEventListener("click", () => markNoShow(r));
+          actionCell.appendChild(noShowButton);
         }
         // P1-A — CAP-D01.01-R29: only a Confirmed reservation may be
         // completed, so this action is visible only in that state,

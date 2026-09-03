@@ -722,6 +722,52 @@ export function createApp(deps: AppDependencies): Express {
         }
       }
     );
+
+    // P1-B5 — CAP-D04.01 staff-confirmed No-Show release: composes the
+    // existing, unmodified SeatingOrchestrator.releaseNoShow() directly —
+    // no new domain/application logic. Per final architecture §15
+    // (re-confirmed by direct reading before this route was written):
+    // releases ONLY the SeatingAssignment/SeatingAssignmentResource
+    // (status -> Released, releaseReason "NoShow"); Reservation.status
+    // (no NoShow transition exists in CAP-D01.01's state model, and none
+    // is invented here) and CapacityCommitment are deliberately left
+    // untouched — an explicitly open, non-urgent owner question, not
+    // something this route resolves. Staff-confirmed only: nothing here
+    // triggers automatically at any elapsed-time threshold.
+    // Permission.SeatingRelease — existing, previously unused, same
+    // "defined in the matrix, never enforced by any route" status
+    // SeatingView/SeatingAssign were in before B4-A/B4-B.
+    app.post(
+      "/reservations/:id/seating/no-show",
+      requireStaffSession,
+      requirePermission(Permission.SeatingRelease),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+
+        const result = await seatingOrchestrator.releaseNoShow({ reservationId: paramId(req), actor });
+        switch (result.type) {
+          case "RELEASED":
+            // Consistent with this file's own seating-outcome convention
+            // (B4-B's ASSIGNED/NOT_SEATABLE/ALREADY_ASSIGNED_ELSEWHERE) —
+            // a small, discriminated JSON body, not a bare 204: this is a
+            // seating outcome, the same family as those, not a plain
+            // reservation-lifecycle action (confirm/cancel, which use 204).
+            res.status(200).json({ type: "RELEASED" });
+            return;
+          case "NO_ACTIVE_ASSIGNMENT":
+            // Nothing to release — not a system error. A repeat call
+            // (e.g. staff double-clicking, or calling this after the
+            // assignment was already released some other way) lands here
+            // idempotently: releaseNoShow's own existing state check
+            // (findActiveAssignmentByReservationId only matches
+            // Assigned/Seated) already makes a second call safe, with no
+            // new idempotency mechanism invented for this route.
+            res.status(409).json({ type: "NO_ACTIVE_ASSIGNMENT" });
+            return;
+        }
+      }
+    );
   }
 
   // See the P0 retirement doc comment above `POST /reservations` — same
