@@ -26,6 +26,7 @@ import { TransactionManager } from "../application/ports/TransactionManager.js";
 import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
 import { SeatingOrchestrator, ResourceSelector } from "../application/floor/SeatingOrchestrator.js";
 import { SeatingAvailabilityService } from "../application/floor/SeatingAvailabilityService.js";
+import { ResourceBlockService } from "../application/floor/ResourceBlockService.js";
 import { getFloorView } from "../application/floor/FloorReadModel.js";
 import { FloorRepository } from "../domain/repositories/FloorRepository.js";
 import { isCapacityPoolId, CAPACITY_POOLS } from "../domain/availability/CapacityPool.js";
@@ -263,6 +264,16 @@ export function createApp(deps: AppDependencies): Express {
   // never writes, never opens a transaction, so there is no shared
   // transaction manager to reuse). See AppDependencies.floor doc comment.
   const seatingAvailabilityService = deps.floor ? new SeatingAvailabilityService(deps.repository, deps.floor.floorRepository) : undefined;
+
+  // P1-B8 — CAP-D02.03 Resource Block management. Gated exactly like
+  // seatingOrchestrator above (needs deps.capacity.transactionManager,
+  // not deps.transactionManager): the whole point of reusing the SAME
+  // transaction manager is that a concurrent seating write and a
+  // concurrent block-creation/removal on the same Table serialize against
+  // each other through the same per-Table advisory lock family, not two
+  // independent ones by accident.
+  const resourceBlockService =
+    deps.capacity && deps.floor ? new ResourceBlockService(deps.floor.floorRepository, deps.capacity.transactionManager) : undefined;
 
   // CAP-D02.03 — only constructed when the deployment supplies capacity
   // infrastructure (see AppDependencies.capacity doc comment above).
@@ -607,6 +618,119 @@ export function createApp(deps: AppDependencies): Express {
 
       const rows = await getFloorView(floorPrisma, { rangeStart, rangeEnd, areaId, now: deps.clock.now() });
       res.status(200).json({ rows });
+    });
+  }
+
+  // P1-B8 — CAP-D02.03 Resource Block management. GET is a pure read
+  // (no transaction/lock needed for a list), gated on deps.floor alone —
+  // same split as seatingAvailabilityService (read) vs seatingOrchestrator
+  // (write) above. Permission.SeatingView, same read gate GET /floor and
+  // B4-A's availability route already use. No date-range filtering: lists
+  // everything, mirroring GET /closing-days' own "list everything" shape
+  // (ResourceBlocks are expected to be infrequent, staff-managed entries,
+  // not a high-volume stream needing pagination).
+  if (deps.floor) {
+    const floorRepositoryForBlocks = deps.floor.floorRepository;
+    app.get("/resource-blocks", requireStaffSession, requirePermission(Permission.SeatingView), async (req: Request, res: Response) => {
+      const areaParam = req.query["area"];
+      if (areaParam !== undefined && typeof areaParam !== "string") {
+        res.status(400).json({ message: "area must be a string." });
+        return;
+      }
+      const areaId = typeof areaParam === "string" && areaParam.length > 0 ? areaParam : undefined;
+
+      const blocks = await floorRepositoryForBlocks.listResourceBlocks({ areaId });
+      const rows = await Promise.all(
+        blocks.map(async (block) => {
+          const table = await floorRepositoryForBlocks.findTableById(block.tableId);
+          return {
+            id: block.id,
+            tableId: block.tableId,
+            tableOperationalLabel: table?.operationalLabel ?? block.tableId,
+            areaId: table?.areaId ?? null,
+            startTime: block.startTime.toISOString(),
+            endTime: block.endTime.toISOString(),
+            reason: block.reason,
+            createdBy: block.createdBy,
+            createdAt: block.createdAt.toISOString(),
+          };
+        })
+      );
+      res.status(200).json({ blocks: rows });
+    });
+  }
+
+  // P1-B8 — CAP-D02.03 Resource Block management: staff-initiated
+  // exclusion of a Table (and, since blocks are always Table-scoped,
+  // every Seat under it — domain/floor/ResourceBlock.ts's own doc
+  // comment) for a reasoned, time-bounded interval — e.g. a private event
+  // or maintenance. Composes ResourceBlockService, which itself reuses
+  // FloorRepository.findOverlappingResourceClaims/findOverlappingResourceBlocks
+  // verbatim (the SAME overlap-detection SeatingOrchestrator.buildCandidates
+  // already uses in the opposite direction) and the SAME per-Table
+  // advisory lock / shared transaction manager as every other seating
+  // write. Permission.ResourceBlock — Owner+Manager only, matching
+  // CapacitySettingsManage's own distribution (existing policy matrix,
+  // unchanged by this phase).
+  if (resourceBlockService) {
+    app.post("/resource-blocks", requireStaffSession, requirePermission(Permission.ResourceBlock), async (req: Request, res: Response) => {
+      if (!req.staffPrincipal) return;
+      const actor = principalToActor(req.staffPrincipal);
+
+      const body = req.body as { operationalLabel?: string; startTime?: string; endTime?: string; reason?: string };
+      if (typeof body.operationalLabel !== "string" || body.operationalLabel.length === 0) {
+        res.status(400).json({ message: "operationalLabel is required." });
+        return;
+      }
+      if (typeof body.startTime !== "string" || typeof body.endTime !== "string") {
+        res.status(400).json({ message: "startTime and endTime are required." });
+        return;
+      }
+      const startTime = new Date(body.startTime);
+      const endTime = new Date(body.endTime);
+      if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+        res.status(400).json({ message: "startTime and endTime must be valid ISO date-times." });
+        return;
+      }
+      if (startTime >= endTime) {
+        res.status(400).json({ message: "startTime must be before endTime." });
+        return;
+      }
+      const reason = typeof body.reason === "string" && body.reason.trim().length > 0 ? body.reason.trim() : null;
+
+      const result = await resourceBlockService.blockTable({ operationalLabel: body.operationalLabel, startTime, endTime, reason, actor });
+      switch (result.type) {
+        case "BLOCKED":
+          res.status(201).json({
+            type: "BLOCKED",
+            id: result.block.id,
+            tableId: result.block.tableId,
+            tableOperationalLabel: result.tableOperationalLabel,
+            startTime: result.block.startTime.toISOString(),
+            endTime: result.block.endTime.toISOString(),
+            reason: result.block.reason,
+            createdBy: result.block.createdBy,
+            createdAt: result.block.createdAt.toISOString(),
+          });
+          return;
+        case "TABLE_NOT_FOUND":
+          res.status(404).json({ type: "TABLE_NOT_FOUND" });
+          return;
+        case "ACTIVE_ASSIGNMENT_CONFLICT":
+          res.status(409).json({ type: "ACTIVE_ASSIGNMENT_CONFLICT" });
+          return;
+        case "BLOCK_OVERLAP":
+          res.status(409).json({ type: "BLOCK_OVERLAP" });
+          return;
+      }
+    });
+
+    // Missing/already-deleted blocks return 204, not 404 — Chief Engineer
+    // P1-B8 directive; same idempotent-on-repeat-call posture as DELETE
+    // /closing-days/:id above.
+    app.delete("/resource-blocks/:id", requireStaffSession, requirePermission(Permission.ResourceBlock), async (req: Request, res: Response) => {
+      await resourceBlockService.unblock(routeParam(req, "id"));
+      res.status(204).send();
     });
   }
 

@@ -164,6 +164,26 @@ export class PrismaFloorRepository implements FloorRepository {
     return toResourceBlock(row);
   }
 
+  async listResourceBlocks(input?: { readonly areaId?: string; readonly tx?: TransactionContext }): Promise<readonly ResourceBlock[]> {
+    const client = input?.tx ? asPrismaTx(input.tx) : this.prisma;
+    const rows = await client.resourceBlock.findMany({
+      where: input?.areaId ? { table: { areaId: input.areaId } } : {},
+      orderBy: { startTime: "asc" },
+    });
+    return rows.map(toResourceBlock);
+  }
+
+  async findResourceBlockById(id: string, tx?: TransactionContext): Promise<ResourceBlock | null> {
+    const client = tx ? asPrismaTx(tx) : this.prisma;
+    const row = await client.resourceBlock.findUnique({ where: { id } });
+    return row ? toResourceBlock(row) : null;
+  }
+
+  async deleteResourceBlock(id: string, tx: TransactionContext): Promise<void> {
+    const client = asPrismaTx(tx);
+    await client.resourceBlock.deleteMany({ where: { id } });
+  }
+
   async findOverlappingResourceClaims(input: {
     readonly tableIds: readonly string[];
     readonly seatIds: readonly string[];

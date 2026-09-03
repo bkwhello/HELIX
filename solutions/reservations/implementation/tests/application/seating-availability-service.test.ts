@@ -83,6 +83,15 @@ class EmptyFloorRepository implements FloorRepository {
   async createResourceBlock(): Promise<ResourceBlock> {
     throw new Error("not used by SeatingAvailabilityService");
   }
+  async listResourceBlocks(): Promise<readonly ResourceBlock[]> {
+    return [];
+  }
+  async findResourceBlockById(): Promise<ResourceBlock | null> {
+    return null;
+  }
+  async deleteResourceBlock(): Promise<void> {
+    throw new Error("not used by SeatingAvailabilityService");
+  }
   async findOverlappingResourceClaims(): Promise<{ readonly tableIds: ReadonlySet<string>; readonly seatIds: ReadonlySet<string> }> {
     return { tableIds: new Set(), seatIds: new Set() };
   }

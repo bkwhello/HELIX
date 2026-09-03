@@ -506,6 +506,32 @@
     <div id="closing-day-list" style="margin-top: 1rem;"></div>
     <div id="closing-day-empty" class="empty" style="display:none;">Geen sluitingsdagen ingesteld.</div>
   </section>
+
+  <section class="full-width">
+    <h2>Tafel blokkeren</h2>
+    <form id="resource-block-form">
+      <div class="row">
+        <div>
+          <label for="block-table-label">Tafel (label)</label>
+          <input id="block-table-label" type="text" placeholder="bijv. Table 5 of C" required />
+        </div>
+        <div>
+          <label for="block-start">Van</label>
+          <input id="block-start" type="datetime-local" required />
+        </div>
+        <div>
+          <label for="block-end">Tot</label>
+          <input id="block-end" type="datetime-local" required />
+        </div>
+      </div>
+      <label for="block-reason">Reden (optioneel)</label>
+      <input id="block-reason" type="text" placeholder="bijv. priv&eacute;-evenement" />
+      <button type="submit">Blokkeren</button>
+      <div id="resource-block-message"></div>
+    </form>
+    <div id="resource-block-list" style="margin-top: 1rem;"></div>
+    <div id="resource-block-empty" class="empty" style="display:none;">Geen actieve tafelblokkades.</div>
+  </section>
 </main>
 
 <footer id="footer-info">HELIX Pilot v0.1</footer>
@@ -554,6 +580,7 @@
   function initApp() {
     loadList();
     loadClosingDays();
+    loadResourceBlocks();
     loadOccupancy();
   }
 
@@ -1740,6 +1767,94 @@
       await loadClosingDays();
     } catch (err) {
       showMessage(closingDayMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  });
+
+  // --- Tafel blokkeren (P1-B8) ------------------------------------------
+  const resourceBlockForm = document.getElementById("resource-block-form");
+  const resourceBlockMessage = document.getElementById("resource-block-message");
+  const resourceBlockList = document.getElementById("resource-block-list");
+  const resourceBlockEmpty = document.getElementById("resource-block-empty");
+
+  function formatDateTimeNL(iso) {
+    return new Date(iso).toLocaleString("nl-NL", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function loadResourceBlocks() {
+    clearMessage(resourceBlockMessage);
+    try {
+      const res = await fetch("/resource-blocks");
+      const data = await res.json();
+      if (!res.ok) {
+        showMessage(resourceBlockMessage, data.message || "Kon tafelblokkades niet laden.", "error");
+        return;
+      }
+      resourceBlockList.innerHTML = "";
+      resourceBlockEmpty.style.display = data.blocks.length === 0 ? "block" : "none";
+      for (const block of data.blocks) {
+        const row = document.createElement("div");
+        row.className = "list-item";
+        row.innerHTML = `
+          <span>${escapeHtml(block.tableOperationalLabel)} — ${formatDateTimeNL(block.startTime)} tot ${formatDateTimeNL(block.endTime)}${block.reason ? " — " + escapeHtml(block.reason) : ""}</span>
+          <button type="button" class="remove" data-id="${block.id}">Deblokkeren</button>
+        `;
+        resourceBlockList.appendChild(row);
+      }
+      resourceBlockList.querySelectorAll(".remove").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await fetch(`/resource-blocks/${btn.dataset.id}`, { method: "DELETE", headers: actorHeaders() });
+          await loadResourceBlocks();
+        });
+      });
+    } catch (err) {
+      showMessage(resourceBlockMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  }
+
+  resourceBlockForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    clearMessage(resourceBlockMessage);
+    const operationalLabel = document.getElementById("block-table-label").value.trim();
+    const startRaw = document.getElementById("block-start").value;
+    const endRaw = document.getElementById("block-end").value;
+    const reason = document.getElementById("block-reason").value.trim() || undefined;
+    if (!operationalLabel || !startRaw || !endRaw) {
+      showMessage(resourceBlockMessage, "Tafel, van en tot zijn verplicht.", "error");
+      return;
+    }
+    // datetime-local has no timezone offset of its own — JS parses it as
+    // LOCAL time, so converting to toISOString() here (not on the server)
+    // is what makes the wire format an unambiguous UTC instant, same
+    // reasoning PrismaClosingDayStore's own header comment gives for its
+    // (different) date-only footgun.
+    const startTime = new Date(startRaw).toISOString();
+    const endTime = new Date(endRaw).toISOString();
+    try {
+      const res = await fetch("/resource-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify({ operationalLabel, startTime, endTime, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const message =
+          data.type === "TABLE_NOT_FOUND"
+            ? "Tafel niet gevonden: controleer het label."
+            : data.type === "ACTIVE_ASSIGNMENT_CONFLICT"
+              ? "Deze tafel heeft nu een actieve reservering in dit tijdvak — blokkeren niet mogelijk."
+              : data.type === "BLOCK_OVERLAP"
+                ? "Deze tafel heeft al een blokkade die overlapt met dit tijdvak."
+                : data.message || "Kon tafel niet blokkeren.";
+        showMessage(resourceBlockMessage, message, "error");
+        return;
+      }
+      document.getElementById("block-table-label").value = "";
+      document.getElementById("block-start").value = "";
+      document.getElementById("block-end").value = "";
+      document.getElementById("block-reason").value = "";
+      await loadResourceBlocks();
+    } catch (err) {
+      showMessage(resourceBlockMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     }
   });
 

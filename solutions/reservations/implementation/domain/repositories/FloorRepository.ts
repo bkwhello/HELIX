@@ -37,6 +37,15 @@ export interface FloorRepository {
     readonly tx: TransactionContext;
   }): Promise<ResourceBlock>;
 
+  /** P1-B8 — all ResourceBlocks, optionally scoped to one area (via each block's own Table) — mirrors ClosingDayStore.list()'s own "list everything" convention. A caller needing an interval-overlap check uses findOverlappingResourceBlocks instead, not this. */
+  listResourceBlocks(input?: { readonly areaId?: string; readonly tx?: TransactionContext }): Promise<readonly ResourceBlock[]>;
+
+  /** P1-B8 — lookup by id, for the unblock path (resolves which Table's advisory lock to acquire, and whether the id still exists). */
+  findResourceBlockById(id: string, tx?: TransactionContext): Promise<ResourceBlock | null>;
+
+  /** P1-B8 — hard delete (Chief Engineer directive: no schema migration, no release-audit columns; ResourceBlock has neither a status nor release-audit fields, unlike SeatingAssignment). Idempotent: deleting an already-gone id is a no-op, not an error — same discipline as ClosingDayStore.remove. */
+  deleteResourceBlock(id: string, tx: TransactionContext): Promise<void>;
+
   /** Non-Released SeatingAssignmentResource rows for a table/seat whose interval could possibly overlap [rangeStart, rangeEnd) — a coarse pre-filter for CanSeat, not itself the structural guarantee (the EXCLUDE constraint is). */
   findOverlappingResourceClaims(input: {
     readonly tableIds: readonly string[];
