@@ -17,6 +17,9 @@ import { PrismaTransactionManager } from "../../infrastructure/persistence/Prism
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { PrismaCommunicationOutboxRepository } from "../../infrastructure/persistence/PrismaCommunicationOutboxRepository.js";
 import { PrismaGuestManagementCredentialRepository } from "../../infrastructure/persistence/PrismaGuestManagementCredentialRepository.js";
+import { PrismaCapacityRepository } from "../../infrastructure/persistence/PrismaCapacityRepository.js";
+import { ServicePeriodService } from "../../application/availability/ServicePeriodService.js";
+import { PrismaServicePeriodOverrideStore } from "../../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
 
@@ -56,16 +59,26 @@ let sharedAgent: ReturnType<typeof request.agent>;
 
 function buildApp() {
   const repository = new PrismaReservationRepository(prisma);
+  const closingDayStore = new PrismaClosingDayStore(prisma);
   const app = createApp({
     repository,
     duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
     contactRepository: new PrismaContactRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
     servicePeriodReader: new UnvalidatedServicePeriodReader(),
-    closingDayStore: new PrismaClosingDayStore(prisma),
+    closingDayStore,
     idGenerator: new SequentialIdGenerator(),
     eventIdGenerator: new SequentialEventIdGenerator(),
     clock: new FixedClock(),
+    // P0 retirement (EC-002 reservations audit) — createReservationViaApi
+    // below now calls the authoritative POST /availability/reservations
+    // (the plain POST /reservations it used is retired); mounting
+    // /availability/* at all requires a real servicePeriodService.
+    capacity: {
+      capacityRepository: new PrismaCapacityRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
+      servicePeriodService: new ServicePeriodService(closingDayStore, new PrismaServicePeriodOverrideStore(prisma)),
+    },
     // R1.6-B — mounts the resend route (AppDependencies.communications' own doc comment).
     communications: {
       outboxRepository: new PrismaCommunicationOutboxRepository(prisma),
@@ -89,14 +102,20 @@ function post(agent: ReturnType<typeof request.agent>, url: string) {
   return agent.post(url).set(CSRF_HEADER_NAME, "1");
 }
 
+// P0 retirement (EC-002 reservations audit) — repointed from the retired
+// POST /reservations to the authoritative POST /availability/reservations.
+// 2026-08-20T18:00:00Z is Thursday 20:00 Europe/Amsterdam, inside the real
+// Thursday 17:00-21:00 ServicePeriod window (DEFAULT_WEEKLY_SCHEDULE) —
+// verified, not assumed. preferredArea is newly required by this endpoint.
 async function createReservationViaApi(contactSelection: Record<string, unknown>): Promise<{ id: string; status: number; body: Record<string, unknown> }> {
   idCounter += 1;
-  const res = await post(sharedAgent, "/reservations").send({
+  const res = await post(sharedAgent, "/availability/reservations").send({
     commandId: `resend-create-cmd-${idCounter}`,
     servicePeriodId: "sp-1",
     contactSelection,
     reservationDate: new Date("2026-08-20T18:00:00Z").toISOString(),
     partySize: 2,
+    preferredArea: "Sushi",
     source: { category: "Telephone" },
   });
   return { id: res.body.reservationId as string, status: res.status, body: res.body };

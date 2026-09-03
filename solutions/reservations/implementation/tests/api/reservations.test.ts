@@ -15,6 +15,9 @@ import { RandomSessionTokenGenerator } from "../../infrastructure/RandomSessionT
 import { PrismaContactRepository } from "../../infrastructure/persistence/PrismaContactRepository.js";
 import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
+import { PrismaCapacityRepository } from "../../infrastructure/persistence/PrismaCapacityRepository.js";
+import { ServicePeriodService } from "../../application/availability/ServicePeriodService.js";
+import { PrismaServicePeriodOverrideStore } from "../../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
 
@@ -32,8 +35,31 @@ import { ActorRole } from "../../domain/value-objects/Actor.js";
  * POST /auth/login, a real session cookie via a supertest agent)
  * against real PostgreSQL — there is no test-only bypass in the
  * production route path.
+ *
+ * P0 retirement migration note (EC-002 reservations audit): this file
+ * previously drove reservation creation/modification exclusively through
+ * POST/PATCH /reservations, which never enforced capacity or real
+ * ServicePeriod rules. Those routes are now retired (410 Gone — see the
+ * dedicated "retired mutation routes" describe block below); every test
+ * that exercises real reservation/application behavior has been migrated
+ * to the authoritative /availability/reservations* endpoints instead,
+ * which compose the exact same CreateReservationHandler/
+ * ModifyReservationHandler this file always tested — domain-rule
+ * assertions (violation ids, idempotency, closing-day rejection, etc.)
+ * are expected to behave identically, since nothing in those handlers
+ * changed. The one place behavior legitimately differs is `preferredArea`:
+ * the authoritative create route requires it (a capacity-aware create
+ * must know which pool to commit against) and validates it inline
+ * (422, not the old route's 400) — see the dedicated tests below.
  */
 const NOW = new Date("2026-08-01T10:00:00Z");
+// Saturday 21:00 Europe/Amsterdam — the LAST valid, 15-minute-grid-aligned
+// start time in the real Saturday 12:00-21:00 ServicePeriod window
+// (domain/availability/ServicePeriod.ts's DEFAULT_WEEKLY_SCHEDULE; the
+// eligibility check is `minute <= window.lastStartMinute`, confirmed
+// inclusive by direct reading, not assumed) — deliberately exercised at
+// this exact boundary rather than moved to a safer mid-window time,
+// since this file's whole purpose is proving the real wiring works.
 const FUTURE_DATE = new Date("2026-08-15T19:00:00Z");
 
 class FixedClock {
@@ -82,6 +108,14 @@ function buildApp() {
     idGenerator: new SequentialIdGenerator(),
     eventIdGenerator: new SequentialEventIdGenerator(),
     clock: new FixedClock(),
+    // P0 retirement (EC-002 reservations audit) — required to mount
+    // /availability/*, the sole authoritative mutation path this file
+    // now exercises for real reservation/application behavior.
+    capacity: {
+      capacityRepository: new PrismaCapacityRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
+      servicePeriodService: new ServicePeriodService(closingDayStore, new PrismaServicePeriodOverrideStore(prisma)),
+    },
     auth: {
       staffUserRepository: new PrismaStaffUserRepository(prisma),
       sessionRepository: new PrismaSessionRepository(prisma),
@@ -103,6 +137,10 @@ function validBody(overrides: Record<string, unknown> = {}) {
     reservationDate: FUTURE_DATE.toISOString(),
     partySize: 2,
     source: { category: "Telephone" },
+    // P0 retirement — required by the authoritative create endpoint.
+    // Individual tests override this where the scenario needs a
+    // specific area or is deliberately testing preferredArea itself.
+    preferredArea: "Sushi",
     ...overrides,
   };
 }
@@ -119,6 +157,12 @@ function patchReq(agent: ReturnType<typeof request.agent>, url: string) {
 }
 function del(agent: ReturnType<typeof request.agent>, url: string) {
   return agent.delete(url).set(CSRF_HEADER_NAME, "1");
+}
+
+// P0 retirement — the one, shared way every test below creates its
+// starting reservation, via the authoritative endpoint.
+function create(agent: ReturnType<typeof request.agent>, overrides: Record<string, unknown> = {}) {
+  return post(agent, "/availability/reservations").send(validBody(overrides));
 }
 
 beforeAll(async () => {
@@ -169,17 +213,17 @@ describe("GET /health", () => {
 
 describe("Authentication and authorization boundary", () => {
   it("rejects a mutating request with no session at all — 401", async () => {
-    const res = await post(request.agent(sharedApp), "/reservations").send(validBody());
+    const res = await post(request.agent(sharedApp), "/availability/reservations").send(validBody());
     expect(res.status).toBe(401);
   });
 
   it("rejects a request whose session was never established, even with a plausible-looking cookie value — 401 (not the ex-header-trust default)", async () => {
-    const res = await post(request.agent(sharedApp), "/reservations").set("Cookie", "helix_session=not-a-real-token").send(validBody());
+    const res = await post(request.agent(sharedApp), "/availability/reservations").set("Cookie", "helix_session=not-a-real-token").send(validBody());
     expect(res.status).toBe(401);
   });
 
   it("rejects a mutating request missing the CSRF header even WITH a valid session — 403", async () => {
-    const res = await sharedAgent.post("/reservations").send(validBody({ commandId: "csrf-missing-header" }));
+    const res = await sharedAgent.post("/availability/reservations").send(validBody({ commandId: "csrf-missing-header" }));
     expect(res.status).toBe(403);
   });
 
@@ -209,77 +253,138 @@ describe("Authentication and authorization boundary", () => {
   });
 });
 
-describe("POST /reservations", () => {
+/**
+ * P0 retirement (EC-002 reservations audit) — the three former plain
+ * mutation routes. Auth/permission middleware stays attached (see
+ * api/app.ts's retiredMutationRoute doc comment) so these prove the
+ * intentional 410 contract specifically, not merely "some error".
+ */
+describe("Retired mutation routes — 410 Gone, no mutation possible", () => {
+  it("POST /reservations returns 410 with the replacement endpoint, and creates nothing", async () => {
+    const before = await prisma.reservation.count();
+
+    const res = await post(sharedAgent, "/reservations").send(validBody({ commandId: "retired-create-1" }));
+
+    expect(res.status).toBe(410);
+    expect(res.body).toMatchObject({ replacement: { method: "POST", path: "/availability/reservations" } });
+    expect(typeof res.body.message).toBe("string");
+
+    const after = await prisma.reservation.count();
+    expect(after).toBe(before);
+  });
+
+  it("PATCH /reservations/:id returns 410 and does not alter the reservation", async () => {
+    const created = await create(sharedAgent, { commandId: "retired-modify-setup" });
+    expect(created.status).toBe(201);
+    const before = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+
+    const res = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+      commandId: "retired-modify-1",
+      changes: { notes: "should never be written" },
+    });
+
+    expect(res.status).toBe(410);
+    expect(res.body).toMatchObject({ replacement: { method: "PATCH", path: "/availability/reservations/:id" } });
+
+    const after = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(after.version).toBe(before.version);
+    expect(after.notes).toBe(before.notes);
+  });
+
+  it("POST /reservations/:id/cancel returns 410, does not cancel, and does not touch capacity accounting", async () => {
+    const created = await create(sharedAgent, { commandId: "retired-cancel-setup" });
+    expect(created.status).toBe(201);
+    const commitmentBefore = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitmentBefore).not.toBeNull();
+
+    const res = await post(sharedAgent, `/reservations/${created.body.reservationId}/cancel`).send({ commandId: "retired-cancel-1" });
+
+    expect(res.status).toBe(410);
+    expect(res.body).toMatchObject({ replacement: { method: "POST", path: "/availability/reservations/:id/cancel" } });
+
+    const after = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(after.status).not.toBe("Cancelled");
+    const commitmentAfter = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitmentAfter).not.toBeNull();
+  });
+});
+
+describe("POST /availability/reservations (authoritative create)", () => {
   it("creates a reservation and returns the outcome DTO", async () => {
-    const res = await post(sharedAgent, "/reservations").send(validBody());
+    const res = await create(sharedAgent);
 
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ status: "Proposed", warnings: [] });
+    expect(res.body).toMatchObject({ status: "Proposed", preferredArea: "Sushi" });
     expect(typeof res.body.reservationId).toBe("string");
   });
 
   it("rejects a request missing required information with 422", async () => {
-    const res = await post(sharedAgent, "/reservations").send(validBody({ servicePeriodId: "" }));
+    const res = await create(sharedAgent, { servicePeriodId: "" });
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R08")).toBe(true);
   });
 
-  // CAP-D05.01 — contactSelection shape is validated at the API boundary,
-  // the same way preferredArea already is (see parsePreferredArea) —
-  // a structurally missing/invalid contact selection is a 400, not a 422.
+  // CAP-D05.01 — contactSelection shape is validated at the API boundary
+  // (parseContactSelection), identically on both the retired and
+  // authoritative routes — a structurally missing/invalid contact
+  // selection is a 400, not a 422.
   it("rejects a request with no contactSelection at all with 400", async () => {
-    const res = await post(sharedAgent, "/reservations").send(validBody({ contactSelection: undefined }));
+    const res = await create(sharedAgent, { contactSelection: undefined });
 
     expect(res.status).toBe(400);
   });
 
   it("rejects a structurally invalid date with 422 (CAP-D01.01-R10)", async () => {
-    const res = await post(sharedAgent, "/reservations").send(validBody({ reservationDate: "not-a-date" }));
+    const res = await create(sharedAgent, { reservationDate: "not-a-date" });
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R10")).toBe(true);
   });
 
   // CAP-D01.01-R14 (duplicate detection) against the REAL
-  // PrismaDuplicateReservationChecker — this used to toggle a fake flag;
-  // now it creates a genuine matching prior reservation.
+  // PrismaDuplicateReservationChecker.
   it("surfaces a duplicate warning in the response instead of only in the persisted event", async () => {
-    await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-dup-original" }));
+    await create(sharedAgent, { commandId: "http-cmd-dup-original" });
 
-    const res = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-dup" }));
+    const res = await create(sharedAgent, { commandId: "http-cmd-dup" });
 
     expect(res.status).toBe(201);
     expect(res.body.warnings.some((w: { ruleId: string }) => w.ruleId === "CAP-D01.01-R14")).toBe(true);
   });
 
   it("accepts a guest name and a preferred area, returning both in the outcome", async () => {
-    const res = await post(sharedAgent, "/reservations").send(
-      validBody({
-        commandId: "http-cmd-area",
-        contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000001" },
-        preferredArea: "Sushi",
-      })
-    );
+    const res = await create(sharedAgent, {
+      commandId: "http-cmd-area",
+      contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000001" },
+      preferredArea: "Sushi",
+    });
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ contactName: "Jan Jansen", preferredArea: "Sushi" });
   });
 
-  it("rejects an unrecognized preferredArea with a clear 400 (CAP-D01.01-R48)", async () => {
-    const res = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-bad-area", preferredArea: "Steakhouse" })
-    );
+  // P0 retirement — the authoritative create route legitimately differs
+  // here: preferredArea is REQUIRED (a capacity-aware create must know
+  // which pool to commit against) and validated inline, not via the
+  // shared parsePreferredArea helper the retired route used — so this
+  // is 422 with a distinct message shape, not the old route's 400.
+  it("rejects an unrecognized preferredArea with 422 (capacity-aware create requires a real pool)", async () => {
+    const res = await create(sharedAgent, { commandId: "http-cmd-bad-area", preferredArea: "Steakhouse" });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(res.body.message).toContain("Steakhouse");
-    expect(res.body.message).toContain("Sushi");
+  });
+
+  it("rejects a missing preferredArea with 422 (required by the capacity-aware create, unlike the retired route)", async () => {
+    const res = await create(sharedAgent, { commandId: "http-cmd-missing-area", preferredArea: undefined });
+
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain("preferredArea");
   });
 
   it("accepts notes (allergies, special requests) and returns them in the outcome and the list", async () => {
-    const res = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-notes", notes: "Notenallergie, graag een rustige tafel" })
-    );
+    const res = await create(sharedAgent, { commandId: "http-cmd-notes", notes: "Notenallergie, graag een rustige tafel" });
 
     expect(res.status).toBe(201);
     expect(res.body.notes).toBe("Notenallergie, graag een rustige tafel");
@@ -288,20 +393,28 @@ describe("POST /reservations", () => {
     expect(list.body.reservations[0]).toMatchObject({ notes: "Notenallergie, graag een rustige tafel" });
   });
 
-  it("rejects creation for a date marked closed (CAP-D01.01-R51)", async () => {
+  // P0 retirement — genuinely different (and legitimate) outcome shape on
+  // the authoritative path: closing-day enforcement is no longer
+  // CreateReservationHandler's own bespoke CAP-D01.01-R51 check (that
+  // code path still exists but is no longer reachable from any live
+  // route) — it's unified into ServicePeriodService's own three-way
+  // eligibility outcome (VALID | OUTSIDE_SERVICE_PERIOD | CLOSED), which
+  // itself composes ClosingDayStore internally (see ServicePeriodService's
+  // own doc comment). Same real-world guarantee (a closed day cannot be
+  // booked), different response shape — {servicePeriod: {type: "CLOSED"}},
+  // not {violations: [...]}.
+  it("rejects creation for a date marked closed, via the unified ServicePeriod authority", async () => {
     await post(sharedAgent, "/closing-days").send({ fromDate: FUTURE_DATE.toISOString().slice(0, 10), reason: "Personeelsuitje" });
 
-    const res = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-closed" }));
+    const res = await create(sharedAgent, { commandId: "http-cmd-closed" });
 
     expect(res.status).toBe(422);
-    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R51")).toBe(true);
+    expect(res.body.servicePeriod).toEqual({ type: "CLOSED" });
   });
 
   it("is idempotent under a retried commandId: same reservationId, no duplicate created", async () => {
-    const body = validBody({ commandId: "http-cmd-retry" });
-
-    const first = await post(sharedAgent, "/reservations").send(body);
-    const second = await post(sharedAgent, "/reservations").send(body);
+    const first = await create(sharedAgent, { commandId: "http-cmd-retry" });
+    const second = await create(sharedAgent, { commandId: "http-cmd-retry" });
 
     expect(first.status).toBe(201);
     expect(second.status).toBe(201);
@@ -310,11 +423,42 @@ describe("POST /reservations", () => {
     const rows = await prisma.reservation.findMany({ where: { id: first.body.reservationId } });
     expect(rows).toHaveLength(1);
   });
+
+  it("commits real capacity for the created reservation (CAP-D02.03)", async () => {
+    const res = await create(sharedAgent, { commandId: "http-cmd-capacity-commit" });
+    expect(res.status).toBe(201);
+
+    const commitment = await prisma.capacityCommitment.findFirst({ where: { reservationId: res.body.reservationId, status: "Committed" } });
+    expect(commitment).not.toBeNull();
+    expect(commitment?.capacityPoolId).toBe("Sushi");
+  });
+
+  // P0 retirement — the central claim of this whole increment, proven at
+  // the actual HTTP boundary a real client hits, not only at the
+  // orchestrator/domain layer (already covered by
+  // tests/integration/availability-create.test.ts and others): a full
+  // pool genuinely rejects the next overlapping request with 409, rather
+  // than silently overbooking the way the now-retired plain route always
+  // would have. Sushi's real capacity (CapacityPool.ts) is 51 — filled
+  // exactly here with one party, then one more seat is requested for the
+  // same exact start time.
+  it("rejects a request that would exceed the real Sushi capacity (409 CAPACITY_UNAVAILABLE)", async () => {
+    const fill = await create(sharedAgent, { commandId: "http-cmd-capacity-fill", partySize: 51, preferredArea: "Sushi" });
+    expect(fill.status).toBe(201);
+
+    const overflow = await create(sharedAgent, { commandId: "http-cmd-capacity-overflow", partySize: 1, preferredArea: "Sushi" });
+
+    expect(overflow.status).toBe(409);
+    expect(overflow.body.availability).toBeDefined();
+
+    const rows = await prisma.reservation.findMany({ where: { partySize: 1, preferredArea: "Sushi" } });
+    expect(rows).toHaveLength(0);
+  });
 });
 
 describe("GET /reservations/:id", () => {
   it("returns the created reservation", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-get" }));
+    const created = await create(sharedAgent, { commandId: "http-cmd-get" });
 
     const res = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
 
@@ -328,13 +472,12 @@ describe("GET /reservations/:id", () => {
   });
 });
 
-describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)", () => {
+describe("PATCH /availability/reservations/:id — manual table assignment (CAP-D01.01-R48)", () => {
   it("sets and later changes the table assignment, reflected in GET", async () => {
-    const created = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-table", preferredArea: "Teppanyaki" })
-    );
+    const created = await create(sharedAgent, { commandId: "http-cmd-table", preferredArea: "Teppanyaki" });
+    expect(created.status).toBe(201);
 
-    const setTable = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const setTable = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-table-1",
       changes: { tableAssignment: "C1" },
     });
@@ -343,7 +486,7 @@ describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)",
     const afterSet = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterSet.body.tableAssignment).toBe("C1");
 
-    const changeTable = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const changeTable = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-table-2",
       changes: { tableAssignment: "D3" },
     });
@@ -354,18 +497,18 @@ describe("PATCH /reservations/:id — manual table assignment (CAP-D01.01-R48)",
   });
 });
 
-describe("PATCH /reservations/:id — marking a reservation as arrived", () => {
+describe("PATCH /availability/reservations/:id — marking a reservation as arrived", () => {
   it("has no arrival mark on a freshly created reservation", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-arrive-none" }));
+    const created = await create(sharedAgent, { commandId: "http-cmd-arrive-none" });
     const before = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(before.body.arrivedAt).toBeUndefined();
   });
 
   it("marks a reservation as arrived, then clears the mark via an explicit null", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-arrive" }));
+    const created = await create(sharedAgent, { commandId: "http-cmd-arrive" });
 
     const arrivedAt = new Date().toISOString();
-    const marked = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const marked = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-arrive-1",
       changes: { arrivedAt },
     });
@@ -374,7 +517,7 @@ describe("PATCH /reservations/:id — marking a reservation as arrived", () => {
     const afterMark = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterMark.body.arrivedAt).toBe(new Date(arrivedAt).toISOString());
 
-    const cleared = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const cleared = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-arrive-2",
       changes: { arrivedAt: null },
     });
@@ -385,12 +528,12 @@ describe("PATCH /reservations/:id — marking a reservation as arrived", () => {
   });
 });
 
-describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R36/R37)", () => {
+describe("PATCH /availability/reservations/:id — editing notes after creation (CAP-D01.01-R36/R37)", () => {
   it("adds a note to a reservation created without one, then corrects it", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-notes-edit" }));
+    const created = await create(sharedAgent, { commandId: "http-cmd-notes-edit" });
     expect(created.body.notes).toBeUndefined();
 
-    const addNote = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const addNote = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-notes-edit-1",
       changes: { notes: "Op de rekening zetten" },
     });
@@ -399,7 +542,7 @@ describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R
     const afterAdd = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(afterAdd.body.notes).toBe("Op de rekening zetten");
 
-    const correctNote = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const correctNote = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-notes-edit-2",
       changes: { notes: "Op de rekening zetten + glutenvrij" },
     });
@@ -410,14 +553,12 @@ describe("PATCH /reservations/:id — editing notes after creation (CAP-D01.01-R
   });
 });
 
-describe("PATCH /reservations/:id — changing the preferred area after creation (CAP-D01.01-R48)", () => {
-  it("switches Sushi to Teppanyaki", async () => {
-    const created = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-area-edit", preferredArea: "Sushi" })
-    );
+describe("PATCH /availability/reservations/:id — changing the preferred area after creation (CAP-D01.01-R48)", () => {
+  it("switches Sushi to Teppanyaki, moving the real capacity commitment between pools", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-area-edit", preferredArea: "Sushi" });
     expect(created.body.preferredArea).toBe("Sushi");
 
-    const switched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const switched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-area-edit-1",
       changes: { preferredArea: "Teppanyaki" },
     });
@@ -425,12 +566,47 @@ describe("PATCH /reservations/:id — changing the preferred area after creation
 
     const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(after.body.preferredArea).toBe("Teppanyaki");
+
+    // P0 retirement addition — proving persisted capacity state, not just
+    // the HTTP response: the commitment itself must have actually moved
+    // pools, since preferredArea is capacity-relevant
+    // (AvailabilityOrchestrator.modifyWithCapacity's own capacityRelevant
+    // check routes this through full capacity re-checking, not the
+    // lightweight non-capacity path).
+    const commitment = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitment?.capacityPoolId).toBe("Teppanyaki");
   });
 
-  it("rejects an unrecognized preferredArea in changes with a clear 400", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-area-bad-edit" }));
+  // P0 retirement — the rejection-side counterpart to the switch test
+  // above: a capacity-affecting modify must be refused, not silently
+  // applied, when the destination pool has no room. Fills Teppanyaki
+  // (real capacity 40) with one party at FUTURE_DATE, then attempts to
+  // move a separate Sushi reservation into Teppanyaki at the exact same
+  // time.
+  it("refuses to switch preferredArea into a pool with no remaining capacity (409 CAPACITY_UNAVAILABLE)", async () => {
+    await create(sharedAgent, { commandId: "http-cmd-area-edit-fill", partySize: 40, preferredArea: "Teppanyaki" });
+    const created = await create(sharedAgent, { commandId: "http-cmd-area-edit-overflow", partySize: 1, preferredArea: "Sushi" });
+    expect(created.status).toBe(201);
 
-    const res = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const switched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-area-edit-overflow-1",
+      changes: { preferredArea: "Teppanyaki" },
+    });
+
+    expect(switched.status).toBe(409);
+    expect(switched.body.availability).toBeDefined();
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.preferredArea).toBe("Sushi");
+  });
+
+  // Same status/message shape as the retired route here — unlike create,
+  // PATCH /availability/reservations/:id reuses the shared
+  // parsePreferredArea helper (400), not a bespoke required-field check.
+  it("rejects an unrecognized preferredArea in changes with a clear 400", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-area-bad-edit" });
+
+    const res = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-area-bad-edit-1",
       changes: { preferredArea: "Steakhouse" },
     });
@@ -440,13 +616,14 @@ describe("PATCH /reservations/:id — changing the preferred area after creation
   });
 });
 
-describe("PATCH /reservations/:id — correcting the guest name and source (CAP-D01.01-R07/R12)", () => {
+describe("PATCH /availability/reservations/:id — correcting the guest name and source (CAP-D01.01-R07/R12)", () => {
   it("corrects a misspelled guest name", async () => {
-    const created = await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "http-cmd-name-edit", contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000002" } })
-    );
+    const created = await create(sharedAgent, {
+      commandId: "http-cmd-name-edit",
+      contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000002" },
+    });
 
-    const patched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-name-edit-1",
       changes: { contactName: "Jan Janssen" },
     });
@@ -457,11 +634,11 @@ describe("PATCH /reservations/:id — correcting the guest name and source (CAP-
   });
 
   it("corrects the reservation source", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-source-edit" }));
+    const created = await create(sharedAgent, { commandId: "http-cmd-source-edit" });
     const before = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(before.body.sourceCategory).toBe("Telephone");
 
-    const patched = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-source-edit-1",
       changes: { source: { category: "Google" } },
     });
@@ -472,9 +649,9 @@ describe("PATCH /reservations/:id — correcting the guest name and source (CAP-
   });
 
   it("rejects an unrecognized source category with a 422 domain violation (CAP-D01.01-R12)", async () => {
-    const created = await post(sharedAgent, "/reservations").send(validBody({ commandId: "http-cmd-source-bad-edit" }));
+    const created = await create(sharedAgent, { commandId: "http-cmd-source-bad-edit" });
 
-    const res = await patchReq(sharedAgent, `/reservations/${created.body.reservationId}`).send({
+    const res = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
       commandId: "http-cmd-source-bad-edit-1",
       changes: { source: { category: "Carrier Pigeon" } },
     });
@@ -484,15 +661,31 @@ describe("PATCH /reservations/:id — correcting the guest name and source (CAP-
   });
 });
 
+describe("POST /availability/reservations/:id/cancel (authoritative cancel)", () => {
+  it("cancels the reservation and releases its committed capacity", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-cancel" });
+    expect(created.status).toBe(201);
+    const commitmentBefore = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitmentBefore).not.toBeNull();
+
+    const res = await post(sharedAgent, `/availability/reservations/${created.body.reservationId}/cancel`).send({ commandId: "http-cmd-cancel-1" });
+    expect(res.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.status).toBe("Cancelled");
+
+    const commitmentAfter = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitmentAfter).toBeNull();
+  });
+});
+
 describe("GET /reservations — CAP-D01.01-AC34 (Today's Active Reservations Are Operationally Discoverable)", () => {
   it("lists reservations for the requested date, including guest name and preferred area", async () => {
-    const created = await post(sharedAgent, "/reservations").send(
-      validBody({
-        commandId: "http-cmd-list",
-        contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000003" },
-        preferredArea: "Teppanyaki",
-      })
-    );
+    const created = await create(sharedAgent, {
+      commandId: "http-cmd-list",
+      contactSelection: { type: "CreateNewContact", displayName: "Jan Jansen", phone: "0600000003" },
+      preferredArea: "Teppanyaki",
+    });
     expect(created.status).toBe(201);
 
     const dateParam = FUTURE_DATE.toISOString().slice(0, 10);
@@ -547,9 +740,7 @@ describe("Sluitingsdagen (closing days, van/tot)", () => {
     expect(range).toMatchObject({ fromDate: from, toDate: to, reason: "Verbouwing" });
 
     for (const day of ["2026-08-10", "2026-08-11", "2026-08-12"]) {
-      const res = await post(sharedAgent, "/reservations").send(
-        validBody({ commandId: `range-check-${day}`, reservationDate: `${day}T19:00:00.000Z` })
-      );
+      const res = await create(sharedAgent, { commandId: `range-check-${day}`, reservationDate: `${day}T19:00:00.000Z` });
       expect(res.status).toBe(422);
     }
 
@@ -574,15 +765,13 @@ describe("Sluitingsdagen (closing days, van/tot)", () => {
 
 describe("GET /teppanyaki-occupancy", () => {
   async function createTeppanyaki(commandId: string, partySize: number, servicePeriodId: string) {
-    return post(sharedAgent, "/reservations").send(
-      validBody({
-        commandId,
-        servicePeriodId,
-        reservationDate: FUTURE_DATE.toISOString(),
-        partySize,
-        preferredArea: "Teppanyaki",
-      })
-    );
+    return create(sharedAgent, {
+      commandId,
+      servicePeriodId,
+      reservationDate: FUTURE_DATE.toISOString(),
+      partySize,
+      preferredArea: "Teppanyaki",
+    });
   }
 
   it("colors a date+service orange at 70% and red at 90% of the 40-seat capacity", async () => {
@@ -622,9 +811,7 @@ describe("GET /teppanyaki-occupancy", () => {
   });
 
   it("ignores non-Teppanyaki reservations", async () => {
-    await post(sharedAgent, "/reservations").send(
-      validBody({ commandId: "occ-sushi", reservationDate: FUTURE_DATE.toISOString(), partySize: 6, preferredArea: "Sushi" })
-    );
+    await create(sharedAgent, { commandId: "occ-sushi", reservationDate: FUTURE_DATE.toISOString(), partySize: 6, preferredArea: "Sushi" });
 
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
     const res = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);

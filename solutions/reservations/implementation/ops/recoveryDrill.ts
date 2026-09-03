@@ -42,6 +42,10 @@ import { ScryptPasswordHasher } from "../infrastructure/ScryptPasswordHasher.js"
 import { RandomSessionTokenGenerator } from "../infrastructure/RandomSessionTokenGenerator.js";
 import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
 import { UnvalidatedServicePeriodReader } from "../infrastructure/UnvalidatedServicePeriodReader.js";
+import { PrismaCapacityRepository } from "../infrastructure/persistence/PrismaCapacityRepository.js";
+import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
+import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
+import { toLocalHourMinute } from "../domain/availability/ServiceTime.js";
 import { CSRF_HEADER_NAME } from "../api/authMiddleware.js";
 import { createBackup } from "./backup/createBackup.js";
 import { restoreBackup } from "./restore/restoreBackup.js";
@@ -53,6 +57,33 @@ const execFileAsync = promisify(execFile);
 const DRILL_OWNER_USERNAME = "drill-owner";
 const DRILL_OWNER_PASSWORD = "DrillRecovery123!";
 const DRILL_RESERVATION_DATE = new Date("2026-09-01T18:00:00Z");
+
+/**
+ * P0 correctness-boundary closure (EC-002 reservations audit) — genuinely
+ * future relative to the real clock, unlike a fixed constant (this
+ * script's own buildRestoredApp() uses real time, `clock: { now: () =>
+ * new Date() }`, not a fixed test clock). A fixed DRILL_RESERVATION_DATE
+ * + 24h was originally fine, but is not durable: once real time passes
+ * it, CAP-D01.01-R11 ("past reservation creation requires explicit
+ * policy") genuinely and correctly rejects it — a real defect this fix
+ * surfaced during this increment's own drill validation, not a false
+ * positive. 7 days out is comfortably future regardless of when this
+ * drill actually runs. Nudged onto 19:00 Europe/Amsterdam local — the
+ * middle of the 17:00-21:00 window every day of the week includes
+ * (Mon-Thu 17:00-21:00, Fri-Sun 12:00-21:00, DEFAULT_WEEKLY_SCHEDULE) —
+ * via toLocalHourMinute (already correct/tested, DST-aware), rather than
+ * reimplementing timezone math here.
+ */
+function computeFutureSmokeTestDate(now: Date): Date {
+  const candidate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const { hour, minute } = toLocalHourMinute(candidate);
+  // Zero out minutes/seconds/ms too, not just the hour — ServicePeriod
+  // eligibility also requires 15-minute-grid alignment
+  // (SERVICE_PERIOD_GRID_MINUTES), which an arbitrary leftover minute
+  // value (whatever real time this happens to run at) would not satisfy.
+  const minutesToShift = (19 - hour) * 60 - minute;
+  return new Date(candidate.getTime() + minutesToShift * 60 * 1000 - candidate.getMilliseconds());
+}
 
 interface DrillTimings {
   seedStart: string;
@@ -162,16 +193,31 @@ async function wipeRecoveryTarget(targetUrl: string): Promise<void> {
 
 function buildRestoredApp(targetUrl: string) {
   const prisma = new PrismaClient({ datasourceUrl: targetUrl });
+  const closingDayStore = new PrismaClosingDayStore(prisma);
   const app = createApp({
     repository: new PrismaReservationRepository(prisma),
     duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
     contactRepository: new PrismaContactRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
     servicePeriodReader: new UnvalidatedServicePeriodReader(),
-    closingDayStore: new PrismaClosingDayStore(prisma),
+    closingDayStore,
     idGenerator: new RandomIdGenerator(),
     eventIdGenerator: new RandomIdGenerator(),
     clock: { now: () => new Date() },
+    // P0 retirement (EC-002 reservations audit) — the drill's own
+    // "CONTROLLED SMOKE TEST" step now calls the authoritative
+    // POST /availability/reservations (the old plain POST /reservations
+    // it used to call has been retired). Mounting /availability/*
+    // routes at all requires a real servicePeriodService (api/app.ts's
+    // own AppDependencies.capacity doc comment) — reusing the same
+    // PrismaClosingDayStore instance the plain closingDayStore field
+    // above already uses, mirroring tests/integration/support/testHarness.ts's
+    // established pattern exactly.
+    capacity: {
+      capacityRepository: new PrismaCapacityRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
+      servicePeriodService: new ServicePeriodService(closingDayStore, new PrismaServicePeriodOverrideStore(prisma)),
+    },
     auth: {
       staffUserRepository: new PrismaStaffUserRepository(prisma),
       sessionRepository: new PrismaSessionRepository(prisma),
@@ -272,20 +318,36 @@ async function main(): Promise<void> {
   stepResults.push({ step: "VERIFY CAPACITY", ok: restoredCommitment !== null, detail: `Committed CapacityCommitment for ${reservationId} present=${restoredCommitment !== null}` });
 
   console.log("recoveryDrill: CONTROLLED SMOKE TEST (create a new reservation post-restore)...");
+  // P0 retirement (EC-002 reservations audit) — repointed from the now-
+  // retired POST /reservations (no capacity/ServicePeriod enforcement at
+  // all) to the authoritative POST /availability/reservations, so this
+  // drill proves the restored system can accept a reservation through
+  // the SAME path real staff/pilot usage now goes through, not a
+  // bypassed one. preferredArea is newly required by this endpoint (a
+  // capacity-aware create must know which pool to commit against) — the
+  // one addition beyond a URL change. The reservation date is computed
+  // fresh, genuinely future relative to real time, via
+  // computeFutureSmokeTestDate() — see its own doc comment for why a
+  // fixed constant doesn't stay valid.
   const smokeRes = await agent
-    .post("/reservations")
+    .post("/availability/reservations")
     .set(CSRF_HEADER_NAME, "1")
     .send({
       commandId: "drill-smoke-test-cmd-1",
       servicePeriodId: "sp-drill",
       contactSelection: { type: "ExistingContact", contactId },
-      reservationDate: new Date(DRILL_RESERVATION_DATE.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      reservationDate: computeFutureSmokeTestDate(new Date()).toISOString(),
       partySize: 2,
+      preferredArea: "Sushi",
       source: { category: "Telephone" },
     });
   timings.smokeTestCompletedAt = new Date().toISOString();
-  const smokeOk = smokeRes.status === 201 || smokeRes.status === 200;
-  stepResults.push({ step: "CONTROLLED SMOKE TEST", ok: smokeOk, detail: `POST /reservations -> ${smokeRes.status}` });
+  const smokeOk = smokeRes.status === 201;
+  stepResults.push({
+    step: "CONTROLLED SMOKE TEST",
+    ok: smokeOk,
+    detail: `POST /availability/reservations -> ${smokeRes.status}${smokeOk ? "" : ` body=${JSON.stringify(smokeRes.body)}`}`,
+  });
 
   await restoredPrisma.$disconnect();
 

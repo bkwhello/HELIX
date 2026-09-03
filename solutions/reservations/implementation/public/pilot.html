@@ -724,7 +724,14 @@
     createSubmit.disabled = true;
     try {
       if (editingReservationId) {
-        const res = await fetch(`/reservations/${editingReservationId}`, {
+        // P0 retirement (EC-002 reservations audit) — repointed from the
+        // now-retired PATCH /reservations/:id (no capacity enforcement at
+        // all) to the authoritative, capacity-aware
+        // /availability/reservations/:id. Same rationale as the create
+        // call above: this is a routing fix, the request body is
+        // unchanged (the safe route accepts the same field set, since
+        // preferredArea is already required by this form).
+        const res = await fetch(`/availability/reservations/${editingReservationId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", ...actorHeaders() },
           body: JSON.stringify({
@@ -844,7 +851,13 @@
   async function saveReservationField(reservationId, changes, inputEl, what) {
     inputEl.disabled = true;
     try {
-      const res = await fetch(`/reservations/${reservationId}`, {
+      // P0 retirement (EC-002 reservations audit) — repointed from the
+      // now-retired PATCH /reservations/:id. Used here for preferredArea
+      // (capacity-relevant — correctly goes through full capacity
+      // checking), tableAssignment/arrivedAt/notes (not capacity-relevant
+      // — AvailabilityOrchestrator.modifyWithCapacity() routes those to
+      // its lightweight modifyWithoutCapacityChange() path automatically).
+      const res = await fetch(`/availability/reservations/${reservationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...actorHeaders() },
         body: JSON.stringify({
@@ -907,7 +920,11 @@
     const who = r.contactName || r.contactId;
     if (!confirm(`Reservering van ${who} annuleren?`)) return;
     const reason = prompt("Reden (optioneel):") || undefined;
-    const res = await fetch(`/reservations/${r.id}/cancel`, {
+    // P0 retirement (EC-002 reservations audit) — repointed from the
+    // now-retired POST /reservations/:id/cancel, which never released a
+    // cancelled reservation's committed capacity slot at all. Same body
+    // shape, same 204-on-success contract.
+    const res = await fetch(`/availability/reservations/${r.id}/cancel`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...actorHeaders() },
       body: JSON.stringify({ commandId: `pilot-cancel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, reason }),

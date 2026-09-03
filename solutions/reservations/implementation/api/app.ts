@@ -399,59 +399,54 @@ export function createApp(deps: AppDependencies): Express {
     res.status(201).json(result.value);
   });
 
-  app.post("/reservations", requireStaffSession, requirePermission(Permission.ReservationCreate), async (req: Request, res: Response) => {
-    const body = req.body as {
-      commandId: string;
-      correlationId?: string;
-      causationId?: string;
-      servicePeriodId: string;
-      contactSelection: unknown;
-      reservationDate: string;
-      partySize: number;
-      source: { category: string; externalReference?: string; importedBy?: string };
-      preferredArea?: string;
-      notes?: string;
-      communicationLanguage?: string;
-      isHistoricalCorrection?: boolean;
-      historicalCorrectionReason?: string;
+  /**
+   * P0 correctness-boundary closure (EC-002 reservations audit) — retired
+   * capacity/ServicePeriod-unsafe mutation routes. `POST /reservations`,
+   * `PATCH /reservations/:id`, and `POST /reservations/:id/cancel` used to
+   * call CreateReservationHandler/ModifyReservationHandler/CancelReservationHandler
+   * directly, with NO capacity check and NO real ServicePeriod enforcement
+   * (CreateReservationHandler/ModifyReservationHandler depend only on the
+   * always-valid UnvalidatedServicePeriodReader placeholder; capacity logic
+   * exists nowhere in those handlers at all) — while the sibling
+   * `/availability/reservations*` routes below, backed by
+   * AvailabilityOrchestrator, enforce both. Any staff session with the
+   * same ordinary Create/Modify/Cancel permission could silently bypass
+   * every capacity/opening-hours safeguard by calling the old path
+   * instead of the new one.
+   *
+   * These routes are retired, not deleted-and-forgotten: the auth/CSRF/
+   * permission middleware stays attached unchanged (identical
+   * authentication/authorization behavior to before — deliberately, so
+   * e.g. tests/integration/identity-access.test.ts's spoofed-header
+   * rejection check needs no change), and only what happens AFTER those
+   * checks pass is different — a `410 Gone` naming the authoritative
+   * replacement, rather than ever reaching a handler with no capacity
+   * awareness. 410 (not 404) is deliberate: this URL is not unknown or
+   * mistyped, it is a real, formerly-working endpoint that has been
+   * intentionally and permanently withdrawn — 410's own semantics ("this
+   * resource is gone, do not retry, do not look for it elsewhere")
+   * communicate that precisely, where 404 would leave a caller wondering
+   * whether it made a typo. CreateReservationHandler/ModifyReservationHandler/
+   * CancelReservationHandler are NOT removed — they remain constructed
+   * above and are still the application components AvailabilityOrchestrator
+   * composes internally for the one authoritative path; only the direct,
+   * capacity-unaware public entry points to them are withdrawn here.
+   */
+  function retiredMutationRoute(replacementMethod: string, replacementPath: string) {
+    return (_req: Request, res: Response) => {
+      res.status(410).json({
+        message: `This endpoint has been retired. It no longer accepts requests because it bypassed capacity and Service Period enforcement. Use ${replacementMethod} ${replacementPath} instead.`,
+        replacement: { method: replacementMethod, path: replacementPath },
+      });
     };
+  }
 
-    // requireStaffSession has already run and attached req.staffPrincipal
-    // — this cannot be undefined here, but the check keeps this function
-    // typed without a non-null assertion.
-    if (!req.staffPrincipal) return;
-    const actor = principalToActor(req.staffPrincipal);
-
-    const preferredArea = parsePreferredArea(body.preferredArea, res);
-    if (!preferredArea) return;
-    const communicationLanguage = parseCommunicationLanguage(body.communicationLanguage, res);
-    if (!communicationLanguage) return;
-    const contactSelection = parseContactSelection(body.contactSelection, res);
-    if (!contactSelection) return;
-
-    const result = await createHandler.handle({
-      commandId: body.commandId,
-      correlationId: body.correlationId,
-      causationId: body.causationId,
-      servicePeriodId: body.servicePeriodId,
-      contactSelection,
-      reservationDate: new Date(body.reservationDate),
-      partySize: body.partySize,
-      source: body.source as never,
-      preferredArea: preferredArea.present ? preferredArea.value : undefined,
-      notes: body.notes,
-      communicationLanguage: communicationLanguage.present ? communicationLanguage.value : undefined,
-      actor,
-      isHistoricalCorrection: body.isHistoricalCorrection,
-      historicalCorrectionReason: body.historicalCorrectionReason,
-    });
-
-    if (!result.ok) {
-      res.status(422).json({ violations: result.violations });
-      return;
-    }
-    res.status(201).json(result.value);
-  });
+  app.post(
+    "/reservations",
+    requireStaffSession,
+    requirePermission(Permission.ReservationCreate),
+    retiredMutationRoute("POST", "/availability/reservations")
+  );
 
   // CAP-D01.01-AC34 — Today's Active Reservations Are Operationally
   // Discoverable. Defaults to today (deps.clock.now()) so "what's on the
@@ -485,68 +480,15 @@ export function createApp(deps: AppDependencies): Express {
     res.status(200).json(serializeReservation(aggregate));
   });
 
-  app.patch("/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationModify), async (req: Request, res: Response) => {
-    const body = req.body as {
-      commandId: string;
-      correlationId?: string;
-      causationId?: string;
-      changes: {
-        reservationDate?: string;
-        partySize?: number;
-        contactId?: string;
-        contactName?: string;
-        contactPhoneSnapshot?: string;
-        contactEmailSnapshot?: string;
-        source?: { category: string; externalReference?: string; importedBy?: string };
-        servicePeriodId?: string;
-        tableAssignment?: string;
-        notes?: string;
-        preferredArea?: string;
-        arrivedAt?: string | null;
-      };
-      isServicePeriodStillValid?: boolean;
-      isAuthorizedCorrection?: boolean;
-      correctionReason?: string;
-    };
-
-    if (!req.staffPrincipal) return;
-    const actor = principalToActor(req.staffPrincipal);
-
-    const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
-    if (!preferredArea) return;
-
-    const result = await modifyHandler.handle({
-      commandId: body.commandId,
-      correlationId: body.correlationId,
-      causationId: body.causationId,
-      reservationId: paramId(req),
-      actor,
-      changes: {
-        reservationDate: body.changes?.reservationDate ? new Date(body.changes.reservationDate) : undefined,
-        partySize: body.changes?.partySize,
-        contactId: body.changes?.contactId,
-        contactName: body.changes?.contactName,
-        contactPhoneSnapshot: body.changes?.contactPhoneSnapshot,
-        contactEmailSnapshot: body.changes?.contactEmailSnapshot,
-        source: body.changes?.source as never,
-        servicePeriodId: body.changes?.servicePeriodId,
-        tableAssignment: body.changes?.tableAssignment,
-        notes: body.changes?.notes,
-        preferredArea: preferredArea.present ? preferredArea.value : undefined,
-        arrivedAt:
-          body.changes?.arrivedAt === undefined ? undefined : body.changes.arrivedAt === null ? null : new Date(body.changes.arrivedAt),
-      },
-      isServicePeriodStillValid: body.isServicePeriodStillValid,
-      isAuthorizedCorrection: body.isAuthorizedCorrection,
-      correctionReason: body.correctionReason,
-    });
-
-    if (!result.ok) {
-      res.status(422).json({ violations: result.violations });
-      return;
-    }
-    res.status(204).send();
-  });
+  // See the P0 retirement doc comment above `POST /reservations` — same
+  // reasoning applies here: ModifyReservationHandler has no capacity
+  // logic at all, unlike PATCH /availability/reservations/:id below.
+  app.patch(
+    "/reservations/:id",
+    requireStaffSession,
+    requirePermission(Permission.ReservationModify),
+    retiredMutationRoute("PATCH", "/availability/reservations/:id")
+  );
 
   app.post("/reservations/:id/confirm", requireStaffSession, requirePermission(Permission.ReservationConfirm), async (req: Request, res: Response) => {
     const body = req.body as { commandId: string; correlationId?: string; causationId?: string; isReservationDataValid?: boolean };
@@ -568,32 +510,19 @@ export function createApp(deps: AppDependencies): Express {
     res.status(204).send();
   });
 
-  app.post("/reservations/:id/cancel", requireStaffSession, requirePermission(Permission.ReservationCancel), async (req: Request, res: Response) => {
-    const body = req.body as {
-      commandId: string;
-      correlationId?: string;
-      causationId?: string;
-      reason?: string;
-      reasonRequiredByPolicy?: boolean;
-    };
-    if (!req.staffPrincipal) return;
-    const actor = principalToActor(req.staffPrincipal);
-
-    const result = await cancelHandler.handle({
-      commandId: body.commandId,
-      correlationId: body.correlationId,
-      causationId: body.causationId,
-      reservationId: paramId(req),
-      actor,
-      reason: body.reason,
-      reasonRequiredByPolicy: body.reasonRequiredByPolicy,
-    });
-    if (!result.ok) {
-      res.status(422).json({ violations: result.violations });
-      return;
-    }
-    res.status(204).send();
-  });
+  // See the P0 retirement doc comment above `POST /reservations` — same
+  // reasoning applies here: CancelReservationHandler never releases a
+  // committed capacity slot (that only happens in
+  // AvailabilityOrchestrator.cancelWithCapacity, via /availability/reservations/:id/cancel
+  // below), so a cancellation through this old path would leave a
+  // phantom capacity commitment behind, silently understating real
+  // availability.
+  app.post(
+    "/reservations/:id/cancel",
+    requireStaffSession,
+    requirePermission(Permission.ReservationCancel),
+    retiredMutationRoute("POST", "/availability/reservations/:id/cancel")
+  );
 
   app.post("/reservations/:id/complete", requireStaffSession, requirePermission(Permission.ReservationComplete), async (req: Request, res: Response) => {
     const body = req.body as {
@@ -711,6 +640,7 @@ export function createApp(deps: AppDependencies): Express {
           servicePeriodId?: string;
           tableAssignment?: string;
           notes?: string;
+          arrivedAt?: string | null;
         };
         isServicePeriodStillValid?: boolean;
       };
@@ -737,6 +667,16 @@ export function createApp(deps: AppDependencies): Express {
           tableAssignment: body.changes?.tableAssignment,
           notes: body.changes?.notes,
           preferredArea: preferredArea.present ? preferredArea.value : undefined,
+          // P0 retirement (EC-002 reservations audit) — added so `PATCH
+          // /reservations/:id`'s "mark arrived" support (pilot.html) has
+          // full parity here, since that plain route is now retired.
+          // ModifyReservationHandler/ReservationAggregate.modify() already
+          // support this field; AvailabilityOrchestrator.modifyWithCapacity()
+          // already forwards the full request untouched for any change
+          // that isn't capacity-relevant (see its own capacityRelevant
+          // check) — this is field plumbing, not new capacity logic.
+          arrivedAt:
+            body.changes?.arrivedAt === undefined ? undefined : body.changes.arrivedAt === null ? null : new Date(body.changes.arrivedAt),
         },
         isServicePeriodStillValid: body.isServicePeriodStillValid,
       });

@@ -156,6 +156,26 @@ export class AvailabilityOrchestrator {
     }
     const pool: CapacityPoolId = poolRaw;
 
+    // P0 correctness-boundary closure (EC-002 reservations audit) — same
+    // structural date-validity guard CreateReservationHandler already
+    // applies (CAP-D01.01-R10), reused here rather than duplicated
+    // reasoning: everything from this point on, starting with the
+    // ServicePeriod check immediately below, calls toLocalServiceDate()
+    // on request.reservationDate, which throws a raw RangeError on an
+    // Invalid Date instead of failing cleanly. This was a real,
+    // previously-unexercised gap in this — the sole authoritative
+    // creation path — surfaced only once real HTTP-level test coverage
+    // was migrated onto it; nothing about intentional business behavior
+    // changes here, this only makes an already-established domain rule
+    // reachable through this path the way it already was through
+    // CreateReservationHandler's own direct callers.
+    if (Number.isNaN(request.reservationDate.getTime())) {
+      return {
+        type: "VALIDATION_FAILED",
+        violations: [violation("CAP-D01.01-R10", "Reservation date and time must form a valid date-time value.")],
+      };
+    }
+
     // R1.6-C0 — CAP-D02 ServicePeriod authority, checked BEFORE
     // BookingPolicy (assignment §10's own recommended order) and outside
     // the transaction (same pre-transaction-check posture as the
