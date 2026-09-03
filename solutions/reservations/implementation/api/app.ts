@@ -23,10 +23,11 @@ import { Clock } from "../application/ports/Clock.js";
 import { CapacityRepository } from "../domain/repositories/CapacityRepository.js";
 import { TransactionManager } from "../application/ports/TransactionManager.js";
 import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
-import { SeatingOrchestrator } from "../application/floor/SeatingOrchestrator.js";
+import { SeatingOrchestrator, ResourceSelector } from "../application/floor/SeatingOrchestrator.js";
 import { SeatingAvailabilityService } from "../application/floor/SeatingAvailabilityService.js";
 import { FloorRepository } from "../domain/repositories/FloorRepository.js";
-import { isCapacityPoolId } from "../domain/availability/CapacityPool.js";
+import { isCapacityPoolId, CAPACITY_POOLS } from "../domain/availability/CapacityPool.js";
+import { isTerminal } from "../domain/value-objects/ReservationStatus.js";
 import { StaffUserRepository } from "../domain/repositories/StaffUserRepository.js";
 import { SessionRepository } from "../domain/repositories/SessionRepository.js";
 import { PasswordHasher } from "../application/ports/PasswordHasher.js";
@@ -352,6 +353,42 @@ export function createApp(deps: AppDependencies): Express {
     return null;
   }
 
+  /**
+   * P1-B4-B — structural-only validation of the client's resource
+   * selection (shape, not business rules): a non-empty array where every
+   * entry names exactly one of tableId/seatId. Every REAL seatability
+   * rule (active/blocked/overlap/area/capacity) stays entirely inside
+   * SeatingOrchestrator.assignSeating -> SeatabilityEvaluator, never
+   * duplicated here — this only rejects garbage JSON early with a clear
+   * 422, the same posture parseContactSelection/parsePreferredArea above
+   * already use for their own request bodies.
+   */
+  function parseResourceSelectors(value: unknown, res: Response): readonly ResourceSelector[] | null {
+    if (!Array.isArray(value) || value.length === 0) {
+      res.status(422).json({ message: "resources must be a non-empty array of { tableId } or { seatId } selectors." });
+      return null;
+    }
+    const parsed: ResourceSelector[] = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") {
+        res.status(422).json({ message: "Each resource selector must be an object with exactly one of tableId or seatId." });
+        return null;
+      }
+      const { tableId, seatId } = entry as { tableId?: unknown; seatId?: unknown };
+      const hasTable = typeof tableId === "string" && tableId.length > 0;
+      const hasSeat = typeof seatId === "string" && seatId.length > 0;
+      if (hasTable === hasSeat) {
+        // Both set, or neither set — the domain model (exactly one of
+        // tableId/seatId per SeatingAssignmentResource) has no
+        // well-defined meaning for either case.
+        res.status(422).json({ message: "Each resource selector must specify exactly one of tableId or seatId." });
+        return null;
+      }
+      parsed.push(hasTable ? { tableId: tableId as string } : { seatId: seatId as string });
+    }
+    return parsed;
+  }
+
   app.get("/health", (_req: Request, res: Response) => {
     res.status(200).json({ status: "ok" });
   });
@@ -567,6 +604,122 @@ export function createApp(deps: AppDependencies): Express {
           assignmentStatus: result.assignmentStatus,
           availableResources: result.availableResources,
         });
+      }
+    );
+  }
+
+  // P1-B4-B — CAP-D04.01 authoritative physical-resource claim: staff
+  // selects concrete resources (typically from B4-A's advisory list
+  // above) and this composes SeatingOrchestrator.assignSeating() directly
+  // — the SAME transactional lock/overlap/EXCLUDE-constraint/idempotency
+  // path R1.5 already built and proved (tests/integration/floor-seating*.test.ts).
+  // Nothing here re-implements or weakens any of that: every physical
+  // seatability rule is evaluated fresh, under real locks, inside
+  // assignSeating itself — this route only derives the values the caller
+  // must never control (area, party size, interval, seatImmediately) and
+  // rejects a reservation that is not eligible before ever calling it.
+  //
+  // Reservation-driven, like B4-A: the browser supplies only commandId
+  // and the chosen resources. requestedAreaId/requestedPartySize/
+  // startTime/endTime/seatImmediately are ALL derived server-side from
+  // the authoritative Reservation and CAPACITY_POOLS — never accepted
+  // from the request body, so nothing here can be manipulated.
+  //
+  // Eligibility: reuses the existing, approved ReservationStatus.isTerminal
+  // predicate — no new status or policy invented. Cancelled/Completed
+  // (terminal) are rejected: a cancelled reservation already has its
+  // seating released automatically (AvailabilityOrchestrator.cancelWithCapacity's
+  // existing R1.5 integration point) and nothing should claim a resource
+  // for it again; a completed reservation's service is already over.
+  // Proposed and Confirmed (non-terminal) are BOTH eligible — required
+  // directly by the P1-B3 recovery case this endpoint exists to serve: an
+  // immediate Walk-in's Reservation is created as Proposed (never
+  // auto-confirmed) and must be seatable in that exact state, or the
+  // required CREATED_UNSEATED -> Seated recovery path would be
+  // impossible. This is a derivation from existing, approved lifecycle
+  // policy (isTerminal), not an invented new rule.
+  //
+  // seatImmediately is always true — this operation's whole purpose is
+  // immediate physical seating (assign-and-seat in one step), matching
+  // the P1-B3 Walk-in recovery goal; ordinary pre-assignment-for-later
+  // (seatImmediately: false/omitted) is not what this endpoint is for and
+  // is not exposed here.
+  if (seatingOrchestrator) {
+    app.post(
+      "/reservations/:id/seating",
+      requireStaffSession,
+      requirePermission(Permission.SeatingAssign),
+      async (req: Request, res: Response) => {
+        const idResult = ReservationId.create(paramId(req));
+        if (!idResult.ok) {
+          res.status(400).json({ violations: idResult.violations });
+          return;
+        }
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+
+        const body = req.body as { commandId?: string; resources?: unknown };
+        if (!body.commandId) {
+          res.status(422).json({ message: "commandId is required." });
+          return;
+        }
+        const resources = parseResourceSelectors(body.resources, res);
+        if (!resources) return;
+
+        const reservation = await deps.repository.findById(idResult.value);
+        if (!reservation) {
+          res.status(404).json({ message: "Reservation not found." });
+          return;
+        }
+
+        if (isTerminal(reservation.getStatus())) {
+          res.status(409).json({ type: "RESERVATION_NOT_ELIGIBLE", status: reservation.getStatus() });
+          return;
+        }
+        const preferredArea = reservation.getPreferredArea();
+        if (!preferredArea || !isCapacityPoolId(preferredArea)) {
+          res.status(409).json({ type: "NO_MANAGED_AREA" });
+          return;
+        }
+
+        const startTime = reservation.getReservationDateTime();
+        const durationMinutes = CAPACITY_POOLS[preferredArea].durationMinutes;
+        const endTime = new Date(startTime.getTime() + durationMinutes * 60_000);
+
+        const result = await seatingOrchestrator.assignSeating({
+          commandId: body.commandId,
+          reservationId: reservation.getId().toString(),
+          requestedAreaId: preferredArea,
+          requestedPartySize: reservation.getPartySize(),
+          resources,
+          startTime,
+          endTime,
+          actor,
+          seatImmediately: true,
+        });
+
+        switch (result.type) {
+          case "ASSIGNED":
+            res.status(201).json({
+              type: "ASSIGNED",
+              assignmentId: result.assignment.id,
+              status: result.assignment.status,
+              seatedAt: result.assignment.seatedAt,
+              resources,
+            });
+            return;
+          case "NOT_SEATABLE":
+            // Stable, machine-readable — SeatabilityOutcome's own
+            // discriminated shape, reused verbatim (never invented here).
+            res.status(409).json({ type: "NOT_SEATABLE", seatability: result.seatability });
+            return;
+          case "ALREADY_ASSIGNED_ELSEWHERE":
+            // This reservation already has a different active assignment
+            // — B4-B is assign, not move. Moving belongs to the separate,
+            // not-yet-exposed seating-move capability (Permission.SeatingMove).
+            res.status(409).json({ type: "ALREADY_ASSIGNED_ELSEWHERE" });
+            return;
+        }
       }
     );
   }
