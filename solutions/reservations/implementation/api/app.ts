@@ -23,6 +23,8 @@ import { Clock } from "../application/ports/Clock.js";
 import { CapacityRepository } from "../domain/repositories/CapacityRepository.js";
 import { TransactionManager } from "../application/ports/TransactionManager.js";
 import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
+import { SeatingOrchestrator } from "../application/floor/SeatingOrchestrator.js";
+import { FloorRepository } from "../domain/repositories/FloorRepository.js";
 import { isCapacityPoolId } from "../domain/availability/CapacityPool.js";
 import { StaffUserRepository } from "../domain/repositories/StaffUserRepository.js";
 import { SessionRepository } from "../domain/repositories/SessionRepository.js";
@@ -96,6 +98,28 @@ export interface AppDependencies {
      * there is no supported way to mount these routes without it.
      */
     readonly servicePeriodService: ServicePeriodService;
+  };
+  /**
+   * P1-B1 — CAP-D04.01 runtime wiring only (dependency composition, no new
+   * routes). Optional, same "not available in this deployment" posture as
+   * `capacity`/`communications`: when omitted, `AvailabilityOrchestrator`'s
+   * `seatingOrchestrator` parameter stays `undefined`, exactly as it always
+   * has — zero behavior change for any caller that doesn't supply this.
+   * Also requires `capacity` (the only place `SeatingOrchestrator` is
+   * consumed) — supplying `floor` without `capacity` wires nothing, since
+   * there is no `AvailabilityOrchestrator` instance to hand it to.
+   * No HTTP routes are mounted from this block in this increment — it only
+   * makes `cancelWithCapacity`'s existing, already-implemented (R1.5)
+   * seating-release integration point active instead of permanently
+   * inert. Since no route anywhere can create a `SeatingAssignment` yet
+   * (no seating routes exist), that integration point has nothing to ever
+   * find and release — see AvailabilityOrchestrator.cancelWithCapacity's
+   * own `if (this.seatingOrchestrator)` branch, whose only effect today is
+   * one additional no-op `findActiveAssignmentByReservationId` read inside
+   * the same transaction.
+   */
+  floor?: {
+    readonly floorRepository: FloorRepository;
   };
   /**
    * R1.6-B — optional, same "not available in this deployment" posture as
@@ -204,6 +228,19 @@ export function createApp(deps: AppDependencies): Express {
   const cancelHandler = new CancelReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const completeHandler = new CompleteReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
 
+  // P1-B1 — constructed only when the deployment supplies floor
+  // infrastructure alongside capacity (see AppDependencies.floor doc
+  // comment above). Uses deps.capacity.transactionManager, not
+  // deps.transactionManager, mirroring AvailabilityOrchestrator's own
+  // constructor below and tests/integration/support/floorTestHarness.ts's
+  // already-proven wiring pattern exactly — one shared transaction
+  // manager across every capacity-aware construct, not two independent
+  // ones by accident.
+  const seatingOrchestrator =
+    deps.capacity && deps.floor
+      ? new SeatingOrchestrator(deps.floor.floorRepository, deps.capacity.transactionManager, deps.idGenerator, deps.clock)
+      : undefined;
+
   // CAP-D02.03 — only constructed when the deployment supplies capacity
   // infrastructure (see AppDependencies.capacity doc comment above).
   const availabilityOrchestrator = deps.capacity
@@ -217,7 +254,7 @@ export function createApp(deps: AppDependencies): Express {
         createHandler,
         modifyHandler,
         cancelHandler,
-        undefined, // seatingOrchestrator — no HTTP floor/seating routes are mounted yet (pre-existing, unrelated to R1.6-C0)
+        seatingOrchestrator,
         deps.capacity.servicePeriodService
       )
     : null;

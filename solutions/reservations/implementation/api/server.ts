@@ -19,6 +19,7 @@ import { PrismaCommunicationOutboxRepository } from "../infrastructure/persisten
 import { PrismaGuestManagementCredentialRepository } from "../infrastructure/persistence/PrismaGuestManagementCredentialRepository.js";
 import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
+import { PrismaFloorRepository } from "../infrastructure/persistence/PrismaFloorRepository.js";
 
 const prisma = new PrismaClient();
 // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §21 — same-origin deployment
@@ -51,6 +52,15 @@ const app = createApp({
     // capacity-aware routes are mounted at all (AppDependencies.capacity's
     // own doc comment).
     servicePeriodService: new ServicePeriodService(new PrismaClosingDayStore(prisma), new PrismaServicePeriodOverrideStore(prisma)),
+  },
+  // P1-B1 — CAP-D04.01 runtime wiring (dependency composition only, no new
+  // routes mounted by this deployment yet). Makes AvailabilityOrchestrator.
+  // cancelWithCapacity's existing, previously-always-inert R1.5 seating-
+  // release integration point active; has no observable effect until a
+  // future increment adds a route that can create a SeatingAssignment,
+  // since none exists today for this integration point to ever find.
+  floor: {
+    floorRepository: new PrismaFloorRepository(prisma),
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
   // route. Real EmailDeliveryPort/provider selection remains a separate,
