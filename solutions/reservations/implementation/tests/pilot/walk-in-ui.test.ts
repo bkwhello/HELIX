@@ -37,7 +37,11 @@ beforeAll(() => {
   source = readFileSync(pilotHtmlPath, "utf-8");
 
   const blockStart = source.indexOf('const walkinForm = document.getElementById("walkin-form");');
-  const blockEnd = source.indexOf('const listDateInput = document.getElementById("list-date");');
+  // P1-B4-C inserted the shared seating-picker block between the walk-in
+  // handler and the Dagoverzicht section — the walk-in block's own end
+  // boundary moves with it so this extraction still captures ONLY the
+  // walk-in handler, not the newer code after it.
+  const blockEnd = source.indexOf('const seatingPicker = document.getElementById("seating-picker");');
   expect(blockStart).toBeGreaterThan(-1);
   expect(blockEnd).toBeGreaterThan(blockStart);
   walkinBlock = source.slice(blockStart, blockEnd);

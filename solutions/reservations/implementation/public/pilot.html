@@ -354,6 +354,19 @@
     <div id="list-empty" class="empty" style="display:none;">Geen reserveringen voor deze datum.</div>
   </section>
 
+  <!-- P1-B4-C — the ONE authoritative seating panel, shared by BOTH entry
+       points: the daily list's "Plaatsen" action (A) and the Walk-in
+       CREATED_UNSEATED follow-up (B) — same two approved endpoints
+       (GET/POST .../seating*), same rendering, same outcome handling, no
+       second seating model. Hidden until openSeatingPicker() is called. -->
+  <section id="seating-picker" style="display:none;">
+    <h2>Plaatsen</h2>
+    <div id="seating-picker-message"></div>
+    <div id="seating-picker-resources"></div>
+    <button type="button" id="seating-picker-confirm">Plaatsen bevestigen</button>
+    <button type="button" class="secondary" id="seating-picker-cancel">Annuleren</button>
+  </section>
+
   <section>
     <h2>Walk-in nu</h2>
     <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem;">
@@ -937,15 +950,20 @@
       } else {
         // Outcome B — CREATED_UNSEATED. Not a failure: the reservation
         // and its capacity claim both already exist (shown with "warn"
-        // styling, not "error"). This pilot has no safe existing
-        // table-assignment action to offer here — staff track seating
-        // manually via the "Tafel" note field in Dagoverzicht below,
-        // same as any other reservation, until a real one exists.
+        // styling, not "error"). P1-B4-C — a Reservation cannot be
+        // resource-selected before it exists (there is no legitimate
+        // pre-create availability endpoint, and this pilot does not
+        // fabricate one), so recovery continues through the SAME
+        // authoritative Plaatsen panel the daily list below uses,
+        // opened immediately using the reservationId this response
+        // already returns (CreateReservationOutcome.reservationId,
+        // spread into this response by api/app.ts's walk-in route).
         showMessage(
           walkinMessage,
-          "Walk-in geregistreerd, maar nog niet geplaatst. Capaciteit is al gereserveerd — wijs later een tafel toe.",
+          "Walk-in geregistreerd, maar nog niet geplaatst. Kies hieronder een tafel of zitplaats om te plaatsen.",
           "warn"
         );
+        await openSeatingPicker(data.reservationId);
       }
 
       walkinForm.reset();
@@ -958,6 +976,171 @@
       showMessage(walkinMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     } finally {
       walkinSubmit.disabled = false;
+    }
+  });
+
+  // P1-B4-C — CAP-D04.01 authoritative physical seating ("Plaatsen"). ONE
+  // panel/flow, shared by entry point A (the daily list below, for any
+  // Proposed/Confirmed reservation with no active assignment) and entry
+  // point B (the Walk-in CREATED_UNSEATED recovery above) — the exact
+  // same two already-approved endpoints, the exact same rendering and
+  // outcome handling, never a second seating model. No graphical floor
+  // plan — a plain checkbox list, staff-facing labels only.
+  const seatingPicker = document.getElementById("seating-picker");
+  const seatingPickerMessage = document.getElementById("seating-picker-message");
+  const seatingPickerResources = document.getElementById("seating-picker-resources");
+  const seatingPickerConfirm = document.getElementById("seating-picker-confirm");
+  const seatingPickerCancel = document.getElementById("seating-picker-cancel");
+  let seatingPickerReservationId = null;
+
+  function closeSeatingPicker() {
+    seatingPicker.style.display = "none";
+    seatingPickerReservationId = null;
+    seatingPickerResources.innerHTML = "";
+    clearMessage(seatingPickerMessage);
+  }
+  seatingPickerCancel.addEventListener("click", closeSeatingPicker);
+
+  // Sushi -> whole Tables ("Tafel 5 — 2 personen"); Teppanyaki -> individual
+  // Seats with grill context ("C-01 — Grill C"). Driven entirely by
+  // resource.kind, exactly as B4-A's own response already distinguishes
+  // them — no area-based branching invented here, and no combination/
+  // grouping rule beyond plain multi-select (staff may tick more than one).
+  function renderSeatingResources(resources) {
+    seatingPickerResources.innerHTML = "";
+    if (resources.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Geen beschikbare tafel of zitplaats gevonden.";
+      seatingPickerResources.appendChild(empty);
+      return;
+    }
+    for (const resource of resources) {
+      const row = document.createElement("label");
+      row.className = "list-item";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.dataset.resourceId = resource.resourceId;
+      checkbox.dataset.resourceKind = resource.kind;
+      const span = document.createElement("span");
+      span.textContent =
+        resource.kind === "Table"
+          ? `Tafel ${resource.operationalLabel} — ${resource.capacity} personen`
+          : `${resource.operationalLabel} — Grill ${resource.parentTable ? resource.parentTable.operationalLabel : "?"}`;
+      row.appendChild(checkbox);
+      row.appendChild(span);
+      seatingPickerResources.appendChild(row);
+    }
+  }
+
+  // Reservation-driven, like B4-A/B4-B themselves: the only input is the
+  // reservation id. Re-used verbatim as the "refresh" step after a stale
+  // RESOURCE_OVERLAP below — never a second, ad-hoc availability fetch.
+  async function openSeatingPicker(reservationId) {
+    seatingPickerReservationId = reservationId;
+    seatingPicker.style.display = "";
+    clearMessage(seatingPickerMessage);
+    seatingPickerResources.innerHTML = '<div class="empty">Bezig met laden…</div>';
+    seatingPicker.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    const res = await fetch(`/reservations/${reservationId}/seating/available-resources`, { headers: actorHeaders() });
+    if (res.status === 401 || res.status === 403) {
+      // UI visibility is convenience only — the server remains
+      // authoritative (Permission.SeatingView); this is not duplicated
+      // client-side, only cleanly displayed.
+      seatingPickerResources.innerHTML = "";
+      showMessage(seatingPickerMessage, "Je hebt geen rechten om beschikbare plekken te bekijken.", "error");
+      return;
+    }
+    if (!res.ok) {
+      seatingPickerResources.innerHTML = "";
+      showMessage(seatingPickerMessage, "Kon beschikbare plekken niet ophalen.", "error");
+      return;
+    }
+    const data = await res.json();
+    if (data.type === "NO_MANAGED_AREA") {
+      seatingPickerResources.innerHTML = "";
+      showMessage(seatingPickerMessage, "Deze reservering heeft geen voorkeursgebied — plaatsen is niet mogelijk.", "error");
+      return;
+    }
+    // Authoritative seating state (B4-A's own assignmentStatus) — never
+    // the legacy, free-text Reservation table-note field, which plays no
+    // role anywhere in this panel.
+    if (data.assignmentStatus && data.assignmentStatus !== "Unassigned") {
+      seatingPickerResources.innerHTML = "";
+      showMessage(seatingPickerMessage, "Deze reservering is al toegewezen of geplaatst.", "warn");
+      return;
+    }
+    renderSeatingResources(data.availableResources);
+  }
+
+  seatingPickerConfirm.addEventListener("click", async () => {
+    // Double-submit protection — same disabled-button pattern as the
+    // create/walk-in forms above; the existing server-side commandId
+    // idempotency (SeatingOrchestrator.assignSeating) remains the real
+    // safety mechanism, this is only a courtesy against a second click.
+    if (seatingPickerConfirm.disabled) return;
+    if (!seatingPickerReservationId) return;
+    const selected = Array.from(seatingPickerResources.querySelectorAll('input[type="checkbox"]:checked')).map((cb) =>
+      cb.dataset.resourceKind === "Table" ? { tableId: cb.dataset.resourceId } : { seatId: cb.dataset.resourceId }
+    );
+    if (selected.length === 0) {
+      showMessage(seatingPickerMessage, "Kies minimaal één tafel of zitplaats.", "error");
+      return;
+    }
+
+    seatingPickerConfirm.disabled = true;
+    try {
+      // The dedicated B4-B endpoint's own narrow contract: commandId and
+      // resources ONLY — no area, party size, interval, or seatImmediately.
+      // The server derives all of those from the Reservation itself.
+      const res = await fetch(`/reservations/${seatingPickerReservationId}/seating`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify({
+          commandId: `pilot-seat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          resources: selected,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401 || res.status === 403) {
+        showMessage(seatingPickerMessage, "Je hebt geen rechten om te plaatsen.", "error");
+        return;
+      }
+      if (res.ok) {
+        // ASSIGNED — the Reservation's own lifecycle status is never
+        // touched by this call; only the SeatingAssignment changed.
+        closeSeatingPicker();
+        showMessage(listMessage, "Gast geplaatst.", "ok");
+        await loadList();
+        await loadOccupancy();
+        return;
+      }
+
+      if (data.type === "NOT_SEATABLE" && data.seatability && data.seatability.type === "RESOURCE_OVERLAP") {
+        // Stale availability — the resource shown by the earlier GET was
+        // taken before this POST. NOT a system failure: tell staff
+        // plainly and refresh the list via the SAME GET this panel
+        // already uses. Never auto-pick another resource, never
+        // auto-retry the assignment itself.
+        showMessage(seatingPickerMessage, "Deze plek is niet meer beschikbaar. De beschikbare plekken worden vernieuwd.", "warn");
+        await openSeatingPicker(seatingPickerReservationId);
+        return;
+      }
+      if (data.type === "NOT_SEATABLE") {
+        showMessage(seatingPickerMessage, "Kon niet plaatsen: " + (data.seatability ? data.seatability.type : "onbekende reden") + ".", "error");
+        return;
+      }
+      if (data.type === "ALREADY_ASSIGNED_ELSEWHERE") {
+        showMessage(seatingPickerMessage, "Deze reservering heeft al een actieve toewijzing.", "error");
+        return;
+      }
+      showMessage(seatingPickerMessage, data.message || "Kon niet plaatsen.", "error");
+    } catch (err) {
+      showMessage(seatingPickerMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    } finally {
+      seatingPickerConfirm.disabled = false;
     }
   });
 
@@ -1259,6 +1442,24 @@
           cancelButton.textContent = "Annuleren";
           cancelButton.addEventListener("click", () => cancelReservation(r));
           actionCell.appendChild(cancelButton);
+        }
+        // P1-B4-C — offered for Proposed/Confirmed only, never Cancelled/
+        // Completed (same status gate as Cancel above). Whether an active
+        // SeatingAssignment already exists (Assigned/Seated) is NOT
+        // pre-checked here from list data — the daily list has no
+        // per-row assignment data of its own and this deliberately does
+        // not add one; openSeatingPicker() itself performs the real,
+        // authoritative check (B4-A's own assignmentStatus) the moment
+        // staff actually clicks, and shows a clear message instead of a
+        // picker if one is already active. UI visibility is convenience
+        // only, per the assignment's own instruction.
+        if (r.status === "Proposed" || r.status === "Confirmed") {
+          const seatButton = document.createElement("button");
+          seatButton.type = "button";
+          seatButton.className = "confirm-button";
+          seatButton.textContent = "Plaatsen";
+          seatButton.addEventListener("click", () => openSeatingPicker(r.id));
+          actionCell.appendChild(seatButton);
         }
         // P1-A — CAP-D01.01-R29: only a Confirmed reservation may be
         // completed, so this action is visible only in that state,
