@@ -355,6 +355,41 @@
   </section>
 
   <section>
+    <h2>Walk-in nu</h2>
+    <p style="margin: 0 0 0.75rem; color: var(--muted); font-size: 0.85rem;">
+      Voor een gast die nu binnenloopt en nu een plek wil. Geen datum, tijd of bron te kiezen — dat bepaalt de server.
+    </p>
+    <form id="walkin-form" class="compact-form">
+      <div class="row">
+        <div>
+          <label for="walkin-name">Naam</label>
+          <input id="walkin-name" type="text" required placeholder="bijv. Jan Jansen" />
+        </div>
+        <div>
+          <label for="walkin-phone">Telefoon (optioneel)</label>
+          <input id="walkin-phone" type="tel" placeholder="06-12345678" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="walkin-party-size">Aantal personen</label>
+          <input id="walkin-party-size" type="number" min="1" value="2" required />
+        </div>
+        <div>
+          <label for="walkin-area">Ruimte</label>
+          <select id="walkin-area" required>
+            <option value="" disabled selected>Kies ruimte…</option>
+            <option value="Sushi">Sushi</option>
+            <option value="Teppanyaki">Teppanyaki</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" id="walkin-submit">Walk-in registreren</button>
+      <div id="walkin-message"></div>
+    </form>
+  </section>
+
+  <section>
     <h2 id="form-title">Nieuwe reservering</h2>
     <div id="edit-banner" class="edit-banner"></div>
     <form id="create-form" class="compact-form">
@@ -822,6 +857,107 @@
       showMessage(createMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     } finally {
       createSubmit.disabled = false;
+    }
+  });
+
+  // P1-B3 — CAP-D04.01/CAP-D02.03 immediate Walk-in ("Walk-in nu"). A
+  // clearly separate action from "Nieuwe reservering" above — staff never
+  // simulate a Walk-in through the ordinary reservation form. Sends ONLY
+  // the dedicated endpoint's own narrow contract (name, optional phone,
+  // partySize, preferredArea); no date, time, source, or email field
+  // exists on this form at all, and none is ever added to the request
+  // body — the server alone establishes reservationDate/source/commandNow
+  // (api/app.ts's POST /availability/reservations/walk-in). No table/
+  // resource selector is offered here: the "Tafel" column in Dagoverzicht
+  // below is a free-text note on the Reservation itself
+  // (tableAssignment), not the real SeatingAssignment/floor model — this
+  // pilot has no existing, safe selector for that to reuse, and inventing
+  // one is out of scope for this increment (see the P1-B3 report's "next
+  // operational gap").
+  const walkinForm = document.getElementById("walkin-form");
+  const walkinSubmit = document.getElementById("walkin-submit");
+  const walkinMessage = document.getElementById("walkin-message");
+
+  // Same response shapes as the ordinary create route — NOT_CREATED
+  // reuses createWithCapacity's own non-CREATED result variants verbatim
+  // (AvailabilityOrchestrator.createImmediateWalkIn's own doc comment) —
+  // so this reuses creationErrorMessage as-is; only the capacity phrasing
+  // is walk-in-specific, per the required staff-facing wording.
+  function walkInErrorMessage(data) {
+    if (data.availability) return "Geen capaciteit beschikbaar voor deze walk-in.";
+    return creationErrorMessage(data);
+  }
+
+  walkinForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    // Double-submit protection: a second submit event firing while one
+    // is already in flight (e.g. Enter pressed twice quickly) is ignored
+    // outright, on top of the disabled submit button below.
+    if (walkinSubmit.disabled) return;
+    clearMessage(walkinMessage);
+
+    const displayName = document.getElementById("walkin-name").value.trim();
+    const phone = document.getElementById("walkin-phone").value.trim();
+    const partySize = Number(document.getElementById("walkin-party-size").value);
+    const preferredArea = document.getElementById("walkin-area").value;
+    if (!displayName) {
+      showMessage(walkinMessage, "Naam is verplicht.", "error");
+      return;
+    }
+    if (!preferredArea) {
+      showMessage(walkinMessage, "Kies een ruimte.", "error");
+      return;
+    }
+
+    walkinSubmit.disabled = true;
+    try {
+      const res = await fetch("/availability/reservations/walk-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify({
+          commandId: `pilot-walkin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          contactSelection: { displayName, phone: phone || undefined },
+          partySize,
+          preferredArea,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // Outcome C — NOT_CREATED. A meaningful server error, shown as a
+        // genuine failure; never an automatic retry, never a rounded or
+        // invented time — there is no time to round, this form has none.
+        showMessage(walkinMessage, "Walk-in niet geregistreerd:\n" + walkInErrorMessage(data), "error");
+        return;
+      }
+
+      if (data.seating && data.seating.status === "Seated") {
+        // Outcome A — CREATED_AND_SEATED.
+        showMessage(walkinMessage, "Walk-in geregistreerd en geplaatst.", "ok");
+      } else {
+        // Outcome B — CREATED_UNSEATED. Not a failure: the reservation
+        // and its capacity claim both already exist (shown with "warn"
+        // styling, not "error"). This pilot has no safe existing
+        // table-assignment action to offer here — staff track seating
+        // manually via the "Tafel" note field in Dagoverzicht below,
+        // same as any other reservation, until a real one exists.
+        showMessage(
+          walkinMessage,
+          "Walk-in geregistreerd, maar nog niet geplaatst. Capaciteit is al gereserveerd — wijs later een tafel toe.",
+          "warn"
+        );
+      }
+
+      walkinForm.reset();
+      document.getElementById("walkin-party-size").value = 2;
+      // Refreshes the existing daily-list/occupancy state — no new
+      // state is invented for this flow.
+      await loadList();
+      await loadOccupancy();
+    } catch (err) {
+      showMessage(walkinMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    } finally {
+      walkinSubmit.disabled = false;
     }
   });
 
