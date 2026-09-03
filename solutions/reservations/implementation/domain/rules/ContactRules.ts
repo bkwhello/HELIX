@@ -6,6 +6,19 @@ export interface ContactCreationInput {
   readonly displayName: string;
   readonly phone?: string;
   readonly email?: string;
+  /**
+   * P1-B2 — internal-only, narrowest possible relaxation of the "at
+   * least one contact method" clause below, for the dedicated immediate
+   * Walk-in composition ONLY (application/availability/AvailabilityOrchestrator.ts's
+   * createImmediateWalkIn). Never a client-controlled field: it exists on
+   * this pure-function input type (and CreateContactRequest above it) but
+   * is never deserialized from any HTTP request body anywhere in api/app.ts
+   * — the walk-in route's own narrow body type structurally has no field
+   * that maps to it. Defaults to true (today's unweakened rule) for every
+   * other caller, so ordinary Contact creation is byte-identical to
+   * before this change.
+   */
+  readonly contactMethodRequired?: boolean;
 }
 
 /**
@@ -24,7 +37,8 @@ export function checkContactCreationRules(input: ContactCreationInput): RuleViol
 
   const hasPhone = Boolean(input.phone && input.phone.trim().length > 0);
   const hasEmail = Boolean(input.email && input.email.trim().length > 0);
-  if (!hasPhone && !hasEmail) {
+  const contactMethodRequired = input.contactMethodRequired ?? true;
+  if (contactMethodRequired && !hasPhone && !hasEmail) {
     violations.push(violation("CAP-D05.01-R01", "A Contact requires at least one contact method: phone or email."));
   }
 

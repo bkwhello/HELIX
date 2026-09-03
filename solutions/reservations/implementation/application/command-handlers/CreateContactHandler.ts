@@ -12,6 +12,8 @@ export interface CreateContactRequest {
   readonly displayName: string;
   readonly phone?: string;
   readonly email?: string;
+  /** P1-B2 — internal-only; see ContactRules.ts's ContactCreationInput.contactMethodRequired doc comment. Never set from an HTTP request body. */
+  readonly contactMethodRequired?: boolean;
   /** CAP-D05.01-I1 assignment §11: staff attribution via a trusted R1.2 actor. */
   readonly actor: Actor;
   readonly tx?: TransactionContext;

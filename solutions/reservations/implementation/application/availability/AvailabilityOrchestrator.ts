@@ -52,9 +52,11 @@ import { AvailabilityOutcome } from "../../domain/availability/AvailabilityResul
 import { toLocalServiceDate } from "../../domain/availability/ServiceTime.js";
 import { sortLockResources } from "../../domain/availability/LockKey.js";
 import { RuleViolation, violation } from "../../domain/shared/Result.js";
-import { SeatingOrchestrator } from "../floor/SeatingOrchestrator.js";
+import { SeatingOrchestrator, ResourceSelector } from "../floor/SeatingOrchestrator.js";
+import { SeatingAssignment } from "../../domain/floor/SeatingAssignment.js";
 import { Actor, ActorKind } from "../../domain/value-objects/Actor.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
+import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { ServicePeriodService } from "./ServicePeriodService.js";
 import { ServicePeriodEligibility } from "../../domain/availability/ServicePeriod.js";
 
@@ -72,6 +74,43 @@ export type CreateWithCapacityResult =
   /** R1.6-C0 — CAP-D02 ServicePeriod authority rejected the requested start (never VALID here — VALID means enforcement proceeds normally). Distinct from BOOKING_POLICY_REJECTED: this asks "is this an offered booking start at all", not "which channel may complete it" — see AvailabilityOrchestrator's own enforcement-site comment and domain/availability/ServicePeriod.ts. */
   | { readonly type: "SERVICE_PERIOD_REJECTED"; readonly eligibility: ServicePeriodEligibility }
   | { readonly type: "VALIDATION_FAILED"; readonly violations: readonly RuleViolation[] };
+
+/**
+ * P1-B2 — CAP-D04.01/CAP-D02.03 composition for a guest physically
+ * present now, being registered now (never a Walk-in booking for
+ * later — that stays the ordinary /availability/reservations route,
+ * unchanged). Deliberately narrow: no reservationDate, no sourceCategory,
+ * no email — the server, not the caller, establishes every one of those.
+ * `resources` is optional: staff may register the guest first and seat
+ * them via a separate operation later (CREATED_UNSEATED is a valid,
+ * expected outcome then, not a partial failure).
+ */
+export interface ImmediateWalkInRequest {
+  readonly commandId: string;
+  readonly contactSelection: { readonly displayName: string; readonly phone?: string };
+  readonly partySize: number;
+  readonly preferredArea: CapacityPoolId;
+  readonly resources?: readonly ResourceSelector[];
+  readonly actor: Actor;
+}
+
+/**
+ * The three outcomes the P1-B2 assignment requires, preserved exactly:
+ * A. CREATED_AND_SEATED — reservation created, capacity committed,
+ *    SeatingAssignment reached Seated.
+ * B. CREATED_UNSEATED — reservation created and capacity committed, but
+ *    immediate seating did not succeed (NOT_SEATABLE, no seatingOrchestrator
+ *    wired, or the reservation already had an active assignment under a
+ *    different commandId) — a valid, recoverable state, never rollback-worthy.
+ * C. NOT_CREATED — authoritative reservation/capacity creation itself
+ *    failed; nothing was registered. `result` is createWithCapacity's own
+ *    non-CREATED variant, reused verbatim (same status-code mapping the
+ *    ordinary create route already applies).
+ */
+export type ImmediateWalkInResult =
+  | { readonly type: "CREATED_AND_SEATED"; readonly outcome: CreateReservationOutcome; readonly assignment: SeatingAssignment }
+  | { readonly type: "CREATED_UNSEATED"; readonly outcome: CreateReservationOutcome }
+  | { readonly type: "NOT_CREATED"; readonly result: Exclude<CreateWithCapacityResult, { type: "CREATED" }> };
 
 export type ModifyWithCapacityResult =
   | { readonly type: "MODIFIED" }
@@ -196,7 +235,15 @@ export class AvailabilityOrchestrator {
     // implementation report's WalkIn Decision / Source-Category Matrix
     // for why no evidence justifies a source-based bypass.
     if (this.servicePeriodService && !request.isHistoricalCorrection) {
-      const eligibility = await this.servicePeriodService.evaluateStartTimeEligibility(pool, request.reservationDate);
+      // P1-B2 — request.servicePeriodPolicy selects which named,
+      // real policy applies (see CreateReservationRequest's own doc
+      // comment). Default/undefined ("AdvanceBooking") is byte-identical
+      // to before this field existed — every caller that never sets it
+      // keeps calling evaluateStartTimeEligibility exactly as always.
+      const eligibility =
+        request.servicePeriodPolicy === "ImmediateWalkIn"
+          ? await this.servicePeriodService.evaluateImmediateEligibility(pool, request.reservationDate)
+          : await this.servicePeriodService.evaluateStartTimeEligibility(pool, request.reservationDate);
       if (eligibility.type !== "VALID") {
         return { type: "SERVICE_PERIOD_REJECTED", eligibility };
       }
@@ -321,6 +368,87 @@ export class AvailabilityOrchestrator {
       }
       throw err;
     }
+  }
+
+  /**
+   * P1-B2 — CAP-D04.01/CAP-D02.03 immediate Walk-in. Captures exactly ONE
+   * authoritative instant (`commandNow`) and threads it through every
+   * value that must agree: `Reservation.reservationDate`,
+   * `CreateReservationHandler`'s own CAP-D01.01-R11 `now` (via
+   * `nowOverride` — closing the two-independent-clock-reads race an
+   * earlier investigation found), `CapacityCommitment.startTime` (via
+   * createWithCapacity's own `rangeStart = request.reservationDate`,
+   * unmodified), and the SeatingAssignment's `startTime`. Never rounded
+   * to the booking grid.
+   *
+   * Composes createWithCapacity (this class's own authoritative capacity
+   * engine — no duplicated capacity logic) then, only on success,
+   * this.seatingOrchestrator.assignSeating with `seatImmediately: true` —
+   * no second seating implementation. `request.commandId` is reused
+   * verbatim for BOTH calls: createWithCapacity/CreateReservationHandler
+   * and SeatingOrchestrator.assignSeating each already have their own
+   * complete, independent commandId-keyed idempotency layer (this file's
+   * header comment; SeatingOrchestrator.ts's own header comment) keyed on
+   * two entirely separate tables (CapacityCommitment/Reservation vs
+   * SeatingAssignment) — reusing one client-supplied commandId across
+   * both is what makes a retry after outcome B safe: a repeat call
+   * short-circuits the create half to the already-created reservation
+   * (no duplicate), then re-attempts (or, if it already succeeded under
+   * this same commandId, idempotently replays) only the seating half —
+   * never a duplicate Reservation, CapacityCommitment, or SeatingAssignment.
+   */
+  async createImmediateWalkIn(request: ImmediateWalkInRequest): Promise<ImmediateWalkInResult> {
+    const commandNow = this.clock.now();
+    const durationMinutes = CAPACITY_POOLS[request.preferredArea].durationMinutes;
+
+    const created = await this.createWithCapacity({
+      commandId: request.commandId,
+      // Structurally required by CreateReservationRequest but consumed
+      // only by the OLD placeholder ServicePeriodReader (CreateReservationHandler
+      // step 5), which reports every value valid unconditionally — a fixed,
+      // non-empty sentinel is behaviorally inert here. The REAL ServicePeriod
+      // authority for this path is servicePeriodPolicy: "ImmediateWalkIn" below.
+      servicePeriodId: "walk-in",
+      contactSelection: { type: "CreateNewContact", displayName: request.contactSelection.displayName, phone: request.contactSelection.phone },
+      reservationDate: commandNow,
+      partySize: request.partySize,
+      source: { category: ReservationSourceCategory.WalkIn },
+      preferredArea: request.preferredArea,
+      actor: request.actor,
+      nowOverride: commandNow,
+      contactMethodRequired: false,
+      servicePeriodPolicy: "ImmediateWalkIn",
+    });
+
+    if (created.type !== "CREATED") {
+      return { type: "NOT_CREATED", result: created };
+    }
+
+    if (!this.seatingOrchestrator) {
+      return { type: "CREATED_UNSEATED", outcome: created.outcome };
+    }
+
+    const seatingResult = await this.seatingOrchestrator.assignSeating({
+      commandId: request.commandId,
+      reservationId: created.outcome.reservationId,
+      requestedAreaId: request.preferredArea,
+      requestedPartySize: request.partySize,
+      resources: request.resources ?? [],
+      startTime: commandNow,
+      endTime: new Date(commandNow.getTime() + durationMinutes * 60_000),
+      actor: request.actor,
+      seatImmediately: true,
+    });
+
+    if (seatingResult.type === "ASSIGNED" && seatingResult.assignment.status === "Seated") {
+      return { type: "CREATED_AND_SEATED", outcome: created.outcome, assignment: seatingResult.assignment };
+    }
+    // NOT_SEATABLE, or ALREADY_ASSIGNED_ELSEWHERE (an active assignment
+    // exists under a different commandId) — either way, immediate seating
+    // did not happen as PART OF THIS operation. The Reservation and
+    // CapacityCommitment already committed above remain fully valid; this
+    // is outcome B, never a rollback.
+    return { type: "CREATED_UNSEATED", outcome: created.outcome };
   }
 
   /**

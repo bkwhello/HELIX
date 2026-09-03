@@ -662,6 +662,86 @@ export function createApp(deps: AppDependencies): Express {
       }
     });
 
+    // P1-B2 — CAP-D04.01/CAP-D02.03 immediate Walk-in: a guest physically
+    // present now, being registered now. NOT for a Walk-in booking for
+    // later — that stays the /availability/reservations route above,
+    // unchanged. Dedicated permission (reservation.walkin.create, not
+    // reservation.create) IS the authorization boundary: there is no
+    // client-controlled field anywhere in this body that can enable
+    // immediate-Walk-in semantics on the ordinary route, and nothing in
+    // this route accepts reservationDate, source/sourceCategory, email,
+    // an arrival timestamp, or isHistoricalCorrection — the server alone
+    // establishes source=WalkIn and reservationDate=commandNow (see
+    // AvailabilityOrchestrator.createImmediateWalkIn).
+    app.post(
+      "/availability/reservations/walk-in",
+      requireStaffSession,
+      requirePermission(Permission.ReservationWalkinCreate),
+      async (req: Request, res: Response) => {
+        const body = req.body as {
+          commandId?: string;
+          contactSelection?: { displayName?: string; phone?: string };
+          partySize?: number;
+          preferredArea?: string;
+          resources?: ReadonlyArray<{ tableId?: string; seatId?: string }>;
+        };
+
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+
+        if (!body.commandId) {
+          res.status(422).json({ message: "commandId is required." });
+          return;
+        }
+        if (!body.contactSelection || typeof body.contactSelection !== "object" || !body.contactSelection.displayName) {
+          res.status(422).json({ message: "contactSelection.displayName is required." });
+          return;
+        }
+        if (body.partySize === undefined) {
+          res.status(422).json({ message: "partySize is required." });
+          return;
+        }
+        if (!body.preferredArea || !isCapacityPoolId(body.preferredArea)) {
+          res.status(422).json({ message: `preferredArea must be one of the capacity-managed areas. Received: ${String(body.preferredArea)}.` });
+          return;
+        }
+        const resources = Array.isArray(body.resources) ? body.resources.map((r) => ({ tableId: r.tableId, seatId: r.seatId })) : [];
+
+        const result = await availabilityOrchestrator.createImmediateWalkIn({
+          commandId: body.commandId,
+          contactSelection: { displayName: body.contactSelection.displayName, phone: body.contactSelection.phone },
+          partySize: body.partySize,
+          preferredArea: body.preferredArea,
+          resources,
+          actor,
+        });
+
+        switch (result.type) {
+          case "CREATED_AND_SEATED":
+            res.status(201).json({ ...result.outcome, seating: { status: "Seated", assignmentId: result.assignment.id, seatedAt: result.assignment.seatedAt } });
+            return;
+          case "CREATED_UNSEATED":
+            res.status(201).json({ ...result.outcome, seating: { status: "Unseated" } });
+            return;
+          case "NOT_CREATED":
+            switch (result.result.type) {
+              case "CAPACITY_UNAVAILABLE":
+                res.status(409).json({ availability: result.result.availability });
+                return;
+              case "BOOKING_POLICY_REJECTED":
+                res.status(422).json({ policy: result.result.policy });
+                return;
+              case "SERVICE_PERIOD_REJECTED":
+                res.status(422).json({ servicePeriod: result.result.eligibility });
+                return;
+              case "VALIDATION_FAILED":
+                res.status(422).json({ violations: result.result.violations });
+                return;
+            }
+        }
+      }
+    );
+
     app.patch("/availability/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationModify), async (req: Request, res: Response) => {
       const body = req.body as {
         commandId: string;

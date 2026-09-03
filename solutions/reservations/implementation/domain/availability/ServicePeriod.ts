@@ -198,3 +198,23 @@ export function evaluateMinuteEligibility(minute: number, resolved: ResolvedDayS
   if (resolved.status === "Closed") return { type: "CLOSED" };
   return isMinuteWithinDaySchedule(minute, resolved.windows) ? { type: "VALID" } : { type: "OUTSIDE_SERVICE_PERIOD" };
 }
+
+/**
+ * P1-B2 — the immediate-Walk-in variant of isMinuteWithinDaySchedule:
+ * range-only, deliberately WITHOUT the `% SERVICE_PERIOD_GRID_MINUTES`
+ * clause. A Walk-in guest is physically present now, at whatever real
+ * minute that is (e.g. 18:37) — the 15-minute grid exists to keep the
+ * OFFERED advance-booking calendar enumerable (enumerateGridStarts), a
+ * concern that does not apply to an instant that has already happened.
+ * "Restaurant/service period is currently open for the requested area"
+ * is still fully enforced — only grid-alignment is not.
+ */
+export function isMinuteWithinOpenHours(minute: number, schedule: DaySchedule): boolean {
+  return schedule.some((window) => minute >= window.firstStartMinute && minute <= window.lastStartMinute);
+}
+
+/** P1-B2 — the immediate-Walk-in counterpart to evaluateMinuteEligibility: same CLOSED/OUTSIDE_SERVICE_PERIOD/VALID vocabulary, range-only (see isMinuteWithinOpenHours). Consumed only by ServicePeriodService.evaluateImmediateEligibility / AvailabilityOrchestrator.createImmediateWalkIn — never by the ordinary advance-booking path. */
+export function evaluateOpenHoursEligibility(minute: number, resolved: ResolvedDaySchedule): ServicePeriodEligibility {
+  if (resolved.status === "Closed") return { type: "CLOSED" };
+  return isMinuteWithinOpenHours(minute, resolved.windows) ? { type: "VALID" } : { type: "OUTSIDE_SERVICE_PERIOD" };
+}

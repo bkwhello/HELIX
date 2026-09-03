@@ -52,6 +52,33 @@ export interface CreateReservationRequest {
   readonly historicalCorrectionReason?: string;
   /** CAP-D02.03 — when supplied by AvailabilityOrchestrator, the final persistence write (step 8 below) joins this transaction instead of opening its own, so it commits or rolls back atomically with a paired capacity commitment write. Absent for a plain CAP-D01.01 create (unchanged behavior). */
   readonly tx?: TransactionContext;
+  /**
+   * P1-B2 — internal-only. When supplied, this exact captured instant is
+   * used as the aggregate's `now` (CAP-D01.01-R11 evaluates against it)
+   * INSTEAD of an independent `this.clock.now()` call below — closing a
+   * race where the immediate-Walk-in composition's own already-captured
+   * `commandNow` (used for `reservationDate`) could otherwise differ from
+   * a second, later `clock.now()` read here. Never set from an HTTP
+   * request body — only AvailabilityOrchestrator.createImmediateWalkIn
+   * supplies it. Absent (undefined) preserves today's behavior for every
+   * other caller exactly (`this.clock.now()` is still called normally).
+   */
+  readonly nowOverride?: Date;
+  /** P1-B2 — internal-only; forwarded to CreateContactHandler/ContactRules.ts for a brand-new Contact only. See ContactRules.ts's ContactCreationInput.contactMethodRequired doc comment. Never set from an HTTP request body. */
+  readonly contactMethodRequired?: boolean;
+  /**
+   * P1-B2 — internal-only. Read only by AvailabilityOrchestrator.createWithCapacity
+   * (this handler itself has no ServicePeriod awareness of its own — see
+   * step 5's OLD placeholder servicePeriodReader check above, unrelated).
+   * Selects which named ServicePeriod eligibility policy applies:
+   * "AdvanceBooking" (default/undefined — grid-aligned, today's unchanged
+   * behavior) or "ImmediateWalkIn" (open-hours-only, no grid — see
+   * ServicePeriodService.evaluateImmediateEligibility). Never set from an
+   * HTTP request body; not a bypass flag — it names which real, distinct
+   * domain policy applies, and defaults to preserving exactly today's
+   * behavior for every existing caller.
+   */
+  readonly servicePeriodPolicy?: "AdvanceBooking" | "ImmediateWalkIn";
 }
 
 /**
@@ -201,6 +228,7 @@ export class CreateReservationHandler {
           displayName: selection.displayName,
           phone: selection.phone,
           email: selection.email,
+          contactMethodRequired: request.contactMethodRequired,
           actor: request.actor,
           tx,
         });
@@ -232,7 +260,7 @@ export class CreateReservationHandler {
         notes: request.notes,
         communicationLanguage: request.communicationLanguage,
         actor: request.actor,
-        now: this.clock.now(),
+        now: request.nowOverride ?? this.clock.now(),
         isHistoricalCorrection: request.isHistoricalCorrection,
         historicalCorrectionReason: request.historicalCorrectionReason,
         potentialDuplicateDetected,

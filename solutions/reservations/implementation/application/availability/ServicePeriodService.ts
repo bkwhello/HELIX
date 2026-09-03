@@ -23,6 +23,7 @@ import {
   DateOverride,
   ServicePeriodEligibility,
   evaluateMinuteEligibility,
+  evaluateOpenHoursEligibility,
   resolveDaySchedule,
   toBookableStartTimesResult,
 } from "../../domain/availability/ServicePeriod.js";
@@ -79,5 +80,21 @@ export class ServicePeriodService {
     const localDate = toLocalServiceDate(requestedStart);
     const resolved = await this.resolveForLocalDate(area, localDate);
     return evaluateMinuteEligibility(toLocalMinuteOfDay(requestedStart), resolved);
+  }
+
+  /**
+   * P1-B2 — the immediate-Walk-in counterpart to evaluateStartTimeEligibility:
+   * same ClosingDay/override/weekly-schedule resolution, but checks only
+   * "is the area open at this instant" (domain/availability/ServicePeriod.ts's
+   * evaluateOpenHoursEligibility), not 15-minute grid alignment. Consumed
+   * only by AvailabilityOrchestrator.createWithCapacity when
+   * request.servicePeriodPolicy === "ImmediateWalkIn" — the ordinary
+   * advance-booking path (default) is untouched and keeps calling
+   * evaluateStartTimeEligibility exactly as before.
+   */
+  async evaluateImmediateEligibility(area: CapacityPoolId, requestedStart: Date): Promise<ServicePeriodEligibility> {
+    const localDate = toLocalServiceDate(requestedStart);
+    const resolved = await this.resolveForLocalDate(area, localDate);
+    return evaluateOpenHoursEligibility(toLocalMinuteOfDay(requestedStart), resolved);
   }
 }
