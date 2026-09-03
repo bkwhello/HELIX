@@ -66,8 +66,9 @@ describe("Daily list — Plaatsen exposure", () => {
     expect(seatButtonGate![0]).not.toMatch(/Cancelled|Completed/);
   });
 
-  it("clicking Plaatsen calls the shared openSeatingPicker(reservationId), never a second implementation", () => {
-    expect(actionCellBlock).toContain("openSeatingPicker(r.id)");
+  it("clicking Plaatsen calls the shared openSeatingPicker(reservationId, mode), never a second implementation", () => {
+    // P1-B6 — openSeatingPicker now takes an explicit mode; Plaatsen requests "assign".
+    expect(actionCellBlock).toContain('openSeatingPicker(r.id, "assign")');
   });
 });
 
@@ -110,15 +111,15 @@ describe("Seating picker — resource rendering", () => {
   });
 });
 
-describe("Seating picker — POST (B4-B) narrow contract", () => {
-  it("submits to POST /reservations/:id/seating", () => {
-    expect(seatingPickerBlock).toMatch(/fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating`,\s*\{\s*method: "POST"/);
+describe("Seating picker — POST (B4-B assign / B6 move) narrow contract", () => {
+  it("submits to POST /reservations/:id/seating, or /seating/move when in move mode", () => {
+    expect(seatingPickerBlock).toMatch(/fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{isMove \? "\/move" : ""\}`,\s*\{\s*method: "POST"/);
   });
 
   it("the POST body contains only commandId and resources — no area, partySize, seatImmediately, or reservationDate", () => {
     const postBodyRegion = seatingPickerBlock.slice(
-      seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating`'),
-      seatingPickerBlock.indexOf("});", seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating`'))
+      seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${isMove'),
+      seatingPickerBlock.indexOf("});", seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${isMove'))
     );
     expect(postBodyRegion).toContain("commandId:");
     expect(postBodyRegion).toContain("resources:");
@@ -127,26 +128,26 @@ describe("Seating picker — POST (B4-B) narrow contract", () => {
 
   it("double-submit protection: disables the confirm button for the duration and ignores a second click while pending", () => {
     expect(seatingPickerBlock).toContain("if (seatingPickerConfirm.disabled) return;");
-    expect(seatingPickerBlock).toMatch(/seatingPickerConfirm\.disabled = true;[\s\S]*fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating`/);
+    expect(seatingPickerBlock).toMatch(/seatingPickerConfirm\.disabled = true;[\s\S]*fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{isMove/);
     expect(seatingPickerBlock).toContain("seatingPickerConfirm.disabled = false;");
   });
 });
 
 describe("Seating picker — outcome handling", () => {
-  it("ASSIGNED (201) renders 'Gast geplaatst.' and does not touch Reservation lifecycle status", () => {
-    expect(seatingPickerBlock).toMatch(/showMessage\(listMessage, "Gast geplaatst\.", "ok"\)/);
+  it("a successful ASSIGNED/MOVED (200/201) renders a Dutch confirmation and does not touch Reservation lifecycle status", () => {
+    expect(seatingPickerBlock).toMatch(/showMessage\(listMessage, isMove \? "Gast verplaatst\." : "Gast geplaatst\."/);
   });
 
-  it("stale RESOURCE_OVERLAP is treated as advisory, not a system failure: refreshes availability via the SAME openSeatingPicker, never retries the POST or auto-picks another resource", () => {
+  it("stale RESOURCE_OVERLAP is treated as advisory, not a system failure: refreshes availability via the SAME openSeatingPicker (preserving mode), never retries the POST or auto-picks another resource", () => {
     const overlapBranch = seatingPickerBlock.match(/if \(data\.type === "NOT_SEATABLE" && data\.seatability[\s\S]*?\n {6}\}/);
     expect(overlapBranch).not.toBeNull();
     expect(overlapBranch![0]).toContain('seatability.type === "RESOURCE_OVERLAP"');
-    expect(overlapBranch![0]).toContain("await openSeatingPicker(seatingPickerReservationId);");
+    expect(overlapBranch![0]).toContain("await openSeatingPicker(seatingPickerReservationId, seatingPickerMode);");
     expect(overlapBranch![0]).not.toMatch(/method: "POST"/);
   });
 
   it("other NOT_SEATABLE reasons display a meaningful failure message distinct from the overlap case", () => {
-    expect(seatingPickerBlock).toMatch(/data\.type === "NOT_SEATABLE"\s*\)\s*\{\s*showMessage\(seatingPickerMessage, "Kon niet plaatsen:/);
+    expect(seatingPickerBlock).toMatch(/data\.type === "NOT_SEATABLE"\s*\)\s*\{\s*showMessage\(seatingPickerMessage, \(isMove/);
   });
 
   it("ALREADY_ASSIGNED_ELSEWHERE is handled with its own distinct message", () => {
@@ -163,8 +164,8 @@ describe("Seating picker — outcome handling", () => {
 });
 
 describe("Walk-in nu — CREATED_UNSEATED continues into the same Plaatsen flow", () => {
-  it("opens the shared seating picker using the reservationId already present in the Walk-in response", () => {
-    expect(walkinBlock).toContain("await openSeatingPicker(data.reservationId);");
+  it("opens the shared seating picker (in assign mode) using the reservationId already present in the Walk-in response", () => {
+    expect(walkinBlock).toContain('await openSeatingPicker(data.reservationId, "assign");');
   });
 
   it("does not create the Walk-in again — exactly one POST to the walk-in endpoint per submit", () => {

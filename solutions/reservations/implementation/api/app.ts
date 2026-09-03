@@ -768,6 +768,93 @@ export function createApp(deps: AppDependencies): Express {
         }
       }
     );
+
+    // P1-B6 — CAP-D04.01 staff seating move: composes the existing,
+    // unmodified SeatingOrchestrator.moveSeating() directly. Same
+    // request-shape/eligibility/error conventions as the B4-B assign
+    // route immediately above (narrow {commandId, resources} body,
+    // area/party size derived server-side from the Reservation, never
+    // the client; same 400/422/404/409 structural checks) — deliberately
+    // NOT duplicated reasoning, see that route's own comments for why
+    // each check exists. One difference: moveSeating itself derives the
+    // interval from the CURRENT active assignment's own startTime/endTime
+    // (it moves the existing claim to a different resource, it does not
+    // re-derive timing) — so, unlike the assign route, no
+    // startTime/endTime/durationMinutes is computed or passed here at all.
+    // Permission.SeatingMove — existing, previously unused, same
+    // "defined in the matrix, never enforced by any route" status
+    // SeatingAssign/SeatingRelease were in before B4-B/B5.
+    app.post(
+      "/reservations/:id/seating/move",
+      requireStaffSession,
+      requirePermission(Permission.SeatingMove),
+      async (req: Request, res: Response) => {
+        const idResult = ReservationId.create(paramId(req));
+        if (!idResult.ok) {
+          res.status(400).json({ violations: idResult.violations });
+          return;
+        }
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+
+        const body = req.body as { commandId?: string; resources?: unknown };
+        if (!body.commandId) {
+          res.status(422).json({ message: "commandId is required." });
+          return;
+        }
+        const resources = parseResourceSelectors(body.resources, res);
+        if (!resources) return;
+
+        const reservation = await deps.repository.findById(idResult.value);
+        if (!reservation) {
+          res.status(404).json({ message: "Reservation not found." });
+          return;
+        }
+
+        if (isTerminal(reservation.getStatus())) {
+          res.status(409).json({ type: "RESERVATION_NOT_ELIGIBLE", status: reservation.getStatus() });
+          return;
+        }
+        const preferredArea = reservation.getPreferredArea();
+        if (!preferredArea || !isCapacityPoolId(preferredArea)) {
+          res.status(409).json({ type: "NO_MANAGED_AREA" });
+          return;
+        }
+
+        const result = await seatingOrchestrator.moveSeating({
+          commandId: body.commandId,
+          reservationId: reservation.getId().toString(),
+          requestedAreaId: preferredArea,
+          requestedPartySize: reservation.getPartySize(),
+          resources,
+          actor,
+        });
+
+        switch (result.type) {
+          case "MOVED":
+            res.status(200).json({
+              type: "MOVED",
+              assignmentId: result.assignment.id,
+              status: result.assignment.status,
+              resources,
+            });
+            return;
+          case "NOT_SEATABLE":
+            // Stable, machine-readable — SeatabilityOutcome's own
+            // discriminated shape, reused verbatim (never invented here).
+            res.status(409).json({ type: "NOT_SEATABLE", seatability: result.seatability });
+            return;
+          case "NO_ACTIVE_ASSIGNMENT":
+            // Nothing to move — not a system error. Idempotently safe on
+            // repeat calls the same way B5's no-show route already is:
+            // moveSeating's own existing state check
+            // (findActiveAssignmentByReservationId) is what makes this
+            // safe, no new idempotency mechanism invented for this route.
+            res.status(409).json({ type: "NO_ACTIVE_ASSIGNMENT" });
+            return;
+        }
+      }
+    );
   }
 
   // See the P0 retirement doc comment above `POST /reservations` — same
