@@ -83,6 +83,7 @@ function buildApp() {
     },
     floor: {
       floorRepository: new PrismaFloorRepository(prisma),
+      prisma,
     },
     auth: {
       staffUserRepository: new PrismaStaffUserRepository(prisma),

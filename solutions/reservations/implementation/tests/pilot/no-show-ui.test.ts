@@ -111,7 +111,13 @@ describe("markNoShow — POST contract and outcome handling", () => {
 });
 
 describe("Out of scope for P1-B5 — explicitly not touched", () => {
-  it("no lateArrivalRiskFlag or getFloorView reference was introduced anywhere in the page", () => {
-    expect(source).not.toMatch(/lateArrivalRiskFlag|getFloorView/);
+  // P1-B7 later added a genuine lateArrivalRiskFlag/getFloorView
+  // integration elsewhere in this page (its own dedicated test file,
+  // tests/pilot/floor-late-arrival-ui.test.ts, covers it) — so this can
+  // no longer assert their absence from the page as a whole. The
+  // original, still-valid intent — that markNoShow's OWN code never
+  // touches that concept — is what's checked here instead.
+  it("markNoShow's own block never references lateArrivalRiskFlag or getFloorView", () => {
+    expect(markNoShowBlock).not.toMatch(/lateArrivalRiskFlag|getFloorView/);
   });
 });

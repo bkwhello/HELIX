@@ -93,6 +93,7 @@ function buildApp() {
     // own buildApp() deliberately omits it.
     floor: {
       floorRepository: new PrismaFloorRepository(prisma),
+      prisma,
     },
     auth: {
       staffUserRepository: new PrismaStaffUserRepository(prisma),

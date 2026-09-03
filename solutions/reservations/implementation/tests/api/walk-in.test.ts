@@ -107,6 +107,7 @@ function buildApp(clock: { now(): Date }) {
     // P1-B1 wiring, required for createImmediateWalkIn's own seating half.
     floor: {
       floorRepository: new PrismaFloorRepository(prisma),
+      prisma,
     },
     // R1.6-B — wired so "no confirmation enqueued" is a genuine assertion
     // about CommunicationOutboxService's own eligibility gate, not merely

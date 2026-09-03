@@ -240,6 +240,8 @@
   }
   th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
   .status { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
+  /* P1-B7 — presentation-only, non-interactive: no click handler, no data attribute driving any action. */
+  .late-badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem; background: var(--danger-bg); color: var(--danger-text); }
   .status-Proposed { background: var(--status-grey-bg); color: var(--status-grey-text); }
   .status-Confirmed { background: var(--status-blue-bg); color: var(--status-blue-text); }
   .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
@@ -1231,19 +1233,43 @@
   // in-memory list instantly, with no extra round trip to the server.
   let dailyReservations = [];
   let activeAreaFilter = "All";
+  // P1-B7 — reservationId -> lateArrivalRiskFlag, from the SAME date's
+  // /floor read. Presentation-only: nothing reads this to decide
+  // anything, it only decides whether renderList() draws a badge.
+  let lateArrivalReservationIds = new Set();
   const searchInput = document.getElementById("list-search");
   const areaFilterBar = document.getElementById("area-filter");
 
   async function loadList() {
     clearMessage(listMessage);
     try {
-      const res = await fetch(`/reservations?date=${listDateInput.value}`);
+      // P1-B7 — fetched in parallel with the (authoritative) reservation
+      // list: the floor view is a secondary, derived signal about the
+      // SAME date's reservations, not a dependency of the list itself.
+      const [res, floorRes] = await Promise.all([
+        fetch(`/reservations?date=${listDateInput.value}`),
+        fetch(`/floor?date=${listDateInput.value}`),
+      ]);
       const data = await res.json();
       if (!res.ok) {
         showMessage(listMessage, data.message || "Kon dagoverzicht niet laden.", "error");
         return;
       }
       dailyReservations = data.reservations;
+
+      // A floor-view failure must never be mistaken for "nobody is late" —
+      // it must produce NO flags (never a stale or guessed one) and a
+      // visible message, not a silent, possibly-wrong badge state.
+      lateArrivalReservationIds = new Set();
+      if (floorRes.ok) {
+        const floorData = await floorRes.json();
+        for (const row of floorData.rows) {
+          if (row.lateArrivalRiskFlag) lateArrivalReservationIds.add(row.reservationId);
+        }
+      } else {
+        showMessage(listMessage, "Kon laat-aankomst-signalering niet laden — reserveringslijst is wel bijgewerkt.", "warn");
+      }
+
       renderList();
     } catch (err) {
       showMessage(listMessage, "Netwerkfout: kon de server niet bereiken.", "error");
@@ -1424,6 +1450,11 @@
         const tr = document.createElement("tr");
         const time = new Date(r.reservationDate).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
         const guest = r.contactName ? `${escapeHtml(r.contactName)} · ${escapeHtml(r.contactId)}` : escapeHtml(r.contactId);
+        // P1-B7 — joined by the authoritative reservation id (r.id), the
+        // same id both /reservations and /floor key their rows by.
+        // Purely presentation: no click handler, no data-* attribute
+        // driving any action, nothing here ever writes anything.
+        const lateBadge = lateArrivalReservationIds.has(r.id) ? '<span class="late-badge">Laat</span>' : "";
 
         // Editable — a guest can change their mind, or staff learn the
         // real preference after the fact. Changing it also affects
@@ -1606,7 +1637,7 @@
 
         tr.innerHTML = `
           <td class="time-cell" data-label="Tijd">${time}</td>
-          <td data-label="Gast">${guest}</td>
+          <td data-label="Gast">${guest}${lateBadge}</td>
           <td data-label="Aantal">${r.partySize}</td>
           <td></td>
           <td></td>

@@ -61,6 +61,7 @@ const app = createApp({
   // since none exists today for this integration point to ever find.
   floor: {
     floorRepository: new PrismaFloorRepository(prisma),
+    prisma,
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
   // route. Real EmailDeliveryPort/provider selection remains a separate,

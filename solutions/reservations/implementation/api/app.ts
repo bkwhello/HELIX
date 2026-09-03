@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PrismaClient } from "@prisma/client";
 import express, { Express, NextFunction, Request, Response } from "express";
 import { ReservationRepository } from "../domain/repositories/ReservationRepository.js";
 import { ReservationId } from "../domain/value-objects/ReservationId.js";
@@ -25,6 +26,7 @@ import { TransactionManager } from "../application/ports/TransactionManager.js";
 import { AvailabilityOrchestrator } from "../application/availability/AvailabilityOrchestrator.js";
 import { SeatingOrchestrator, ResourceSelector } from "../application/floor/SeatingOrchestrator.js";
 import { SeatingAvailabilityService } from "../application/floor/SeatingAvailabilityService.js";
+import { getFloorView } from "../application/floor/FloorReadModel.js";
 import { FloorRepository } from "../domain/repositories/FloorRepository.js";
 import { isCapacityPoolId, CAPACITY_POOLS } from "../domain/availability/CapacityPool.js";
 import { isTerminal } from "../domain/value-objects/ReservationStatus.js";
@@ -122,6 +124,19 @@ export interface AppDependencies {
    */
   floor?: {
     readonly floorRepository: FloorRepository;
+    /**
+     * P1-B7 — required alongside floorRepository above, solely so
+     * GET /floor can call FloorReadModel.getFloorView(prisma, ...)
+     * unmodified: that function was deliberately built as a plain query
+     * function taking a raw PrismaClient directly (its own doc comment:
+     * "a plain query function, not a UI/floorplan designer"), not a
+     * port/repository method — this is the one place in api/app.ts that
+     * needs the underlying client itself rather than an abstracted
+     * repository, exactly because nothing about that design is changed
+     * here. The SAME shared client every Prisma-backed repository in
+     * this deployment already uses — never a second, separate connection.
+     */
+    readonly prisma: PrismaClient;
   };
   /**
    * R1.6-B — optional, same "not available in this deployment" posture as
@@ -546,6 +561,54 @@ export function createApp(deps: AppDependencies): Express {
       reservations: aggregates.map(serializeReservation),
     });
   });
+
+  // P1-B7 — CAP-D04.01/CAP-D08.03-adjacent floor overview: exposes the
+  // existing, unmodified FloorReadModel.getFloorView() directly. Same
+  // local-calendar-date parsing convention as GET /reservations
+  // immediately above (setHours(0,0,0,0) start-of-day, +1 day end —
+  // deliberately duplicated inline rather than extracted, matching how
+  // GET /reservations itself doesn't share this logic with any other
+  // route either). Permission.SeatingView, not ReservationView — this is
+  // seating/floor visibility, the same read gate B4-A's availability
+  // route already uses. Pure read: no write, no transaction, no
+  // orchestrator involved — getFloorView itself opens none either.
+  if (deps.floor) {
+    const floorPrisma = deps.floor.prisma;
+    app.get("/floor", requireStaffSession, requirePermission(Permission.SeatingView), async (req: Request, res: Response) => {
+      // Deliberately stricter than GET /reservations above: a missing
+      // date is a 400 here, not a silent default-to-today. GET
+      // /reservations's own "no query string required" convenience is a
+      // property of THAT route (assignment §34's own "today, no
+      // parameters" requirement) — this route was not asked to carry
+      // that convenience, and guessing a date silently for a floor
+      // overview risks exactly the kind of "looks fine, is wrong" state
+      // this feature exists to avoid for late-arrival signalling.
+      const dateParam = req.query["date"];
+      if (typeof dateParam !== "string" || dateParam.length === 0) {
+        res.status(400).json({ message: "date is required and must be a valid ISO date (e.g. 2026-08-20)." });
+        return;
+      }
+      const date = new Date(dateParam);
+      if (Number.isNaN(date.getTime())) {
+        res.status(400).json({ message: "date must be a valid ISO date (e.g. 2026-08-20)." });
+        return;
+      }
+      const rangeStart = new Date(date);
+      rangeStart.setHours(0, 0, 0, 0);
+      const rangeEnd = new Date(rangeStart);
+      rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+      const areaParam = req.query["area"];
+      if (areaParam !== undefined && typeof areaParam !== "string") {
+        res.status(400).json({ message: "area must be a string." });
+        return;
+      }
+      const areaId = typeof areaParam === "string" && areaParam.length > 0 ? areaParam : undefined;
+
+      const rows = await getFloorView(floorPrisma, { rangeStart, rangeEnd, areaId, now: deps.clock.now() });
+      res.status(200).json({ rows });
+    });
+  }
 
   app.get("/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationView), async (req: Request, res: Response) => {
     const idResult = ReservationId.create(paramId(req));
