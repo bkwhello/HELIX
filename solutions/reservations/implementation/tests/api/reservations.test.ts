@@ -472,6 +472,201 @@ describe("GET /reservations/:id", () => {
   });
 });
 
+/**
+ * P1-A (staff lifecycle completion) — real HTTP/PostgreSQL proof for an
+ * existing, already-correct implementation. Confirm has no capacity or
+ * ServicePeriod effect (CAP-D01.01-R24: "enforced by omission" — the
+ * aggregate has no seating/capacity fields to touch), so it correctly
+ * stays a direct route through ConfirmReservationHandler, not
+ * AvailabilityOrchestrator — nothing found during this work suggests
+ * otherwise.
+ */
+describe("POST /reservations/:id/confirm", () => {
+  it("confirms a Proposed reservation, persists the status, and records a ReservationConfirmed event with full audit metadata", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-confirm" });
+    expect(created.status).toBe(201);
+
+    const res = await post(sharedAgent, `/reservations/${created.body.reservationId}/confirm`).send({ commandId: "http-cmd-confirm-1" });
+    expect(res.status).toBe(204);
+
+    const persisted = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(persisted.status).toBe("Confirmed");
+
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId: created.body.reservationId, type: "ReservationConfirmed" } });
+    expect(events).toHaveLength(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload).toMatchObject({ type: "ReservationConfirmed", reservationId: created.body.reservationId, actor: { type: "AuthorizedUser" } });
+    expect(typeof payload.eventId).toBe("string");
+    expect(typeof payload.occurredAt).toBe("string");
+    expect(typeof payload.correlationId).toBe("string");
+  });
+
+  it("rejects confirming a reservation that is not Proposed (CAP-D01.01-R22)", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-confirm-invalid" });
+    await post(sharedAgent, `/reservations/${created.body.reservationId}/confirm`).send({ commandId: "http-cmd-confirm-invalid-1" });
+
+    // Already Confirmed — a genuinely new confirm attempt (distinct
+    // commandId, not a retry) must be rejected, not silently re-applied.
+    const res = await post(sharedAgent, `/reservations/${created.body.reservationId}/confirm`).send({ commandId: "http-cmd-confirm-invalid-2" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R22")).toBe(true);
+  });
+
+  it("is idempotent under a retried commandId: 204 both times, event recorded only once", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-confirm-retry" });
+
+    const first = await post(sharedAgent, `/reservations/${created.body.reservationId}/confirm`).send({ commandId: "http-cmd-confirm-retry-1" });
+    const second = await post(sharedAgent, `/reservations/${created.body.reservationId}/confirm`).send({ commandId: "http-cmd-confirm-retry-1" });
+
+    expect(first.status).toBe(204);
+    expect(second.status).toBe(204);
+
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId: created.body.reservationId, type: "ReservationConfirmed" } });
+    expect(events).toHaveLength(1);
+  });
+
+  it("rejects an unauthenticated request — 401", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-confirm-auth" });
+    const res = await post(request.agent(sharedApp), `/reservations/${created.body.reservationId}/confirm`).send({ commandId: "http-cmd-confirm-auth-1" });
+    expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * P1-A — same posture as Confirm: real HTTP/PostgreSQL proof for the
+ * existing implementation, not a redesign. Completion touches no
+ * capacity/ServicePeriod state either (CompletionRules.ts has no such
+ * dependency), so it correctly stays direct through
+ * CompleteReservationHandler.
+ */
+describe("POST /reservations/:id/complete", () => {
+  async function confirmedReservation(commandId: string) {
+    const created = await create(sharedAgent, { commandId });
+    await post(sharedAgent, `/reservations/${created.body.reservationId}/confirm`).send({ commandId: `${commandId}-confirm` });
+    return created.body.reservationId as string;
+  }
+
+  it("completes a Confirmed reservation via manual completion, persists the status, and records a ReservationCompleted event with full audit metadata", async () => {
+    const reservationId = await confirmedReservation("http-cmd-complete");
+
+    const res = await post(sharedAgent, `/reservations/${reservationId}/complete`).send({
+      commandId: "http-cmd-complete-1",
+      isManualCompletion: true,
+      manualCompletionReason: "Gasten hebben afgerekend en zijn vertrokken.",
+    });
+    expect(res.status).toBe(204);
+
+    const persisted = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(persisted.status).toBe("Completed");
+
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId, type: "ReservationCompleted" } });
+    expect(events).toHaveLength(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload).toMatchObject({ type: "ReservationCompleted", reservationId, actor: { type: "AuthorizedUser" } });
+    expect(typeof payload.eventId).toBe("string");
+    expect(typeof payload.occurredAt).toBe("string");
+    expect(typeof payload.correlationId).toBe("string");
+  });
+
+  // CAP-D01.01-R30 — Completion Requires Operational Evidence. The pilot
+  // has no POS/service-close integration, so this proves the existing
+  // rule rather than adding a new one: manual completion is accepted
+  // only with an explicit reason; omitting both structured evidence and
+  // isManualCompletion is rejected, not defaulted.
+  it("rejects completion with no evidence and no manual-completion flag (CAP-D01.01-R30)", async () => {
+    const reservationId = await confirmedReservation("http-cmd-complete-no-evidence");
+
+    const res = await post(sharedAgent, `/reservations/${reservationId}/complete`).send({ commandId: "http-cmd-complete-no-evidence-1" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R30")).toBe(true);
+
+    const persisted = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(persisted.status).toBe("Confirmed");
+  });
+
+  it("rejects manual completion with an empty reason (CAP-D01.01-R30)", async () => {
+    const reservationId = await confirmedReservation("http-cmd-complete-empty-reason");
+
+    const res = await post(sharedAgent, `/reservations/${reservationId}/complete`).send({
+      commandId: "http-cmd-complete-empty-reason-1",
+      isManualCompletion: true,
+      manualCompletionReason: "",
+    });
+
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R30")).toBe(true);
+  });
+
+  it("rejects completing a Proposed reservation (CAP-D01.01-R29)", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-complete-proposed" });
+
+    const res = await post(sharedAgent, `/reservations/${created.body.reservationId}/complete`).send({
+      commandId: "http-cmd-complete-proposed-1",
+      isManualCompletion: true,
+      manualCompletionReason: "Should be rejected — never confirmed.",
+    });
+
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R29")).toBe(true);
+
+    const persisted = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(persisted.status).toBe("Proposed");
+  });
+
+  it("is idempotent under a retried commandId: 204 both times, event recorded only once", async () => {
+    const reservationId = await confirmedReservation("http-cmd-complete-retry");
+
+    const body = { commandId: "http-cmd-complete-retry-1", isManualCompletion: true, manualCompletionReason: "Afgerond, gasten vertrokken." };
+    const first = await post(sharedAgent, `/reservations/${reservationId}/complete`).send(body);
+    const second = await post(sharedAgent, `/reservations/${reservationId}/complete`).send(body);
+
+    expect(first.status).toBe(204);
+    expect(second.status).toBe(204);
+
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId, type: "ReservationCompleted" } });
+    expect(events).toHaveLength(1);
+  });
+
+  it("rejects an unauthenticated request — 401", async () => {
+    const reservationId = await confirmedReservation("http-cmd-complete-auth");
+    const res = await post(request.agent(sharedApp), `/reservations/${reservationId}/complete`).send({ commandId: "http-cmd-complete-auth-1" });
+    expect(res.status).toBe(401);
+  });
+
+  // Permission boundary specific to Complete: ReservationAgent and
+  // Reception both intentionally lack reservation.complete
+  // (StaffAuthorizationPolicy.ts's own ROLE_PERMISSIONS, citing
+  // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §18) — unlike Confirm,
+  // which every role holds, so this is the one lifecycle-transition
+  // route where a real role-based 403 (not just a no-session 401) is
+  // meaningful to prove.
+  it("gives a Reception-role session 403, not 401, on complete (role lacks reservation.complete)", async () => {
+    const passwordHasher = new ScryptPasswordHasher();
+    const staffUserRepository = new PrismaStaffUserRepository(prisma);
+    await staffUserRepository.create({
+      id: "staff-reception-complete-test",
+      username: "reception-complete-test",
+      displayName: "Test Reception Complete",
+      email: null,
+      passwordHash: await passwordHasher.hash("ReceptionPass123!"),
+      role: ActorRole.Reception,
+    });
+    const receptionAgent = request.agent(sharedApp);
+    const login = await post(receptionAgent, "/auth/login").send({ username: "reception-complete-test", password: "ReceptionPass123!" });
+    expect(login.status).toBe(200);
+
+    const reservationId = await confirmedReservation("http-cmd-complete-reception");
+    const res = await post(receptionAgent, `/reservations/${reservationId}/complete`).send({
+      commandId: "http-cmd-complete-reception-1",
+      isManualCompletion: true,
+      manualCompletionReason: "Should be forbidden regardless of a valid reason.",
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("PATCH /availability/reservations/:id — manual table assignment (CAP-D01.01-R48)", () => {
   it("sets and later changes the table assignment, reflected in GET", async () => {
     const created = await create(sharedAgent, { commandId: "http-cmd-table", preferredArea: "Teppanyaki" });

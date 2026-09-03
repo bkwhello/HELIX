@@ -260,6 +260,7 @@
   .edit-button { background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
   .confirm-button { background: transparent; border: 1px solid var(--status-blue-text); color: var(--status-blue-text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
   .cancel-button { background: transparent; border: 1px solid var(--danger-text); color: var(--danger-text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
+  .complete-button { background: transparent; border: 1px solid var(--status-purple-text); color: var(--status-purple-text); cursor: pointer; font-size: 0.78rem; margin: 0; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; }
   .action-cell { display: flex; gap: 0.35rem; flex-wrap: wrap; }
   .filter-bar { display: flex; gap: 0.4rem; margin-top: 0.75rem; }
   .filter-button { background: transparent; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 0.82rem; margin: 0; padding: 0.3rem 0.7rem; border-radius: 999px; }
@@ -937,6 +938,45 @@
     await loadList();
   }
 
+  // P1-A — Completion is a terminal, irreversible transition
+  // (CAP-D01.01-R31, no undo path) and CAP-D01.01-R30 requires a real
+  // reason for a manual completion. The pilot has no POS settlement or
+  // service-close integration to source structured evidence
+  // (SERVICE_CLOSED / STAFF_OBSERVATION / POS_SETTLEMENT) from, so every
+  // pilot completion is explicitly manual — the staff member must supply
+  // a genuine reason here; nothing is silently defaulted to satisfy R30.
+  // A cancelled prompt (null) aborts quietly, same as declining the
+  // cancel confirmation above; an empty/whitespace reason is rejected
+  // with an explicit message rather than proceeding anyway.
+  async function completeReservation(r) {
+    const who = r.contactName || r.contactId;
+    const reason = prompt(`Reservering van ${who} afronden — reden (verplicht):`);
+    if (reason === null) return;
+    if (!reason.trim()) {
+      showMessage(listMessage, "Een reden is verplicht om een reservering af te ronden.", "error");
+      return;
+    }
+    const res = await fetch(`/reservations/${r.id}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({
+        commandId: `pilot-complete-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        isManualCompletion: true,
+        manualCompletionReason: reason.trim(),
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showMessage(listMessage, ruleMessages(data.violations) || data.message || "Kon reservering niet afronden.", "error");
+      return;
+    }
+    // Reloads the list from the server — the completed row now has
+    // status=Completed and, via the same status-gated rendering already
+    // used for Confirm/Cancel below, no longer shows any action that's
+    // incompatible with a terminal reservation.
+    await loadList();
+  }
+
   // R1.6-B — assignment §24: a simple authenticated staff control, no
   // Reservation edit. Does not send a real email in this phase (no
   // provider is configured yet, assignment §46) — it durably queues a new
@@ -1083,6 +1123,18 @@
           cancelButton.textContent = "Annuleren";
           cancelButton.addEventListener("click", () => cancelReservation(r));
           actionCell.appendChild(cancelButton);
+        }
+        // P1-A — CAP-D01.01-R29: only a Confirmed reservation may be
+        // completed, so this action is visible only in that state,
+        // matching the same status-gated pattern the Confirm/Cancel
+        // buttons above already use.
+        if (r.status === "Confirmed") {
+          const completeButton = document.createElement("button");
+          completeButton.type = "button";
+          completeButton.className = "complete-button";
+          completeButton.textContent = "Afronden";
+          completeButton.addEventListener("click", () => completeReservation(r));
+          actionCell.appendChild(completeButton);
         }
 
         if (r.status !== "Cancelled") {
