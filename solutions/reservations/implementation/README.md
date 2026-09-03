@@ -85,11 +85,81 @@ same HTTP-level and pilot-readiness pass — see "Known limitations" below.
   SQLite to PostgreSQL before scaling — that switch already happened (see
   the Stack section above); this codebase has been PostgreSQL-only since
   CAP-D02.03.
-- No transactional outbox — events are persisted atomically with state
-  (see `PrismaReservationRepository.save()`), but nothing publishes them
-  to an external consumer yet, because none exists.
+- **Partially resolved (R1.6-B).** This bullet used to say there was no
+  transactional outbox at all. A transactional outbox now exists, but
+  only for guest communication emails (see "Guest communication emails"
+  below) — `Reservation` domain events themselves are still persisted
+  atomically with state (`PrismaReservationRepository.save()`) without a
+  general-purpose outbox or external consumer beyond that one case.
 - Confirm/Modify/Cancel/Complete lack HTTP-level tests and the
   `GET /reservations` discoverability pass that Create just got.
+- The scheduler/cron hosting needed to actually run
+  `npm run process-communications` on a recurring basis does not exist
+  yet (same still-open prerequisite `ops/backup/createBackup.ts` already
+  has for backups) — until it's wired up, enqueued emails sit in the
+  outbox until someone runs that command manually.
+
+## Guest communication emails (Resend)
+
+Implements the "Communication" event consumer described in the
+CAP-D01.01 `event-model.md` (R1.6-B): a reservation confirmation email,
+plus a 24-hour reminder, sent to the guest when a usable email address is
+known. See `R1_6_B_GUEST_COMMUNICATIONS_ARCHITECTURE_INVESTIGATION.md`
+and `R1_6_B_GUEST_COMMUNICATIONS_IMPLEMENTATION_REPORT.md` for the full
+design.
+
+- **Trigger:** the confirmation email is enqueued immediately on
+  successful reservation creation — `CreateReservationHandler.finalize()`
+  calls `CommunicationOutboxService.enqueueConfirmationIfEligible()`
+  inside the same transaction as the reservation write itself (never a
+  separate, unprotected post-commit step). It is not tied to the later
+  `Confirmed` status transition. A reservation with no usable email
+  (e.g. a staff-entered, phone-only booking) enqueues nothing, by
+  construction. The 24-hour reminder is scheduled separately, by a scan
+  (`CommunicationOutboxService.scanAndScheduleReminders()`) that always
+  reads the reservation's *current* date/time, so a staff modification
+  is picked up automatically.
+- **Outbox pattern:** enqueued rows (`CommunicationMessage`, via
+  `application/ports/CommunicationOutboxRepository.ts`) are processed
+  separately by `CommunicationWorker`
+  (`application/communications/CommunicationWorker.ts`), invoked by
+  `ops/communications/processOutbox.ts` (`npm run process-communications`).
+  The worker re-checks reservation eligibility against current state at
+  send time (never trusting the row's own snapshot for that decision),
+  and retries `FailedRetryable` failures on a bounded backoff
+  (`domain/communications/CommunicationMessage.ts`'s `RETRY_BACKOFF_MS`)
+  before giving up as `FailedPermanent`. A stuck `Processing` row
+  (worker crashed mid-send) becomes reclaimable after a staleness window
+  rather than being lost.
+- **Provider boundary:** `application/ports/EmailDeliveryPort.ts` is the
+  provider-independent interface everything above depends on — no
+  Reservation/outbox/provider-SDK knowledge crosses it in either
+  direction. `infrastructure/communications/FakeEmailDeliveryPort.ts` is
+  the deterministic default (`EMAIL_PROVIDER` unset, no external call
+  ever made); `infrastructure/communications/ResendEmailDeliveryAdapter.ts`
+  is the real adapter (`EMAIL_PROVIDER=resend`), calling Resend's HTTPS
+  API directly via `fetch` (no `resend` npm package dependency). See
+  `.env.example` for `EMAIL_PROVIDER` / `EMAIL_PROVIDER_API_KEY` /
+  `EMAIL_FROM_ADDRESS` / `EMAIL_REPLY_TO`. **Never** commit a real API
+  key — only empty placeholders belong in `.env.example`; the real key
+  goes in a local, gitignored `.env`.
+- **Sender address:** owner-confirmed as `reservations@konnichiwa.nl`
+  (from) with `info@konnichiwa.nl` as reply-to. As of this writing,
+  `reservations@konnichiwa.nl` itself still needs to be created
+  (mailbox + Resend domain verification) — an operational prerequisite,
+  not a code gap; until then, a real send fails safely as
+  `FAILED_PERMANENT` rather than silently succeeding or corrupting the
+  reservation transaction.
+- **Staff resend:** `POST /reservations/:id/communications/confirmation/resend`
+  (`ResendConfirmationHandler`) lets staff re-trigger a confirmation
+  email on demand. It always creates a new, independent outbox row —
+  never mutates or resends the original message, never touches the
+  Reservation's own business state or version.
+- **Tests never send real email:** every test that exercises
+  `ResendEmailDeliveryAdapter` injects a fake `fetchImpl`
+  (`tests/infrastructure/resend-email-delivery-adapter.test.ts`) — no
+  test in this repository makes a real network call to Resend under any
+  circumstance.
 
 ## Run
 
