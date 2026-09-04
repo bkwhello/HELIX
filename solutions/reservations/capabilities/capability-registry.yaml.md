@@ -419,7 +419,7 @@ capabilities:
     slug: availability-management
     domain: CAP-D02
     type: Core
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical
@@ -598,7 +598,7 @@ capabilities:
     slug: table-seat-management
     domain: CAP-D03
     type: Core
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical
@@ -690,7 +690,7 @@ capabilities:
     slug: seating-assignment
     domain: CAP-D04
     type: Core
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical

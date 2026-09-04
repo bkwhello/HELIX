@@ -1,6 +1,10 @@
-# Controlled Pilot — Create Reservation + Daily List
+# Controlled Pilot — Create Reservation + Daily List + Floor & Seating
 
-Scope: **only** Create Reservation and the daily list (`GET /reservations`).
+Scope: Create Reservation, the daily list (`GET /reservations`), and the
+Floor & Seating actions (assign, pre-assign, move, mark-seated, no-show
+release, floor/late-arrival view, Resource Blocking, walk-in) — all wired
+into `public/pilot.html` and covered by the automated suite (see "Floor &
+Seating status" below for exactly what that does and does not mean).
 Confirm/Modify/Cancel/Complete are implemented and tested at the domain
 level but have not been through this same pilot-readiness pass — do not
 rely on them operationally yet (see README, Known Limitations).
@@ -10,6 +14,37 @@ rely on them operationally yet (see README, Known Limitations).
 A single staff-facing page (`public/pilot.html`, served at `/pilot.html`)
 that talks to the real API and real database. This is not a mockup —
 reservations entered here are real, persisted rows. Treat it as such.
+
+## Floor & Seating status (P1-B1–P1-B9)
+
+The Floor & Seating implementation sequence (P1-B1 through P1-B9) is
+closed: assign, pre-assign, move, mark-seated, no-show release, the
+floor/late-arrival view, Resource Blocking, and walk-in creation are all
+exposed as HTTP routes, permission-gated, wired into `public/pilot.html`,
+and covered by automated tests — including real-PostgreSQL concurrency
+tests proving the locking behavior under genuine concurrent load (see
+`tests/integration/floor-seating-concurrency.test.ts` and
+`tests/api/resource-blocks.test.ts`).
+
+**What "closed" does NOT mean here**: this is automated verification, not
+a human pilot run. No staff member has yet walked through these actions
+against a real dev deployment, and this capability set has not been
+deployed anywhere. Before relying on Floor & Seating operationally, run a
+controlled development smoke test (a real staff member exercising
+assign → pre-assign → mark-seated → move → block → no-show against the
+dev environment) — this has not happened yet as of this document.
+
+**Known, accepted limitations** (deliberate scope decisions, not defects):
+- Resource Blocking is deleted (unblocked) as a **hard delete** — no
+  audit trail (no record of who removed a block or when), matching the
+  existing Closing Days pattern. No schema change is planned for this.
+- A block always applies to an entire Table (and every Seat under it, for
+  a Teppanyaki grill) — there is no way to block a single individual
+  seat.
+- The floor/late-arrival view (`GET /floor`) does **not** show which
+  tables are currently blocked — Resource Blocking has its own separate
+  list in the pilot for that. A blocked table with no reservation on it
+  produces no visible signal on the floor view.
 
 ## Before starting
 

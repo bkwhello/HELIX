@@ -28,7 +28,7 @@ API. Vitest for tests. No framework dependency in `domain/`.
 
 This mapping does not vary between capabilities (see CA-001 §54, Phase 2 of the engineering brief for this capability).
 
-## Status: Create Reservation is pilot-ready; the rest of the lifecycle is not yet
+## Status: Create Reservation and Floor & Seating are pilot-ready; the rest of the lifecycle is not yet
 
 **Create Reservation** (domain rules, application orchestration, Prisma
 persistence, and the `POST /reservations` / `GET /reservations` HTTP
@@ -66,6 +66,23 @@ criteria and hardened accordingly:
 **Confirm / Modify / Cancel / Complete** have the same domain-level rule
 and authorization coverage as Create, but have *not* been through the
 same HTTP-level and pilot-readiness pass — see "Known limitations" below.
+
+**Floor & Seating** (CAP-D03.03/CAP-D04.01, implementation phases
+P1-B1–P1-B9) closed its HTTP-exposure sequence at commit `582e655`: assign
+(immediate), pre-assign, move, mark-seated, no-show release, the
+floor/late-arrival view, Resource Blocking, and walk-in creation are all
+live HTTP routes, permission-gated, wired into `public/pilot.html`, and
+covered by the automated suite — including real-PostgreSQL concurrency
+tests for every claim-contention combination identified during the
+closure audit (`tests/integration/floor-seating-concurrency.test.ts`,
+`tests/api/resource-blocks.test.ts`). **This is automated verification
+only** — no human has yet run a smoke test of these actions against a
+real dev deployment, and none of it has been deployed anywhere; see
+`PILOT.md`'s "Floor & Seating status" section for the accepted
+limitations (Resource Block hard-delete has no audit trail, blocking is
+Table-scoped only, and the floor view does not surface blocked-table
+state) and for what a smoke test would need to cover before this is
+relied on operationally.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -180,7 +197,8 @@ full test suite on every push/PR touching this directory.
 ## Controlled pilot
 
 `public/pilot.html` (served at `/pilot.html` once the server is running)
-is a minimal staff-facing page for Create Reservation + the daily list —
-the only two operations covered by the pilot-readiness work above. See
-`PILOT.md` for scope, known limitations, and success criteria before
-using it with real bookings.
+is a staff-facing page covering Create Reservation, the daily list, and
+Floor & Seating (assign/pre-assign/move/mark-seated/no-show, floor and
+late-arrival view, Resource Blocking, walk-in) — the operations covered
+by the pilot-readiness work above. See `PILOT.md` for scope, known
+limitations, and success criteria before using it with real bookings.
