@@ -236,6 +236,15 @@ export class SeatingOrchestrator {
       await this.acquireReservationLock(input.reservationId, tx);
       const current = await this.floorRepository.findActiveAssignmentByReservationId(input.reservationId, tx);
       if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
+      // P1-B9 idempotency fix: a repeated call after the party is already
+      // Seated must be a true no-op, not a second write — updateAssignmentStatus
+      // unconditionally re-stamps seatedAt to "now" whenever status is
+      // "Seated" (see PrismaFloorRepository.updateAssignmentStatus), which
+      // would otherwise silently overwrite the original seating time on a
+      // double-click or client retry. Only the Assigned -> Seated
+      // transition itself performs the write; already-Seated short-circuits
+      // before it, still under the same reservation lock.
+      if (current.status === "Seated") return { type: "SEATED" };
       await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Seated", tx });
       return { type: "SEATED" };
     });

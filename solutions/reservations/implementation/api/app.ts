@@ -910,6 +910,122 @@ export function createApp(deps: AppDependencies): Express {
       }
     );
 
+    // P1-B9 — CAP-D04.01 pre-assignment: the exact same physical-resource
+    // claim as the B4-B route immediately above, deliberately duplicated
+    // rather than parameterized (matching this file's own established
+    // precedent of one route per staff action, e.g. B4-B/B5/B6 above) —
+    // the ONLY difference is seatImmediately: false. Per the final
+    // architecture's own Decision #9 ("no new object, no new workflow"),
+    // pre-assignment IS assignSeating, called ahead of the guest's
+    // arrival instead of at it; every eligibility/derivation rule below is
+    // copied verbatim from B4-B, never re-invented — reservation lookup,
+    // isTerminal gate, NO_MANAGED_AREA gate, and the server-derived
+    // interval (the pre-assigned claim covers the reservation's OWN
+    // scheduled window, not an arbitrary "prepare from now" interval).
+    // Permission.SeatingAssign — reused, not a new permission (see
+    // StaffAuthorizationPolicy.ts's own comment: pre-assign/markSeated are
+    // "the same underlying action... at a different point in time", no
+    // separate permission was ever created for them).
+    app.post(
+      "/reservations/:id/seating/pre-assign",
+      requireStaffSession,
+      requirePermission(Permission.SeatingAssign),
+      async (req: Request, res: Response) => {
+        const idResult = ReservationId.create(paramId(req));
+        if (!idResult.ok) {
+          res.status(400).json({ violations: idResult.violations });
+          return;
+        }
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+
+        const body = req.body as { commandId?: string; resources?: unknown };
+        if (!body.commandId) {
+          res.status(422).json({ message: "commandId is required." });
+          return;
+        }
+        const resources = parseResourceSelectors(body.resources, res);
+        if (!resources) return;
+
+        const reservation = await deps.repository.findById(idResult.value);
+        if (!reservation) {
+          res.status(404).json({ message: "Reservation not found." });
+          return;
+        }
+
+        if (isTerminal(reservation.getStatus())) {
+          res.status(409).json({ type: "RESERVATION_NOT_ELIGIBLE", status: reservation.getStatus() });
+          return;
+        }
+        const preferredArea = reservation.getPreferredArea();
+        if (!preferredArea || !isCapacityPoolId(preferredArea)) {
+          res.status(409).json({ type: "NO_MANAGED_AREA" });
+          return;
+        }
+
+        const startTime = reservation.getReservationDateTime();
+        const durationMinutes = CAPACITY_POOLS[preferredArea].durationMinutes;
+        const endTime = new Date(startTime.getTime() + durationMinutes * 60_000);
+
+        const result = await seatingOrchestrator.assignSeating({
+          commandId: body.commandId,
+          reservationId: reservation.getId().toString(),
+          requestedAreaId: preferredArea,
+          requestedPartySize: reservation.getPartySize(),
+          resources,
+          startTime,
+          endTime,
+          actor,
+          seatImmediately: false,
+        });
+
+        switch (result.type) {
+          case "ASSIGNED":
+            res.status(201).json({
+              type: "ASSIGNED",
+              assignmentId: result.assignment.id,
+              status: result.assignment.status,
+              seatedAt: result.assignment.seatedAt,
+              resources,
+            });
+            return;
+          case "NOT_SEATABLE":
+            res.status(409).json({ type: "NOT_SEATABLE", seatability: result.seatability });
+            return;
+          case "ALREADY_ASSIGNED_ELSEWHERE":
+            res.status(409).json({ type: "ALREADY_ASSIGNED_ELSEWHERE" });
+            return;
+        }
+      }
+    );
+
+    // P1-B9 — CAP-D04.01 mark-seated: composes the existing SeatingOrchestrator.markSeated()
+    // directly (idempotency-fixed this same phase — see that method's own
+    // doc comment). No resource selection: this only transitions an
+    // EXISTING active assignment (created by pre-assign or the immediate
+    // B4-B route) from Assigned to Seated; it never creates or chooses
+    // resources. Permission.SeatingAssign — reused, same reasoning as
+    // pre-assign above.
+    app.post(
+      "/reservations/:id/seating/mark-seated",
+      requireStaffSession,
+      requirePermission(Permission.SeatingAssign),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+
+        const result = await seatingOrchestrator.markSeated({ reservationId: paramId(req), actor });
+        switch (result.type) {
+          case "SEATED":
+            res.status(200).json({ type: "SEATED" });
+            return;
+          case "NO_ACTIVE_ASSIGNMENT":
+            res.status(409).json({ type: "NO_ACTIVE_ASSIGNMENT" });
+            return;
+        }
+      }
+    );
+
     // P1-B5 — CAP-D04.01 staff-confirmed No-Show release: composes the
     // existing, unmodified SeatingOrchestrator.releaseNoShow() directly —
     // no new domain/application logic. Per final architecture §15

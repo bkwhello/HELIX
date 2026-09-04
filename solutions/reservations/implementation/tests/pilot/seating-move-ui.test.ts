@@ -65,8 +65,9 @@ describe("Seating picker — one shared component, parameterized by mode, not du
     expect(postCount).toBe(1);
   });
 
-  it("mode selects the endpoint suffix: assign -> /seating, move -> /seating/move", () => {
-    expect(seatingPickerBlock).toMatch(/fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{isMove \? "\/move" : ""\}`/);
+  it("mode selects the endpoint suffix: assign -> /seating, move -> /seating/move, pre-assign -> /seating/pre-assign", () => {
+    expect(seatingPickerBlock).toContain('const urlSuffix = isMove ? "/move" : isPreAssign ? "/pre-assign" : "";');
+    expect(seatingPickerBlock).toMatch(/fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{urlSuffix\}`/);
   });
 
   it("performs the B4-A availability GET before the confirm click handler can ever POST (open happens on click, POST only after a later, separate confirm click)", () => {
@@ -77,15 +78,15 @@ describe("Seating picker — one shared component, parameterized by mode, not du
     expect(confirmHandlerIndex).toBeGreaterThan(getIndex);
   });
 
-  it("move mode requires an ALREADY active assignment (opposite gate from assign mode)", () => {
+  it("move mode requires an ALREADY active assignment (opposite gate from assign/pre-assign mode)", () => {
     expect(seatingPickerBlock).toMatch(/seatingPickerMode === "move" && !hasActiveAssignment/);
-    expect(seatingPickerBlock).toMatch(/seatingPickerMode === "assign" && hasActiveAssignment/);
+    expect(seatingPickerBlock).toMatch(/\(seatingPickerMode === "assign" \|\| seatingPickerMode === "pre-assign"\) && hasActiveAssignment/);
   });
 
-  it("the POST body contains only commandId and resources for both modes — no area, partySize, seatImmediately, or reservationDate", () => {
+  it("the POST body contains only commandId and resources for all modes — no area, partySize, seatImmediately, or reservationDate", () => {
     const postBodyRegion = seatingPickerBlock.slice(
-      seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${isMove'),
-      seatingPickerBlock.indexOf("});", seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${isMove'))
+      seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${urlSuffix}`'),
+      seatingPickerBlock.indexOf("});", seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${urlSuffix}`'))
     );
     expect(postBodyRegion).toContain("commandId:");
     expect(postBodyRegion).toContain("resources: selected");
@@ -93,7 +94,9 @@ describe("Seating picker — one shared component, parameterized by mode, not du
   });
 
   it("a successful move shows a distinct Dutch confirmation and refreshes list/occupancy, same as assign", () => {
-    expect(seatingPickerBlock).toMatch(/showMessage\(listMessage, isMove \? "Gast verplaatst\." : "Gast geplaatst\."/);
+    expect(seatingPickerBlock).toContain(
+      'showMessage(listMessage, isMove ? "Gast verplaatst." : isPreAssign ? "Gast vooraf toegewezen (nog niet gezeten)." : "Gast geplaatst.", "ok");'
+    );
     expect(seatingPickerBlock).toContain("await loadList();");
     expect(seatingPickerBlock).toContain("await loadOccupancy();");
   });

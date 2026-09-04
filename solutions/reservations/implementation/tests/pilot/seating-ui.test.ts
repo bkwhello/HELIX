@@ -111,15 +111,16 @@ describe("Seating picker — resource rendering", () => {
   });
 });
 
-describe("Seating picker — POST (B4-B assign / B6 move) narrow contract", () => {
-  it("submits to POST /reservations/:id/seating, or /seating/move when in move mode", () => {
-    expect(seatingPickerBlock).toMatch(/fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{isMove \? "\/move" : ""\}`,\s*\{\s*method: "POST"/);
+describe("Seating picker — POST (B4-B assign / B6 move / B9 pre-assign) narrow contract", () => {
+  it("submits to POST /reservations/:id/seating, /seating/move, or /seating/pre-assign depending on mode", () => {
+    expect(seatingPickerBlock).toContain('const urlSuffix = isMove ? "/move" : isPreAssign ? "/pre-assign" : "";');
+    expect(seatingPickerBlock).toMatch(/fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{urlSuffix\}`,\s*\{\s*method: "POST"/);
   });
 
   it("the POST body contains only commandId and resources — no area, partySize, seatImmediately, or reservationDate", () => {
     const postBodyRegion = seatingPickerBlock.slice(
-      seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${isMove'),
-      seatingPickerBlock.indexOf("});", seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${isMove'))
+      seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${urlSuffix}`'),
+      seatingPickerBlock.indexOf("});", seatingPickerBlock.indexOf('fetch(`/reservations/${seatingPickerReservationId}/seating${urlSuffix}`'))
     );
     expect(postBodyRegion).toContain("commandId:");
     expect(postBodyRegion).toContain("resources:");
@@ -128,14 +129,16 @@ describe("Seating picker — POST (B4-B assign / B6 move) narrow contract", () =
 
   it("double-submit protection: disables the confirm button for the duration and ignores a second click while pending", () => {
     expect(seatingPickerBlock).toContain("if (seatingPickerConfirm.disabled) return;");
-    expect(seatingPickerBlock).toMatch(/seatingPickerConfirm\.disabled = true;[\s\S]*fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{isMove/);
+    expect(seatingPickerBlock).toMatch(/seatingPickerConfirm\.disabled = true;[\s\S]*fetch\(`\/reservations\/\$\{seatingPickerReservationId\}\/seating\$\{urlSuffix\}`/);
     expect(seatingPickerBlock).toContain("seatingPickerConfirm.disabled = false;");
   });
 });
 
 describe("Seating picker — outcome handling", () => {
-  it("a successful ASSIGNED/MOVED (200/201) renders a Dutch confirmation and does not touch Reservation lifecycle status", () => {
-    expect(seatingPickerBlock).toMatch(/showMessage\(listMessage, isMove \? "Gast verplaatst\." : "Gast geplaatst\."/);
+  it("a successful ASSIGNED/MOVED/pre-assigned (200/201) renders a distinct Dutch confirmation per mode and does not touch Reservation lifecycle status", () => {
+    expect(seatingPickerBlock).toContain(
+      'showMessage(listMessage, isMove ? "Gast verplaatst." : isPreAssign ? "Gast vooraf toegewezen (nog niet gezeten)." : "Gast geplaatst.", "ok");'
+    );
   });
 
   it("stale RESOURCE_OVERLAP is treated as advisory, not a system failure: refreshes availability via the SAME openSeatingPicker (preserving mode), never retries the POST or auto-picks another resource", () => {
@@ -147,7 +150,7 @@ describe("Seating picker — outcome handling", () => {
   });
 
   it("other NOT_SEATABLE reasons display a meaningful failure message distinct from the overlap case", () => {
-    expect(seatingPickerBlock).toMatch(/data\.type === "NOT_SEATABLE"\s*\)\s*\{\s*showMessage\(seatingPickerMessage, \(isMove/);
+    expect(seatingPickerBlock).toMatch(/data\.type === "NOT_SEATABLE"\s*\)\s*\{\s*showMessage\(seatingPickerMessage, `Kon niet \$\{actionLabel\}/);
   });
 
   it("ALREADY_ASSIGNED_ELSEWHERE is handled with its own distinct message", () => {

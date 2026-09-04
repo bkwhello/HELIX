@@ -210,6 +210,58 @@ describe("Scenario I — ResourceBlock", () => {
   });
 });
 
+describe("P1-B9 — markSeated idempotency fix: Assigned -> Seated once, repeat calls are a true no-op", () => {
+  it("first call: transitions Assigned to Seated and sets seatedAt", async () => {
+    const { seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const reservationId = await createReservation({ partySize: 2 });
+    const table10 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 10" } });
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table10.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+    if (assigned.type === "ASSIGNED") expect(assigned.assignment.status).toBe("Assigned");
+
+    const result = await seatingOrchestrator.markSeated({ reservationId, actor: staffActor });
+    expect(result.type).toBe("SEATED");
+
+    const stored = await prisma.seatingAssignment.findFirstOrThrow({ where: { reservationId, status: "Seated" } });
+    expect(stored.seatedAt).not.toBeNull();
+  });
+
+  it("repeated calls: return SEATED again without re-stamping seatedAt or creating a duplicate row", async () => {
+    const { seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const reservationId = await createReservation({ partySize: 2 });
+    const table10 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 10" } });
+
+    await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table10.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+
+    const first = await seatingOrchestrator.markSeated({ reservationId, actor: staffActor });
+    expect(first.type).toBe("SEATED");
+    const afterFirst = await prisma.seatingAssignment.findFirstOrThrow({ where: { reservationId } });
+    const seatedAtAfterFirst = afterFirst.seatedAt;
+    expect(seatedAtAfterFirst).not.toBeNull();
+
+    // updateAssignmentStatus stamps seatedAt with the real wall-clock time
+    // (new Date()), not the FixedClock — a real delay makes a regression
+    // (re-stamping on repeat) observable as a measurably later timestamp.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const second = await seatingOrchestrator.markSeated({ reservationId, actor: staffActor });
+    expect(second.type).toBe("SEATED");
+    const afterSecond = await prisma.seatingAssignment.findFirstOrThrow({ where: { reservationId } });
+    expect(afterSecond.seatedAt?.toISOString()).toBe(seatedAtAfterFirst?.toISOString());
+    expect(afterSecond.status).toBe("Seated");
+
+    const allAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+    expect(allAssignments).toHaveLength(1);
+  });
+});
+
 describe("No-Show — staff-confirmed release only, never automatic, never touching Reservation/CapacityCommitment", () => {
   it("releases the active SeatingAssignment and leaves Reservation.status / CapacityCommitment untouched", async () => {
     const { seatingOrchestrator } = buildFloorHarness(prisma, NOW);

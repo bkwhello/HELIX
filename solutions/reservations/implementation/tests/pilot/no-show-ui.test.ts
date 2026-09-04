@@ -21,7 +21,11 @@ beforeAll(() => {
   source = readFileSync(pilotHtmlPath, "utf-8");
 
   const start = source.indexOf("async function markNoShow(r) {");
-  const end = source.indexOf("// P1-A — Completion is a terminal");
+  // P1-B9 inserted markSeatedNow() immediately after markNoShow() (before
+  // the "P1-A — Completion is a terminal" comment this end marker used to
+  // point at directly) — narrowed to that new function's own start so
+  // this block stays scoped to markNoShow alone, not spilling into it.
+  const end = source.indexOf("// P1-B9 — CAP-D04.01 mark-seated");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   markNoShowBlock = source.slice(start, end);

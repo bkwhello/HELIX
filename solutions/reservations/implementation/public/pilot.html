@@ -1022,11 +1022,15 @@
   const seatingPickerConfirm = document.getElementById("seating-picker-confirm");
   const seatingPickerCancel = document.getElementById("seating-picker-cancel");
   let seatingPickerReservationId = null;
-  // P1-B6 — "assign" (Plaatsen, B4-B) or "move" (Verplaatsen, B6). ONE
-  // panel/resource-rendering/selection implementation shared by both —
-  // this mode flag only changes which endpoint is called, which
-  // assignmentStatus is treated as "nothing to do here", and the
-  // resulting outcome text. Never a second picker component.
+  // P1-B6/P1-B9 — "assign" (Plaatsen, B4-B), "pre-assign" (Vooraf
+  // toewijzen, B9), or "move" (Verplaatsen, B6). ONE panel/resource-
+  // rendering/selection implementation shared by all three — this mode
+  // flag only changes which endpoint is called, which assignmentStatus is
+  // treated as "nothing to do here", and the resulting outcome text.
+  // Never a second picker component. "assign" and "pre-assign" want the
+  // SAME starting state (no active assignment yet) — they differ only in
+  // whether the server seats immediately or not, exactly like the two
+  // routes themselves.
   let seatingPickerMode = "assign";
 
   function closeSeatingPicker() {
@@ -1077,9 +1081,9 @@
   // mode through) — never a second, ad-hoc availability fetch.
   async function openSeatingPicker(reservationId, mode) {
     seatingPickerReservationId = reservationId;
-    seatingPickerMode = mode === "move" ? "move" : "assign";
-    seatingPickerTitle.textContent = seatingPickerMode === "move" ? "Verplaatsen" : "Plaatsen";
-    seatingPickerConfirm.textContent = seatingPickerMode === "move" ? "Verplaatsen bevestigen" : "Plaatsen bevestigen";
+    seatingPickerMode = mode === "move" ? "move" : mode === "pre-assign" ? "pre-assign" : "assign";
+    seatingPickerTitle.textContent = seatingPickerMode === "move" ? "Verplaatsen" : seatingPickerMode === "pre-assign" ? "Vooraf toewijzen" : "Plaatsen";
+    seatingPickerConfirm.textContent = seatingPickerMode === "move" ? "Verplaatsen bevestigen" : seatingPickerMode === "pre-assign" ? "Vooraf toewijzen bevestigen" : "Plaatsen bevestigen";
     seatingPicker.style.display = "";
     clearMessage(seatingPickerMessage);
     seatingPickerResources.innerHTML = '<div class="empty">Bezig met laden…</div>';
@@ -1107,11 +1111,10 @@
     }
     // Authoritative seating state (B4-A's own assignmentStatus) — never
     // the legacy, free-text Reservation table-note field, which plays no
-    // role anywhere in this panel. The two modes want opposite states:
-    // Plaatsen needs NO active assignment yet; Verplaatsen needs one
-    // already active to move.
+    // role anywhere in this panel. Plaatsen/Vooraf toewijzen both need NO
+    // active assignment yet; Verplaatsen needs one already active to move.
     const hasActiveAssignment = data.assignmentStatus && data.assignmentStatus !== "Unassigned";
-    if (seatingPickerMode === "assign" && hasActiveAssignment) {
+    if ((seatingPickerMode === "assign" || seatingPickerMode === "pre-assign") && hasActiveAssignment) {
       seatingPickerResources.innerHTML = "";
       showMessage(seatingPickerMessage, "Deze reservering is al toegewezen of geplaatst.", "warn");
       return;
@@ -1141,31 +1144,37 @@
 
     seatingPickerConfirm.disabled = true;
     try {
-      // The dedicated B4-B/B6 endpoints' own narrow contract: commandId
+      // The dedicated B4-B/B6/B9 endpoints' own narrow contract: commandId
       // and resources ONLY — no area, party size, interval, or
       // seatImmediately. The server derives all of those from the
       // Reservation (and, for a move, from the existing assignment)
-      // itself. Same body for both modes — only the URL differs.
+      // itself. Same body for all three modes — only the URL differs.
       const isMove = seatingPickerMode === "move";
-      const res = await fetch(`/reservations/${seatingPickerReservationId}/seating${isMove ? "/move" : ""}`, {
+      const isPreAssign = seatingPickerMode === "pre-assign";
+      const urlSuffix = isMove ? "/move" : isPreAssign ? "/pre-assign" : "";
+      const commandPrefix = isMove ? "move" : isPreAssign ? "preassign" : "seat";
+      const actionLabel = isMove ? "verplaatsen" : isPreAssign ? "vooraf toewijzen" : "plaatsen";
+      const res = await fetch(`/reservations/${seatingPickerReservationId}/seating${urlSuffix}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...actorHeaders() },
         body: JSON.stringify({
-          commandId: `pilot-${isMove ? "move" : "seat"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          commandId: `pilot-${commandPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           resources: selected,
         }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (res.status === 401 || res.status === 403) {
-        showMessage(seatingPickerMessage, isMove ? "Je hebt geen rechten om te verplaatsen." : "Je hebt geen rechten om te plaatsen.", "error");
+        showMessage(seatingPickerMessage, `Je hebt geen rechten om te ${actionLabel}.`, "error");
         return;
       }
       if (res.ok) {
         // ASSIGNED/MOVED — the Reservation's own lifecycle status is
-        // never touched by either call; only the SeatingAssignment changed.
+        // never touched by any of the three calls; only the
+        // SeatingAssignment changed. Pre-assign leaves status "Assigned",
+        // not "Seated" — the success message reflects that distinction.
         closeSeatingPicker();
-        showMessage(listMessage, isMove ? "Gast verplaatst." : "Gast geplaatst.", "ok");
+        showMessage(listMessage, isMove ? "Gast verplaatst." : isPreAssign ? "Gast vooraf toegewezen (nog niet gezeten)." : "Gast geplaatst.", "ok");
         await loadList();
         await loadOccupancy();
         return;
@@ -1182,11 +1191,12 @@
         return;
       }
       if (data.type === "NOT_SEATABLE") {
-        showMessage(seatingPickerMessage, (isMove ? "Kon niet verplaatsen: " : "Kon niet plaatsen: ") + (data.seatability ? data.seatability.type : "onbekende reden") + ".", "error");
+        showMessage(seatingPickerMessage, `Kon niet ${actionLabel}: ` + (data.seatability ? data.seatability.type : "onbekende reden") + ".", "error");
         return;
       }
       if (data.type === "ALREADY_ASSIGNED_ELSEWHERE") {
-        // assignSeating-only outcome — never returned by the move route.
+        // assignSeating-only outcome (assign AND pre-assign both go
+        // through assignSeating) — never returned by the move route.
         showMessage(seatingPickerMessage, "Deze reservering heeft al een actieve toewijzing.", "error");
         return;
       }
@@ -1196,7 +1206,7 @@
         showMessage(seatingPickerMessage, "Geen actieve toewijzing meer om te verplaatsen.", "warn");
         return;
       }
-      showMessage(seatingPickerMessage, data.message || (isMove ? "Kon niet verplaatsen." : "Kon niet plaatsen."), "error");
+      showMessage(seatingPickerMessage, data.message || `Kon niet ${actionLabel}.`, "error");
     } catch (err) {
       showMessage(seatingPickerMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     } finally {
@@ -1391,6 +1401,67 @@
     }
 
     showMessage(listMessage, `Reservering van ${who} gemarkeerd als no-show; plek vrijgegeven.`, "ok");
+    await loadList();
+    await loadOccupancy();
+  }
+
+  // P1-B9 — CAP-D04.01 mark-seated ("Nu zetten"). Composes
+  // POST /reservations/:id/seating/mark-seated directly — no resource
+  // selection, this only transitions an EXISTING active assignment
+  // (created by Vooraf toewijzen or Plaatsen) from Assigned to Seated. An
+  // authoritative refresh (the same B4-A available-resources GET
+  // markNoShow/Plaatsen already use) happens FIRST, at click time, with
+  // three distinct outcomes per the approved contract: Assigned allows
+  // confirmation and the POST; Unassigned is refused locally with a clear
+  // message and no POST; already-Seated is reported as such and no POST
+  // is made either. This client-side guard is a courtesy only — the
+  // server route remains authoritative and idempotent regardless
+  // (SeatingOrchestrator.markSeated never re-stamps seatedAt on a repeat
+  // call), so a race between this check and the POST is still safe.
+  async function markSeatedNow(r) {
+    const who = r.contactName || r.contactId;
+    const availRes = await fetch(`/reservations/${r.id}/seating/available-resources`, { headers: actorHeaders() });
+    if (availRes.status === 401 || availRes.status === 403) {
+      showMessage(listMessage, "Je hebt geen rechten om dit te controleren.", "error");
+      return;
+    }
+    if (!availRes.ok) {
+      showMessage(listMessage, "Kon toewijzingsstatus niet controleren.", "error");
+      return;
+    }
+    const availData = await availRes.json();
+    if (availData.type !== "FOUND" || availData.assignmentStatus === "Unassigned") {
+      showMessage(listMessage, `Reservering van ${who} is nog niet toegewezen aan een tafel of zitplaats.`, "warn");
+      return;
+    }
+    if (availData.assignmentStatus === "Seated") {
+      showMessage(listMessage, `Reservering van ${who} is al gezeten.`, "warn");
+      return;
+    }
+
+    if (!confirm(`Reservering van ${who} nu als gezeten markeren?`)) return;
+
+    const res = await fetch(`/reservations/${r.id}/seating/mark-seated`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders() },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.type === "NO_ACTIVE_ASSIGNMENT") {
+        // The assignment was released some other way between our check
+        // above and this call (e.g. another staff member) — not an
+        // error, just already gone.
+        showMessage(listMessage, `Reservering van ${who} heeft geen actieve toewijzing meer.`, "warn");
+      } else if (res.status === 401 || res.status === 403) {
+        showMessage(listMessage, "Je hebt geen rechten om als gezeten te markeren.", "error");
+      } else {
+        showMessage(listMessage, data.message || "Kon niet als gezeten markeren.", "error");
+      }
+      return;
+    }
+
+    showMessage(listMessage, `Reservering van ${who} gemarkeerd als gezeten.`, "ok");
     await loadList();
     await loadOccupancy();
   }
@@ -1603,6 +1674,33 @@
           seatButton.textContent = "Plaatsen";
           seatButton.addEventListener("click", () => openSeatingPicker(r.id, "assign"));
           actionCell.appendChild(seatButton);
+        }
+        // P1-B9 — "prepare the floor before guests arrive" (final
+        // architecture §12, Decision #9): the SAME picker/resource
+        // selection as Plaatsen above, only the resulting status differs
+        // (Assigned, not Seated) — same status gate, same "no pre-check
+        // from list data, openSeatingPicker's own authoritative B4-A check
+        // decides at click time" posture.
+        if (r.status === "Proposed" || r.status === "Confirmed") {
+          const preAssignButton = document.createElement("button");
+          preAssignButton.type = "button";
+          preAssignButton.className = "secondary";
+          preAssignButton.textContent = "Vooraf toewijzen";
+          preAssignButton.addEventListener("click", () => openSeatingPicker(r.id, "pre-assign"));
+          actionCell.appendChild(preAssignButton);
+        }
+        // P1-B9 — "Nu zetten" (mark-seated): confirmation only, no
+        // resource picker — this only transitions an EXISTING active
+        // assignment (from Vooraf toewijzen or Plaatsen) to Seated. Same
+        // status gate as the other seating actions; markSeatedNow() itself
+        // performs the real, authoritative B4-A check at click time.
+        if (r.status === "Proposed" || r.status === "Confirmed") {
+          const markSeatedButton = document.createElement("button");
+          markSeatedButton.type = "button";
+          markSeatedButton.className = "confirm-button";
+          markSeatedButton.textContent = "Nu zetten";
+          markSeatedButton.addEventListener("click", () => markSeatedNow(r));
+          actionCell.appendChild(markSeatedButton);
         }
         // P1-B6 — same status gate as Plaatsen/Cancel above; whether an
         // active assignment actually exists to move is NOT pre-checked
