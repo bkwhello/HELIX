@@ -185,8 +185,15 @@ npm install
 npx prisma migrate deploy   # or `prisma migrate dev` locally
 npm run typecheck
 npm test
-npm run dev                 # http://localhost:3001, see api/server.ts
+npm run dev                 # http://127.0.0.1:3001, see api/server.ts
 ```
+
+By default the server binds only to the loopback interface (`127.0.0.1`),
+not all interfaces — set `APP_HOST` to override (e.g. `0.0.0.0` for a
+future real deployment environment that genuinely needs to accept
+connections from other hosts). A missing, blank, or whitespace-only
+`APP_HOST` falls back to the loopback default, never all-interfaces. See
+`.env.example` and `api/serverConfig.ts`.
 
 ## CI
 

@@ -20,6 +20,7 @@ import { PrismaGuestManagementCredentialRepository } from "../infrastructure/per
 import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
 import { PrismaFloorRepository } from "../infrastructure/persistence/PrismaFloorRepository.js";
+import { resolveAppHost, startListening } from "./serverConfig.js";
 
 const prisma = new PrismaClient();
 // R1_2_IDENTITY_ACCESS_FINAL_ARCHITECTURE.md §21 — same-origin deployment
@@ -91,7 +92,10 @@ const app = createApp({
 });
 
 const port = Number(process.env["PORT"] ?? 3001);
-app.listen(port, () => {
-  // eslint-disable-next-line no-console
-  console.log(`CAP-D01.01 Reservation Management API listening on http://localhost:${port}`);
-});
+// P1-B11A — explicit loopback-only bind by default (see api/serverConfig.ts).
+// Previously `app.listen(port, ...)` with no host argument, which binds all
+// interfaces. A non-loopback value (e.g. "0.0.0.0") requires explicitly
+// setting APP_HOST for a future real deployment environment — never the
+// default.
+const appHost = resolveAppHost();
+startListening(app, port, appHost);
