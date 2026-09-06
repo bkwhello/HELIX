@@ -206,7 +206,7 @@ capabilities:
     slug: reservation-source-management
     domain: CAP-D01
     type: Supporting
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Medium
@@ -243,7 +243,7 @@ capabilities:
     slug: reservation-change-management
     domain: CAP-D01
     type: Core
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical
@@ -789,7 +789,7 @@ capabilities:
     slug: guest-arrival-management
     domain: CAP-D04
     type: Core
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical
@@ -929,7 +929,7 @@ capabilities:
     slug: reservation-contact-management
     domain: CAP-D05
     type: Supporting
-    delivery_status: Designed
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: High

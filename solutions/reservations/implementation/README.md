@@ -64,8 +64,14 @@ criteria and hardened accordingly:
   Express's default HTML error page.
 
 **Confirm / Modify / Cancel / Complete** have the same domain-level rule
-and authorization coverage as Create, but have *not* been through the
-same HTTP-level and pilot-readiness pass — see "Known limitations" below.
+and authorization coverage as Create, and — as of R1.3-I2 — are also
+covered at the HTTP layer (`tests/api/reservations.test.ts`, including the
+capacity-aware `PATCH /availability/reservations/:id` and
+`POST /availability/reservations/:id/cancel` paths) and wired into the
+pilot UI (`public/pilot.html`'s confirm/edit/cancel/complete actions).
+They have not, however, been through the same formal, written
+acceptance.md §17 Pilot-exit-criteria review Create received above — see
+"Known limitations" below.
 
 **Floor & Seating** (CAP-D03.03/CAP-D04.01, implementation phases
 P1-B1–P1-B9) closed its HTTP-exposure sequence at commit `582e655`: assign
@@ -86,11 +92,32 @@ relied on operationally.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
-- `ContactReader` and `ServicePeriodReader` are placeholder adapters
-  (`infrastructure/Unvalidated*.ts`) that always report valid — Contact
-  Management and Service Period Management don't exist as capabilities
-  yet. Real validation is deferred until they do; this is a known,
-  intentional gap, not an oversight.
+- **Corrected (R1-DOC-2).** This bullet used to say `ContactReader` and
+  `ServicePeriodReader` were both placeholder adapters because Contact
+  Management and Service Period Management didn't exist as capabilities
+  yet — that is no longer accurate for Contact Management and needs a
+  precise split:
+  - **Contact Management (CAP-D05.01)** is real: `PrismaContactRepository`
+    (replacing the old `UnvalidatedContactReader` placeholder), contact
+    creation/correction with dedicated value-object validation, and both
+    HTTP and pilot-UI exposure — see `tests/integration/contact-management.test.ts`
+    and `tests/pilot/contact-snapshot-edit-ui.test.ts`.
+  - **Service Period Management (CAP-D02.02)**, as the capability registry
+    actually defines it — a live per-date service-session lifecycle
+    (Created/Opened/Closed states, active-floorplan selection) — remains
+    unimplemented and stays `Designed`. `infrastructure/UnvalidatedServicePeriodReader.ts`
+    is still exactly the placeholder it always was, still wired into
+    `CreateReservationHandler`, and still always reports valid.
+  - The real, separate `domain/availability/ServicePeriod.ts` +
+    `application/availability/ServicePeriodService.ts` "booking-window
+    eligibility" behavior (R1.6-A/R1.6-C0) is genuinely implemented and
+    wired into live reservation creation via `AvailabilityOrchestrator.createWithCapacity` —
+    but it is adjacent, differently-scoped behavior (answers "which start
+    times are bookable," not "is there a live service session"), and does
+    not satisfy CAP-D02.02's full service-session-lifecycle definition. See
+    `ServicePeriod.ts`'s own header comment and
+    `R1_6_A_SERVICE_PERIOD_IMPLEMENTATION_REPORT.md` §"BookingPolicy
+    Divergence" for the accepted divergence.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side
@@ -108,8 +135,21 @@ relied on operationally.
   below) — `Reservation` domain events themselves are still persisted
   atomically with state (`PrismaReservationRepository.save()`) without a
   general-purpose outbox or external consumer beyond that one case.
-- Confirm/Modify/Cancel/Complete lack HTTP-level tests and the
-  `GET /reservations` discoverability pass that Create just got.
+- **Corrected (R1-DOC-2).** This bullet used to say Confirm/Modify/Cancel/Complete
+  lacked HTTP-level tests — that is no longer true (see the Status section
+  above; `tests/api/reservations.test.ts` covers all four). They have not,
+  however, been given their own `GET /reservations`-style discoverability
+  pass the way Create was for AC34 — that remains open, narrower work.
+- **Added (R1.3-I2).** Staff can now correct a reservation's contact phone
+  and/or email via `PATCH /availability/reservations/:id`, reusing
+  `PhoneNumber.create()`/`EmailAddress.create()` verbatim (no new
+  validation format); blank/whitespace input is treated as "omitted," never
+  persisted as empty or rejected merely for being blank.
+- **Added (R1.2-P2).** A failed login now records exactly one
+  `SecurityEvent` (`type: "LoginFailed"`, a typed reason code, no attempted
+  credentials or other request data) via `SecurityEventRecorder`,
+  best-effort and never affecting the login outcome; anti-enumeration
+  behavior at the HTTP boundary is unchanged.
 - The scheduler/cron hosting needed to actually run
   `npm run process-communications` on a recurring basis does not exist
   yet (same still-open prerequisite `ops/backup/createBackup.ts` already

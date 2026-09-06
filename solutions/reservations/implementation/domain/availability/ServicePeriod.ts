@@ -17,10 +17,14 @@
  * infrastructure/UnvalidatedServicePeriodReader.ts. That existing port is
  * keyed by an opaque, caller-supplied `servicePeriodId` string and is
  * consumed by CreateReservationHandler; it is untouched by this file. This
- * module is keyed by CapacityPoolId (area) + local date/instant instead,
- * and is not yet wired into reservation creation — see
+ * module is keyed by CapacityPoolId (area) + local date/instant instead.
+ * R1.6-C0 wired it into live reservation creation — ServicePeriodService's
+ * evaluateStartTimeEligibility/evaluateImmediateEligibility (composed with
+ * real I/O there) is the sole enforcement point AvailabilityOrchestrator.
+ * createWithCapacity calls before proceeding; see
+ * R1_6_C0_SERVICE_PERIOD_ENFORCEMENT_IMPLEMENTATION_REPORT.md. See
  * R1_6_A_SERVICE_PERIOD_IMPLEMENTATION_REPORT.md §"BookingPolicy
- * Divergence" / §"Known Limitations" for why, and for the separate,
+ * Divergence" / §"Known Limitations" for the separate, still-open,
  * substantive divergence this file's own naming has from the capability
  * registry's actual CAP-D02.02 definition (a live per-date service-session
  * lifecycle, not a booking-window calendar).
