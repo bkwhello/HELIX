@@ -36,6 +36,7 @@ import { SessionRepository } from "../domain/repositories/SessionRepository.js";
 import { PasswordHasher } from "../application/ports/PasswordHasher.js";
 import { SessionTokenGenerator } from "../application/ports/SessionTokenGenerator.js";
 import { LoginHandler } from "../application/auth/LoginHandler.js";
+import { SecurityEventRecorder } from "../application/ports/SecurityEventRecorder.js";
 import { LogoutHandler } from "../application/auth/LogoutHandler.js";
 import { CreateStaffUserHandler } from "../application/auth/CreateStaffUserHandler.js";
 import { LoginThrottleGuard, LoginThrottleConfig } from "../application/auth/LoginThrottleGuard.js";
@@ -169,6 +170,18 @@ export interface AppDependencies {
     /** R1.2 final P1 closure — login abuse protection. Not optional, same reasoning as the rest of `auth`: every deployment must throttle /auth/login. */
     readonly loginAttemptTracker: LoginAttemptTracker;
     readonly loginThrottleConfig?: LoginThrottleConfig;
+    /**
+     * R1.2-P2 — optional, same "not available in this deployment" posture
+     * as sessionLifetimeMs/expectedOrigin/loginThrottleConfig immediately
+     * above: when omitted, LoginHandler falls back to a no-op recorder
+     * (createApp()'s own NOOP_SECURITY_EVENT_RECORDER below) — failed
+     * logins still work identically, they simply aren't logged to
+     * SecurityEvent. This keeps every existing test file that builds
+     * AppDependencies unaffected; only the real production wiring
+     * (api/server.ts) and the tests that specifically exercise this
+     * feature need to supply a real one.
+     */
+    readonly securityEventRecorder?: SecurityEventRecorder;
   };
 }
 
@@ -295,13 +308,19 @@ export function createApp(deps: AppDependencies): Express {
 
   // R1.2 — Identity & Access.
   const sessionLifetimeMs = deps.auth.sessionLifetimeMs ?? DEFAULT_SESSION_LIFETIME_MS;
+  // R1.2-P2 — see AppDependencies.auth.securityEventRecorder's own doc
+  // comment: a deployment/test that doesn't supply one still works
+  // identically, it just never logs a LoginFailed SecurityEvent.
+  const NOOP_SECURITY_EVENT_RECORDER: SecurityEventRecorder = { async recordLoginFailure() {} };
+  const securityEventRecorder = deps.auth.securityEventRecorder ?? NOOP_SECURITY_EVENT_RECORDER;
   const loginHandler = new LoginHandler(
     deps.auth.staffUserRepository,
     deps.auth.sessionRepository,
     deps.auth.passwordHasher,
     deps.auth.sessionTokenGenerator,
     deps.clock,
-    sessionLifetimeMs
+    sessionLifetimeMs,
+    securityEventRecorder
   );
   const logoutHandler = new LogoutHandler(deps.auth.sessionRepository);
   const createStaffUserHandler = new CreateStaffUserHandler(deps.auth.staffUserRepository, deps.auth.passwordHasher, deps.idGenerator);

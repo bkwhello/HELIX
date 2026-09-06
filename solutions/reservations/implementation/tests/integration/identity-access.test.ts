@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../api/app.js";
 import { PrismaReservationRepository } from "../../infrastructure/persistence/PrismaReservationRepository.js";
@@ -15,6 +15,7 @@ import { PrismaTransactionManager } from "../../infrastructure/persistence/Prism
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { bootstrapOwner } from "../../infrastructure/bootstrap/bootstrapOwner.js";
 import { LoginHandler } from "../../application/auth/LoginHandler.js";
+import { PrismaSecurityEventRecorder } from "../../infrastructure/persistence/PrismaSecurityEventRecorder.js";
 import { LogoutHandler } from "../../application/auth/LogoutHandler.js";
 import { CreateStaffUserHandler } from "../../application/auth/CreateStaffUserHandler.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
@@ -170,7 +171,7 @@ describe("LoginHandler — real database, real password hashing", () => {
       passwordHash: await deps.passwordHasher.hash("correct-password"),
       role: ActorRole.Manager,
     });
-    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000);
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
 
     const result = await handler.handle({ username: "loginuser", password: "correct-password" });
     expect(result.type).toBe("SUCCESS");
@@ -191,7 +192,7 @@ describe("LoginHandler — real database, real password hashing", () => {
       passwordHash: await deps.passwordHasher.hash("correct-password"),
       role: ActorRole.Reception,
     });
-    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000);
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
 
     const unknownUser = await handler.handle({ username: "nosuchuser", password: "anything" });
     const wrongPassword = await handler.handle({ username: "realuser", password: "wrong-password" });
@@ -216,12 +217,195 @@ describe("LoginHandler — real database, real password hashing", () => {
     });
     await prisma.staffUser.update({ where: { id: "su-disabled" }, data: { status: "Disabled" } });
 
-    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000);
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
     const result = await handler.handle({ username: "disableduser", password: "correct-password" });
     expect(result.type).toBe("INVALID_CREDENTIALS");
 
     const sessions = await prisma.staffSession.findMany({ where: { staffUserId: "su-disabled" } });
     expect(sessions).toHaveLength(0); // no session issued
+  });
+});
+
+/**
+ * R1.2-P2 — closes the gap LoginHandler.ts's own doc comment described
+ * but never implemented: a failed login now writes exactly one
+ * `SecurityEvent` row (type "LoginFailed") via the narrowly-typed
+ * SecurityEventRecorder port, for the Owner's later visibility — still
+ * never crossing the HTTP response boundary. Deliberately its own,
+ * fresh describe block (not folded into "LoginHandler — real database,
+ * real password hashing" above) so none of those already-passing tests
+ * are touched.
+ */
+describe("R1.2-P2 — LoginFailed SecurityEvent recording", () => {
+  it("unknown username → exactly one LoginFailed event, null target, UNKNOWN_USERNAME reason", async () => {
+    const deps = buildAuthDeps();
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
+
+    const result = await handler.handle({ username: "nosuchuser-p2", password: "anything" });
+    expect(result.type).toBe("INVALID_CREDENTIALS");
+
+    const events = await prisma.securityEvent.findMany({ where: { type: "LoginFailed", targetStaffUserId: null } });
+    expect(events).toHaveLength(1);
+    expect(JSON.parse(events[0]!.metadata!)).toEqual({ reason: "UNKNOWN_USERNAME" });
+  });
+
+  it("invalid password → exactly one LoginFailed event targeting the resolved StaffUser, INVALID_PASSWORD reason", async () => {
+    const deps = buildAuthDeps();
+    await deps.staffUserRepository.create({
+      id: "su-p2-badpass",
+      username: "p2badpassuser",
+      displayName: "P2 Bad Password User",
+      email: null,
+      passwordHash: await deps.passwordHasher.hash("correct-password"),
+      role: ActorRole.Reception,
+    });
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
+
+    const result = await handler.handle({ username: "p2badpassuser", password: "wrong-password" });
+    expect(result.type).toBe("INVALID_CREDENTIALS");
+
+    const events = await prisma.securityEvent.findMany({ where: { type: "LoginFailed", targetStaffUserId: "su-p2-badpass" } });
+    expect(events).toHaveLength(1);
+    expect(JSON.parse(events[0]!.metadata!)).toEqual({ reason: "INVALID_PASSWORD" });
+  });
+
+  it("disabled account → exactly one LoginFailed event targeting the resolved StaffUser, ACCOUNT_DISABLED reason", async () => {
+    const deps = buildAuthDeps();
+    await deps.staffUserRepository.create({
+      id: "su-p2-disabled",
+      username: "p2disableduser",
+      displayName: "P2 Disabled User",
+      email: null,
+      passwordHash: await deps.passwordHasher.hash("correct-password"),
+      role: ActorRole.Reception,
+    });
+    await prisma.staffUser.update({ where: { id: "su-p2-disabled" }, data: { status: "Disabled" } });
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
+
+    const result = await handler.handle({ username: "p2disableduser", password: "correct-password" });
+    expect(result.type).toBe("INVALID_CREDENTIALS");
+
+    const events = await prisma.securityEvent.findMany({ where: { type: "LoginFailed", targetStaffUserId: "su-p2-disabled" } });
+    expect(events).toHaveLength(1);
+    expect(JSON.parse(events[0]!.metadata!)).toEqual({ reason: "ACCOUNT_DISABLED" });
+  });
+
+  it("a successful login writes no LoginFailed event", async () => {
+    const deps = buildAuthDeps();
+    await deps.staffUserRepository.create({
+      id: "su-p2-success",
+      username: "p2successuser",
+      displayName: "P2 Success User",
+      email: null,
+      passwordHash: await deps.passwordHasher.hash("correct-password"),
+      role: ActorRole.Reception,
+    });
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
+
+    const result = await handler.handle({ username: "p2successuser", password: "correct-password" });
+    expect(result.type).toBe("SUCCESS");
+
+    const events = await prisma.securityEvent.findMany({ where: { type: "LoginFailed", targetStaffUserId: "su-p2-success" } });
+    expect(events).toHaveLength(0);
+  });
+
+  it("a recorder failure never changes, blocks, or replaces the login outcome — caught, best-effort, at the application boundary, logged with a FIXED generic diagnostic only", async () => {
+    const deps = buildAuthDeps();
+    const secretExceptionMessage = "simulated recorder failure — should never reach the log";
+    const throwingRecorder = {
+      async recordLoginFailure(): Promise<void> {
+        throw new Error(secretExceptionMessage);
+      },
+    };
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, throwingRecorder);
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // Must not throw, must not hang, must return the SAME outcome a
+      // working recorder would have produced.
+      const result = await handler.handle({ username: "nosuchuser-p2-throwing", password: "attempted-password-p2-throwing" });
+      expect(result.type).toBe("INVALID_CREDENTIALS");
+      if (result.type === "INVALID_CREDENTIALS") expect(result.reason).toBe("unknown-username");
+
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const call = consoleErrorSpy.mock.calls[0]!;
+      // Exactly one argument — the fixed generic message — and nothing else.
+      expect(call).toHaveLength(1);
+      expect(call[0]).toBe("LoginHandler: security event recording failed");
+      const loggedText = String(call[0]);
+      expect(loggedText).not.toContain(secretExceptionMessage);
+      expect(loggedText).not.toMatch(/nosuchuser-p2-throwing|attempted-password-p2-throwing|UNKNOWN_USERNAME|INVALID_PASSWORD|ACCOUNT_DISABLED|reason|metadata|targetStaffUserId/i);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it("the adapter persists the approved shape via the shared Prisma client — no attempted password or username, ever", async () => {
+    const deps = buildAuthDeps();
+    const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
+
+    await handler.handle({ username: "attempted-username-p2", password: "attempted-password-p2" });
+
+    const events = await prisma.securityEvent.findMany({ where: { type: "LoginFailed", targetStaffUserId: null } });
+    expect(events).toHaveLength(1);
+    const event = events[0]!;
+    expect(event.type).toBe("LoginFailed");
+    expect(event.targetStaffUserId).toBeNull();
+    expect(event.occurredAt).toBeInstanceOf(Date);
+    // Exactly the approved shape: {reason} only — never the attempted
+    // username, never any password-derived data.
+    expect(Object.keys(JSON.parse(event.metadata!))).toEqual(["reason"]);
+    expect(event.metadata).not.toContain("attempted-username-p2");
+    expect(event.metadata).not.toContain("attempted-password-p2");
+  });
+
+  it("no failure reason or event metadata ever appears in the /auth/login HTTP response, and all three credential-failure responses are identical in status and body", async () => {
+    const app = createApp({
+      repository: new PrismaReservationRepository(prisma),
+      duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
+      contactRepository: new PrismaContactRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
+      servicePeriodReader: new UnvalidatedServicePeriodReader(),
+      closingDayStore: new PrismaClosingDayStore(prisma),
+      idGenerator: new RandomIdGenerator(),
+      eventIdGenerator: new RandomIdGenerator(),
+      clock: new FixedClock(),
+      auth: {
+        staffUserRepository: new PrismaStaffUserRepository(prisma),
+        sessionRepository: new PrismaSessionRepository(prisma),
+        passwordHasher: new ScryptPasswordHasher(),
+        sessionTokenGenerator: new RandomSessionTokenGenerator(),
+        cookieSecure: false,
+        expectedOrigin: null,
+        loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
+        securityEventRecorder: new PrismaSecurityEventRecorder(prisma),
+      },
+    });
+    const staffUserRepository = new PrismaStaffUserRepository(prisma);
+    const passwordHasher = new ScryptPasswordHasher();
+    await staffUserRepository.create({
+      id: "su-p2-http",
+      username: "p2httpuser",
+      displayName: "P2 HTTP User",
+      email: null,
+      passwordHash: await passwordHasher.hash("correct-password"),
+      role: ActorRole.Reception,
+    });
+    await prisma.staffUser.update({ where: { id: "su-p2-http" }, data: { status: "Disabled" } });
+
+    const unknownUserRes = await request(app).post("/auth/login").set(CSRF_HEADER_NAME, "1").send({ username: "nosuchuser-p2-http", password: "anything" });
+    const badPasswordRes = await request(app).post("/auth/login").set(CSRF_HEADER_NAME, "1").send({ username: "p2httpuser", password: "wrong-password" });
+    const disabledRes = await request(app).post("/auth/login").set(CSRF_HEADER_NAME, "1").send({ username: "p2httpuser", password: "correct-password" });
+
+    for (const res of [unknownUserRes, badPasswordRes, disabledRes]) {
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ message: "Invalid username or password." });
+      expect(JSON.stringify(res.body)).not.toMatch(/UNKNOWN_USERNAME|INVALID_PASSWORD|ACCOUNT_DISABLED|reason|metadata/i);
+    }
+    // All three are byte-identical — status and body — proving the
+    // internal SecurityEvent distinction never surfaces to the caller.
+    expect(unknownUserRes.body).toEqual(badPasswordRes.body);
+    expect(badPasswordRes.body).toEqual(disabledRes.body);
   });
 });
 
@@ -236,7 +420,7 @@ describe("LogoutHandler", () => {
       passwordHash: await deps.passwordHasher.hash("correct-password"),
       role: ActorRole.Reception,
     });
-    const loginHandler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000);
+    const loginHandler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, new PrismaSecurityEventRecorder(prisma));
     const login = await loginHandler.handle({ username: "logoutuser", password: "correct-password" });
     if (login.type !== "SUCCESS") throw new Error("unreachable");
 

@@ -20,6 +20,7 @@ import { PrismaGuestManagementCredentialRepository } from "../infrastructure/per
 import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
 import { PrismaFloorRepository } from "../infrastructure/persistence/PrismaFloorRepository.js";
+import { PrismaSecurityEventRecorder } from "../infrastructure/persistence/PrismaSecurityEventRecorder.js";
 import { resolveAppHost, startListening } from "./serverConfig.js";
 
 const prisma = new PrismaClient();
@@ -88,6 +89,8 @@ const app = createApp({
     expectedOrigin: appOrigin,
     // R1.2 final P1 closure — login abuse protection.
     loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
+    // R1.2-P2 — the same shared PrismaClient every other adapter above uses, never a second connection.
+    securityEventRecorder: new PrismaSecurityEventRecorder(prisma),
   },
 });
 

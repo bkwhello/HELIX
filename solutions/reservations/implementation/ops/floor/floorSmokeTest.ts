@@ -26,6 +26,7 @@ import { seedFloor } from "./seedFloor.js";
 import { PrismaFloorRepository } from "../../infrastructure/persistence/PrismaFloorRepository.js";
 import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { SeatingOrchestrator } from "../../application/floor/SeatingOrchestrator.js";
+import { PrismaSecurityEventRecorder } from "../../infrastructure/persistence/PrismaSecurityEventRecorder.js";
 
 const steps: { readonly step: string; readonly ok: boolean; readonly detail: string }[] = [];
 function record(step: string, ok: boolean, detail: string): void {
@@ -61,7 +62,8 @@ async function main(): Promise<void> {
       passwordHasher,
       new RandomSessionTokenGenerator(),
       { now: () => new Date("2026-08-20T10:00:00Z") },
-      DEFAULT_SESSION_LIFETIME_MS
+      DEFAULT_SESSION_LIFETIME_MS,
+      new PrismaSecurityEventRecorder(prisma)
     );
     const loginResult = await loginHandler.handle({ username: "floor-smoke-owner", password: "FloorSmokeTest123!" });
     record("1. Login as authorized staff", loginResult.type === "SUCCESS", loginResult.type === "SUCCESS" ? "authenticated via real R1.2 LoginHandler" : `login failed: ${loginResult.type}`);
