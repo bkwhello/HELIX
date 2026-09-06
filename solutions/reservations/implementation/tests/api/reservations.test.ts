@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
-import { Express } from "express";
+import { Express, Request, Response } from "express";
 import { createApp } from "../../api/app.js";
 import { resetDatabase } from "../integration/support/testHarness.js";
 import { createTestPrismaClient, truncateStaffDomainTables } from "../integration/support/testDatabaseSafety.js";
@@ -18,7 +18,8 @@ import { UnvalidatedServicePeriodReader } from "../../infrastructure/Unvalidated
 import { PrismaCapacityRepository } from "../../infrastructure/persistence/PrismaCapacityRepository.js";
 import { ServicePeriodService } from "../../application/availability/ServicePeriodService.js";
 import { PrismaServicePeriodOverrideStore } from "../../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
-import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
+import { CSRF_HEADER_NAME, requirePermission, StaffPrincipal } from "../../api/authMiddleware.js";
+import { Permission } from "../../domain/rules/StaffAuthorizationPolicy.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
 
 /**
@@ -250,6 +251,76 @@ describe("Authentication and authorization boundary", () => {
 
     const res = await post(receptionAgent, "/closing-days").send({ fromDate: "2026-09-01" });
     expect(res.status).toBe(403);
+  });
+
+  // R1.3-I2 — Modify and Cancel had no dedicated auth-boundary coverage
+  // of their own (unlike Confirm/Complete below), even though the
+  // routes themselves have existed since the P0 retirement. Every
+  // currently-defined ActorRole already holds ReservationModify/
+  // ReservationCancel (confirmed in domain/rules/StaffAuthorizationPolicy.ts),
+  // so — same established precedent as the Floor & Seating test files —
+  // the 403 case is proven by calling requirePermission(...) directly
+  // with a synthetic role absent from the policy entirely, and the 401
+  // case by a real HTTP call with no session at all.
+  it("rejects an unauthenticated Modify (PATCH /availability/reservations/:id) — 401", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-authbound-modify" });
+    const res = await patchReq(request.agent(sharedApp), `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-authbound-modify-1",
+      changes: { notes: "should never apply" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an unauthorized Modify — 403 (requirePermission(Permission.ReservationModify) exercised directly)", () => {
+    const middleware = requirePermission(Permission.ReservationModify);
+    const principal: StaffPrincipal = { staffUserId: "x", role: "NoSuchRole" as unknown as ActorRole, displayName: "x" };
+    const req = { staffPrincipal: principal } as unknown as Request;
+    let statusCode: number | undefined;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json() {
+        return this;
+      },
+    } as unknown as Response;
+    let nextCalled = false;
+    middleware(req, res, () => {
+      nextCalled = true;
+    });
+    expect(statusCode).toBe(403);
+    expect(nextCalled).toBe(false);
+  });
+
+  it("rejects an unauthenticated Cancel (POST /availability/reservations/:id/cancel) — 401", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-authbound-cancel" });
+    const res = await post(request.agent(sharedApp), `/availability/reservations/${created.body.reservationId}/cancel`).send({
+      commandId: "http-cmd-authbound-cancel-1",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects an unauthorized Cancel — 403 (requirePermission(Permission.ReservationCancel) exercised directly)", () => {
+    const middleware = requirePermission(Permission.ReservationCancel);
+    const principal: StaffPrincipal = { staffUserId: "x", role: "NoSuchRole" as unknown as ActorRole, displayName: "x" };
+    const req = { staffPrincipal: principal } as unknown as Request;
+    let statusCode: number | undefined;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json() {
+        return this;
+      },
+    } as unknown as Response;
+    let nextCalled = false;
+    middleware(req, res, () => {
+      nextCalled = true;
+    });
+    expect(statusCode).toBe(403);
+    expect(nextCalled).toBe(false);
   });
 });
 
@@ -853,6 +924,229 @@ describe("PATCH /availability/reservations/:id — correcting the guest name and
 
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D01.01-R12")).toBe(true);
+  });
+});
+
+/**
+ * R1.3-I2 — field plumbing plus reused validation: ModifyReservationHandler/
+ * ReservationAggregate.modify() already supported correcting
+ * contactPhoneSnapshot/contactEmailSnapshot at the domain layer (neither
+ * was modified here); this route simply hadn't been updated to carry them
+ * through (the same gap arrivedAt had before its own P0-retirement
+ * addition above). At the API boundary, both values are validated via
+ * PhoneNumber.create()/EmailAddress.create() — the SAME CAP-D05.01 value
+ * objects CreateContactHandler already uses for a new Contact's phone/
+ * email — never a second, invented format. A blank/whitespace-only value
+ * is treated as "not supplied" (omitted from `changes`), matching
+ * CreateContactHandler's own `request.phone ? PhoneNumber.create(...) :
+ * undefined` convention exactly. Note the resulting asymmetry, which
+ * comes entirely from the reused validators' own existing rules, not
+ * anything invented here: PhoneNumber.create()'s only failure mode
+ * (CAP-D05.01-R01) is blank — since blank is intercepted as "omitted"
+ * before ever reaching it, a non-blank phone value can never actually be
+ * rejected through this route. EmailAddress.create() additionally
+ * enforces a plausible email shape, so a non-blank-but-malformed email
+ * IS genuinely rejected.
+ */
+describe("PATCH /availability/reservations/:id — correcting the contact phone/email snapshot (R1.3-I2)", () => {
+  it("corrects the phone snapshot only, leaving the email snapshot unchanged", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-phone" });
+    const before = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(before.body.contactPhoneSnapshot).toBe("0611111111"); // contact-1's own phoneRaw, snapshotted at creation
+    expect(before.body.contactEmailSnapshot).toBeUndefined();
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-phone-1",
+      changes: { contactPhoneSnapshot: "0699999999" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("0699999999");
+    expect(after.body.contactEmailSnapshot).toBeUndefined();
+  });
+
+  it("corrects the email snapshot only, leaving the phone snapshot unchanged", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-email" });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-email-1",
+      changes: { contactEmailSnapshot: "corrected@example.com" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactEmailSnapshot).toBe("corrected@example.com");
+    expect(after.body.contactPhoneSnapshot).toBe("0611111111"); // unchanged
+  });
+
+  it("corrects both snapshots together in one request", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-both" });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-both-1",
+      changes: { contactPhoneSnapshot: "0688888888", contactEmailSnapshot: "both@example.com" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("0688888888");
+    expect(after.body.contactEmailSnapshot).toBe("both@example.com");
+  });
+
+  it("omitting both fields leaves both snapshots unchanged — omission is never treated as clearing", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-omit" });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-omit-1",
+      changes: { notes: "unrelated change, snapshots untouched" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("0611111111");
+    expect(after.body.contactEmailSnapshot).toBeUndefined();
+    expect(after.body.notes).toBe("unrelated change, snapshots untouched");
+  });
+
+  it("accepts a valid, realistically-formatted phone number (PhoneNumber.create() reused, stored via its own getRaw(), trimmed)", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-phone-valid" });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-phone-valid-1",
+      changes: { contactPhoneSnapshot: "  06 12345678  " },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("06 12345678");
+  });
+
+  it("rejects a malformed (non-blank) email with the SAME 422 domain-violation shape EmailAddress.create() already produces (CAP-D05.01-R01) — no new rule introduced", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-email-invalid" });
+
+    const res = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-email-invalid-1",
+      changes: { contactEmailSnapshot: "not-an-email" },
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D05.01-R01")).toBe(true);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactEmailSnapshot).toBeUndefined(); // unchanged — the rejected value never applied
+  });
+
+  it("a non-blank phone value is never rejected by this route, regardless of shape — PhoneNumber.create()'s only rule is non-blank, reused verbatim, not a new format invented here", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-phone-anyshape" });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-phone-anyshape-1",
+      changes: { contactPhoneSnapshot: "not-a-phone-number-at-all!!!" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("not-a-phone-number-at-all!!!");
+  });
+
+  it("an explicitly supplied blank/whitespace-only phone or email is treated as omitted, never persisted as an empty string and never rejected merely for being blank", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-blank" });
+    const before = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-blank-1",
+      changes: { contactPhoneSnapshot: "   ", contactEmailSnapshot: "" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe(before.body.contactPhoneSnapshot);
+    expect(after.body.contactEmailSnapshot).toBe(before.body.contactEmailSnapshot);
+  });
+
+  it("mixed valid phone + invalid email in the same request is atomic — the valid phone is NOT applied either", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-mixed" });
+
+    const res = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-mixed-1",
+      changes: { contactPhoneSnapshot: "0611119999", contactEmailSnapshot: "not-an-email" },
+    });
+    expect(res.status).toBe(422);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("0611111111"); // unchanged — the valid phone in the SAME request never applied
+  });
+
+  it("a rejected request (invalid source in the same call) causes no partial snapshot mutation — atomic, all-or-nothing", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-atomic" });
+
+    const res = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-atomic-1",
+      changes: { contactPhoneSnapshot: "0677777777", source: { category: "Carrier Pigeon" } },
+    });
+    expect(res.status).toBe(422);
+
+    const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(after.body.contactPhoneSnapshot).toBe("0611111111"); // untouched — the whole command was rejected
+  });
+
+  it("change history (ReservationModified event) records only the fields actually changed", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-history" });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-history-1",
+      changes: { contactPhoneSnapshot: "0655555555" },
+    });
+    expect(patched.status).toBe(204);
+
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId: created.body.reservationId, type: "ReservationModified" } });
+    expect(events).toHaveLength(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.changedFields).toEqual(["contactPhoneSnapshot"]);
+    expect(payload.previousValues.contactPhoneSnapshot).toBe("0611111111");
+    expect(payload.resultingValues.contactPhoneSnapshot).toBe("0655555555");
+    expect(payload.changedFields).not.toContain("contactEmailSnapshot");
+  });
+
+  it("reservation version increments by exactly 1 on a successful snapshot correction", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-version" });
+    const before = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(before.version).toBe(1);
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-version-1",
+      changes: { contactPhoneSnapshot: "0644444444" },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(after.version).toBe(2);
+  });
+
+  it("capacity, ServicePeriod, seating, and unrelated reservation fields remain unchanged — a snapshot-only correction is not capacity-relevant", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-snap-unrelated", preferredArea: "Sushi" });
+    const commitmentBefore = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitmentBefore).not.toBeNull();
+    const beforeGet = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-snap-unrelated-1",
+      changes: { contactPhoneSnapshot: "0633333333" },
+    });
+    expect(patched.status).toBe(204);
+
+    const commitmentAfter = await prisma.capacityCommitment.findFirst({ where: { reservationId: created.body.reservationId, status: "Committed" } });
+    expect(commitmentAfter?.commitmentId).toBe(commitmentBefore?.commitmentId);
+    expect(commitmentAfter?.capacityPoolId).toBe(commitmentBefore?.capacityPoolId);
+    expect(commitmentAfter?.status).toBe("Committed");
+
+    const afterGet = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(afterGet.body.reservationDate).toBe(beforeGet.body.reservationDate);
+    expect(afterGet.body.partySize).toBe(beforeGet.body.partySize);
+    expect(afterGet.body.preferredArea).toBe(beforeGet.body.preferredArea);
+    expect(afterGet.body.servicePeriodId).toBe(beforeGet.body.servicePeriodId);
+    expect(afterGet.body.status).toBe(beforeGet.body.status);
+    expect(afterGet.body.tableAssignment).toBe(beforeGet.body.tableAssignment);
   });
 });
 

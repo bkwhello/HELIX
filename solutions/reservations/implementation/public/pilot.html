@@ -430,6 +430,17 @@
         </div>
       </div>
 
+      <div class="row" id="contact-snapshot-row" style="display:none;">
+        <div>
+          <label for="contact-phone-snapshot">Telefoon (zoals vastgelegd bij deze reservering)</label>
+          <input id="contact-phone-snapshot" type="tel" placeholder="bijv. 06-12345678" />
+        </div>
+        <div>
+          <label for="contact-email-snapshot">E-mail (zoals vastgelegd bij deze reservering)</label>
+          <input id="contact-email-snapshot" type="email" placeholder="bijv. jan@voorbeeld.nl" />
+        </div>
+      </div>
+
       <div class="row">
         <div>
           <label for="date">Datum</label>
@@ -742,6 +753,12 @@
     editingReservationId = r.id;
     document.getElementById("guest-name").value = r.contactName || "";
     document.getElementById("guest-phone").value = r.contactId || "";
+    // R1.3-I2 — the reservation's OWN recorded snapshot, not the linked
+    // Contact's current phone/email (guest-phone/guest-email above stay
+    // scoped to selecting/creating the Contact, unchanged by this phase).
+    document.getElementById("contact-phone-snapshot").value = r.contactPhoneSnapshot || "";
+    document.getElementById("contact-email-snapshot").value = r.contactEmailSnapshot || "";
+    document.getElementById("contact-snapshot-row").style.display = "";
     const local = toLocalDateAndTime(r.reservationDate);
     dateInput.value = local.date;
     timeSelect.value = local.time;
@@ -762,6 +779,7 @@
   function exitEditMode() {
     editingReservationId = null;
     createForm.reset();
+    document.getElementById("contact-snapshot-row").style.display = "none";
     formTitle.textContent = "Nieuwe reservering";
     createSubmit.textContent = "Reservering aanmaken";
     cancelEditButton.style.display = "none";
@@ -817,6 +835,15 @@
             changes: {
               contactId: document.getElementById("guest-phone").value.trim(),
               contactName: document.getElementById("guest-name").value.trim(),
+              // R1.3-I2 — same "blank means leave unchanged" convention
+              // already used by notes/preferredArea below: the field is
+              // pre-populated with the CURRENT snapshot on entering edit
+              // mode, so it only differs from that if staff deliberately
+              // typed a correction. Neither snapshot has an explicit-clear
+              // mechanism (unlike arrivedAt's own null) — the handler has
+              // none, so none is exposed here.
+              contactPhoneSnapshot: document.getElementById("contact-phone-snapshot").value.trim() || undefined,
+              contactEmailSnapshot: document.getElementById("contact-email-snapshot").value.trim() || undefined,
               reservationDate: new Date(datetimeValue).toISOString(),
               servicePeriodId,
               partySize: Number(document.getElementById("party-size").value),

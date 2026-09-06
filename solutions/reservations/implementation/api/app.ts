@@ -13,8 +13,8 @@ import { CancelReservationHandler } from "../application/command-handlers/Cancel
 import { CompleteReservationHandler } from "../application/command-handlers/CompleteReservationHandler.js";
 import { ContactRepository, ContactRecord } from "../application/ports/ContactRepository.js";
 import { CreateContactHandler } from "../application/command-handlers/CreateContactHandler.js";
-import { normalizePhone } from "../domain/value-objects/PhoneNumber.js";
-import { normalizeEmail } from "../domain/value-objects/EmailAddress.js";
+import { normalizePhone, PhoneNumber } from "../domain/value-objects/PhoneNumber.js";
+import { normalizeEmail, EmailAddress } from "../domain/value-objects/EmailAddress.js";
 import { ServicePeriodReader } from "../application/ports/ServicePeriodReader.js";
 import { DuplicateReservationChecker } from "../application/ports/DuplicateReservationChecker.js";
 import { ClosingDayStore } from "../application/ports/ClosingDayStore.js";
@@ -343,6 +343,59 @@ export function createApp(deps: AppDependencies): Express {
       return null;
     }
     return { present: true, value };
+  }
+
+  /**
+   * R1.3-I2 — reuses PhoneNumber.create() verbatim: the SAME value object
+   * CreateContactHandler already uses for a new Contact's phone (CAP-D05.01's
+   * one authoritative phone validator, not a second format invented here).
+   * Blank/whitespace-only is treated as "not supplied" — matching
+   * CreateContactHandler's own `request.phone ? PhoneNumber.create(...) :
+   * undefined` convention exactly (a falsy/blank phone is skipped, never
+   * rejected merely for being blank, and never persisted as an empty
+   * string). PhoneNumber.create()'s only failure mode (CAP-D05.01-R01) is
+   * blank — by definition unreachable here since blank is intercepted
+   * first — so in practice a non-blank value can never fail this check;
+   * the call is kept (rather than skipped) so this stays byte-for-byte
+   * the same shape as parseContactEmailSnapshot below, and correct if
+   * PhoneNumber.create()'s own rules ever change.
+   */
+  function parseContactPhoneSnapshot(value: unknown, res: Response): { present: true; value: string } | { present: false } | null {
+    if (value === undefined || value === null) return { present: false };
+    if (typeof value !== "string") {
+      res.status(400).json({ message: "contactPhoneSnapshot must be a string." });
+      return null;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return { present: false };
+    const result = PhoneNumber.create(trimmed);
+    if (!result.ok) {
+      res.status(422).json({ violations: result.violations });
+      return null;
+    }
+    return { present: true, value: result.value.getRaw() };
+  }
+
+  /**
+   * R1.3-I2 — same reasoning as parseContactPhoneSnapshot above, reusing
+   * EmailAddress.create() verbatim. Unlike phone, EmailAddress.create()
+   * DOES reject a non-blank value that isn't a plausible email shape
+   * (CAP-D05.01-R01) — this is where that rejection actually surfaces.
+   */
+  function parseContactEmailSnapshot(value: unknown, res: Response): { present: true; value: string } | { present: false } | null {
+    if (value === undefined || value === null) return { present: false };
+    if (typeof value !== "string") {
+      res.status(400).json({ message: "contactEmailSnapshot must be a string." });
+      return null;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return { present: false };
+    const result = EmailAddress.create(trimmed);
+    if (!result.ok) {
+      res.status(422).json({ violations: result.violations });
+      return null;
+    }
+    return { present: true, value: result.value.getRaw() };
   }
 
   /**
@@ -1396,6 +1449,8 @@ export function createApp(deps: AppDependencies): Express {
           preferredArea?: string;
           contactId?: string;
           contactName?: string;
+          contactPhoneSnapshot?: string;
+          contactEmailSnapshot?: string;
           source?: { category: string; externalReference?: string; importedBy?: string };
           servicePeriodId?: string;
           tableAssignment?: string;
@@ -1411,6 +1466,19 @@ export function createApp(deps: AppDependencies): Express {
       const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
       if (!preferredArea) return;
 
+      // R1.3-I2 — validated BEFORE modifyWithCapacity/ModifyReservationHandler
+      // are ever invoked, using the SAME PhoneNumber/EmailAddress value
+      // objects CreateContactHandler already validates a new Contact's
+      // phone/email with (CAP-D05.01's one authoritative validator — no
+      // second format invented here). A rejected value returns 422 here,
+      // before any handler call, so the whole request — including any
+      // OTHER field in the same `changes` body — is atomically refused;
+      // nothing partially applies.
+      const contactPhoneSnapshot = parseContactPhoneSnapshot(body.changes?.contactPhoneSnapshot, res);
+      if (!contactPhoneSnapshot) return;
+      const contactEmailSnapshot = parseContactEmailSnapshot(body.changes?.contactEmailSnapshot, res);
+      if (!contactEmailSnapshot) return;
+
       const result = await availabilityOrchestrator.modifyWithCapacity({
         commandId: body.commandId,
         correlationId: body.correlationId,
@@ -1422,6 +1490,13 @@ export function createApp(deps: AppDependencies): Express {
           partySize: body.changes?.partySize,
           contactId: body.changes?.contactId,
           contactName: body.changes?.contactName,
+          // ModifyReservationHandler/ReservationAggregate.modify() already
+          // support correcting these two snapshot fields (this route
+          // simply hadn't been updated to carry them through yet) — no
+          // aggregate/handler change was needed, only this route's own
+          // validated field-plumbing above.
+          contactPhoneSnapshot: contactPhoneSnapshot.present ? contactPhoneSnapshot.value : undefined,
+          contactEmailSnapshot: contactEmailSnapshot.present ? contactEmailSnapshot.value : undefined,
           source: body.changes?.source as never,
           servicePeriodId: body.changes?.servicePeriodId,
           tableAssignment: body.changes?.tableAssignment,
