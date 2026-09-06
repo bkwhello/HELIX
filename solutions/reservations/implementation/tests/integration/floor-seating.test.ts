@@ -367,7 +367,142 @@ describe("Cancellation integration (assignment §27) — cancelling a reservatio
 
     const active = await prisma.seatingAssignment.findFirst({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
     expect(active).toBeNull();
+    // R1.5-P1A — cancellation continues to use "GuestCancelled" explicitly
+    // (the release-reason generalization did not silently change this).
+    const released = await prisma.seatingAssignment.findFirstOrThrow({ where: { reservationId } });
+    expect(released.releaseReason).toBe("GuestCancelled");
     const activeCommitment = await prisma.capacityCommitment.findFirst({ where: { reservationId, status: "Committed" } });
     expect(activeCommitment).toBeNull();
+  });
+});
+
+describe("R1.5-P1A — completing a reservation releases its active SeatingAssignment", () => {
+  it("completing an Assigned reservation releases the assignment and its resource links with reason Completed", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const table13 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 13" } });
+    const reservationId = await createReservation({ partySize: 2 });
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table13.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+    if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+
+    const result = await availabilityOrchestrator.completeWithCapacity({
+      commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed",
+    });
+    expect(result.ok).toBe(true);
+
+    const active = await prisma.seatingAssignment.findFirst({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(active).toBeNull();
+    const released = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assigned.assignment.id } });
+    expect(released.status).toBe("Released");
+    expect(released.releaseReason).toBe("Completed");
+    expect(released.releasedBy).toBe(staffActor.id);
+    expect(released.releasedAt).not.toBeNull();
+
+    const resourceLinks = await prisma.seatingAssignmentResource.findMany({ where: { assignmentId: assigned.assignment.id } });
+    expect(resourceLinks.length).toBeGreaterThan(0);
+    for (const link of resourceLinks) expect(link.status).toBe("Released");
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+  });
+
+  it("completing a Seated reservation releases the assignment the same way", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const table15 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 15" } });
+    const reservationId = await createReservation({ partySize: 2 });
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table15.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+    if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+
+    const seated = await seatingOrchestrator.markSeated({ reservationId, actor: staffActor });
+    expect(seated.type).toBe("SEATED");
+
+    const result = await availabilityOrchestrator.completeWithCapacity({
+      commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed",
+    });
+    expect(result.ok).toBe(true);
+
+    const released = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assigned.assignment.id } });
+    expect(released.status).toBe("Released");
+    expect(released.releaseReason).toBe("Completed");
+    expect(released.releasedBy).toBe(staffActor.id);
+    expect(released.releasedAt).not.toBeNull();
+  });
+
+  it("completing a reservation with no active assignment still completes normally (existing completion behavior preserved)", async () => {
+    const { availabilityOrchestrator } = buildFloorHarness(prisma, NOW);
+    const reservationId = await createReservation({ partySize: 2 });
+
+    const result = await availabilityOrchestrator.completeWithCapacity({
+      commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed",
+    });
+    expect(result.ok).toBe(true);
+
+    const anyAssignment = await prisma.seatingAssignment.findFirst({ where: { reservationId } });
+    expect(anyAssignment).toBeNull();
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+  });
+
+  it("an invalid completion transition (missing evidence) is rejected and does not release seating", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const table16 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 16" } });
+    const reservationId = await createReservation({ partySize: 2 });
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table16.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+
+    // Neither `evidence` nor `isManualCompletion` supplied -> CAP-D01.01-R30
+    // rejects this before the aggregate's status ever changes.
+    const result = await availabilityOrchestrator.completeWithCapacity({ commandId: cmd(), reservationId, actor: staffActor });
+    expect(result.ok).toBe(false);
+
+    const stillActive = await prisma.seatingAssignment.findFirst({ where: { reservationId, status: "Assigned" } });
+    expect(stillActive).not.toBeNull();
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Confirmed");
+  });
+
+  it("CapacityCommitment remains byte-for-byte unchanged by completion", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const table11 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 11" } });
+    const reservationId = await createReservation({ partySize: 2 });
+    await prisma.capacityCommitment.create({
+      data: {
+        commitmentId: "p1a-commitment-1",
+        reservationId,
+        capacityPoolId: "Sushi",
+        startTime: new Date("2026-08-20T18:00:00Z"),
+        endTime: new Date("2026-08-20T19:30:00Z"),
+        partySize: 2,
+        status: "Committed",
+        commandId: "p1a-commitment-cmd-1",
+      },
+    });
+    const before = await prisma.capacityCommitment.findUniqueOrThrow({ where: { commitmentId: "p1a-commitment-1" } });
+
+    await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table11.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+
+    const result = await availabilityOrchestrator.completeWithCapacity({
+      commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed",
+    });
+    expect(result.ok).toBe(true);
+
+    const after = await prisma.capacityCommitment.findUniqueOrThrow({ where: { commitmentId: "p1a-commitment-1" } });
+    expect(after).toEqual(before);
   });
 });

@@ -11,6 +11,7 @@ import { CreateReservationHandler } from "../../../application/command-handlers/
 import { CreateContactHandler } from "../../../application/command-handlers/CreateContactHandler.js";
 import { ModifyReservationHandler } from "../../../application/command-handlers/ModifyReservationHandler.js";
 import { CancelReservationHandler } from "../../../application/command-handlers/CancelReservationHandler.js";
+import { CompleteReservationHandler } from "../../../application/command-handlers/CompleteReservationHandler.js";
 import { AvailabilityOrchestrator } from "../../../application/availability/AvailabilityOrchestrator.js";
 import { SeatingOrchestrator } from "../../../application/floor/SeatingOrchestrator.js";
 import { RandomIdGenerator } from "../../../infrastructure/RandomIdGenerator.js";
@@ -63,6 +64,7 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date) {
   );
   const modifyHandler = new ModifyReservationHandler(reservationRepository, eventIdGenerator, clock);
   const cancelHandler = new CancelReservationHandler(reservationRepository, eventIdGenerator, clock);
+  const completeHandler = new CompleteReservationHandler(reservationRepository, eventIdGenerator, clock);
 
   const availabilityOrchestrator = new AvailabilityOrchestrator(
     reservationRepository,
@@ -74,8 +76,13 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date) {
     createHandler,
     modifyHandler,
     cancelHandler,
-    seatingOrchestrator
+    seatingOrchestrator,
+    // servicePeriodService — not exercised by this harness.
+    undefined,
+    // R1.5-P1A — lets completeWithCapacity be exercised end-to-end
+    // against real PostgreSQL, mirroring cancel-with-seating-release above.
+    completeHandler
   );
 
-  return { floorRepository, seatingOrchestrator, availabilityOrchestrator, reservationRepository, capacityRepository, closingDayStore, idGenerator, transactionManager };
+  return { floorRepository, seatingOrchestrator, availabilityOrchestrator, reservationRepository, capacityRepository, closingDayStore, idGenerator, transactionManager, completeHandler };
 }

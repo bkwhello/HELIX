@@ -357,3 +357,78 @@ describe("Ordinary reservation acceptance — unaffected by this increment", () 
     expect(res.status).toBe(201);
   });
 });
+
+describe("POST /reservations/:id/complete — R1.5-P1A: releases the active seating assignment, HTTP response/contract unchanged", () => {
+  it("completing a seated reservation returns 204 exactly as before, and now also frees the table", async () => {
+    const reservationId = await createReservation({ preferredArea: "Sushi", partySize: 2, status: "Confirmed" });
+    await createCapacityCommitment(reservationId, { partySize: 2 });
+
+    const assignRes = await post(sharedAgent, `/reservations/${reservationId}/seating`).send({
+      commandId: "complete-http-assign-cmd-1",
+      resources: [{ tableId: "sushi-table-3" }],
+    });
+    expect(assignRes.status).toBe(201);
+    expect(assignRes.body.status).toBe("Seated");
+
+    const completeRes = await post(sharedAgent, `/reservations/${reservationId}/complete`).send({
+      commandId: "complete-http-cmd-1",
+      isManualCompletion: true,
+      manualCompletionReason: "guest departed",
+    });
+    // Same response contract as before this milestone: 204, no body.
+    expect(completeRes.status).toBe(204);
+
+    const assignment = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assignRes.body.assignmentId } });
+    expect(assignment.status).toBe("Released");
+    expect(assignment.releaseReason).toBe("Completed");
+    expect(assignment.releasedBy).toBe("staff-owner-seating-no-show-test");
+    expect(assignment.releasedAt).not.toBeNull();
+
+    const resourceLink = await prisma.seatingAssignmentResource.findFirstOrThrow({ where: { assignmentId: assignRes.body.assignmentId } });
+    expect(resourceLink.status).toBe("Released");
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+
+    // The now-freed table is claimable again by a brand-new reservation at
+    // the same time/table, proving the resource is genuinely available
+    // again, not just marked Released in isolation.
+    const nextReservationId = await createReservation({ preferredArea: "Sushi", partySize: 2, status: "Confirmed" });
+    const nextAssignRes = await post(sharedAgent, `/reservations/${nextReservationId}/seating`).send({
+      commandId: "complete-http-assign-cmd-2",
+      resources: [{ tableId: "sushi-table-3" }],
+    });
+    expect(nextAssignRes.status).toBe(201);
+  });
+
+  it("completing a reservation with no active assignment returns 204 exactly as before (unaffected deployment/behavior)", async () => {
+    const reservationId = await createReservation({ preferredArea: "Sushi", partySize: 2, status: "Confirmed" });
+
+    const completeRes = await post(sharedAgent, `/reservations/${reservationId}/complete`).send({
+      commandId: "complete-http-cmd-2",
+      isManualCompletion: true,
+      manualCompletionReason: "guest departed",
+    });
+    expect(completeRes.status).toBe(204);
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+  });
+
+  it("an invalid completion (missing evidence) still returns 422 exactly as before, and does not release seating", async () => {
+    const reservationId = await createReservation({ preferredArea: "Sushi", partySize: 2, status: "Confirmed" });
+
+    const assignRes = await post(sharedAgent, `/reservations/${reservationId}/seating`).send({
+      commandId: "complete-http-assign-cmd-3",
+      resources: [{ tableId: "sushi-table-4" }],
+    });
+    expect(assignRes.status).toBe(201);
+
+    const completeRes = await post(sharedAgent, `/reservations/${reservationId}/complete`).send({ commandId: "complete-http-cmd-3" });
+    expect(completeRes.status).toBe(422);
+
+    const assignment = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assignRes.body.assignmentId } });
+    expect(assignment.status).toBe("Seated");
+    expect(assignment.releaseReason).toBeNull();
+  });
+});

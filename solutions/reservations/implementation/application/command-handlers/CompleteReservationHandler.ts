@@ -5,6 +5,7 @@ import { ReservationRepository } from "../../domain/repositories/ReservationRepo
 import { CompletionEvidence } from "../../domain/value-objects/CompletionEvidence.js";
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
+import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 
 export interface CompleteReservationRequest {
   readonly commandId: string;
@@ -15,6 +16,8 @@ export interface CompleteReservationRequest {
   readonly evidence?: CompletionEvidence;
   readonly isManualCompletion?: boolean;
   readonly manualCompletionReason?: string;
+  /** R1.5-P1A — see CreateReservationRequest.tx / CancelReservationRequest.tx for the same pattern. */
+  readonly tx?: TransactionContext;
 }
 
 export class CompleteReservationHandler {
@@ -57,6 +60,7 @@ export class CompleteReservationHandler {
       aggregate,
       expectedVersion: aggregate.getVersion(),
       commandId: request.commandId,
+      tx: request.tx,
     });
     if (saveResult.type === "CONCURRENCY_CONFLICT") {
       return fail([violation("CAP-D01.01-R05", "The reservation was modified concurrently by another command. Reload and retry.")]);

@@ -127,7 +127,7 @@ describe("Failure injection — seating mutation before an ultimately-failing tr
     // this same transaction) does not survive the rollback.
     await expect(
       transactionManager.runInTransaction(async (tx) => {
-        await seatingOrchestrator.releaseActiveAssignmentForReservation(reservationId, staffActor.id, tx);
+        await seatingOrchestrator.releaseActiveAssignmentForReservation(reservationId, staffActor.id, "GuestCancelled", tx);
         throw new Error("simulated failure after seating release, before reservation update");
       })
     ).rejects.toThrow("simulated failure");
@@ -135,6 +135,62 @@ describe("Failure injection — seating mutation before an ultimately-failing tr
     const stillActive = await floorRepository.findActiveAssignmentByReservationId(reservationId);
     expect(stillActive).not.toBeNull();
     expect(stillActive?.status).toBe("Assigned");
+  });
+});
+
+describe("Failure injection — R1.5-P1A completion seating release, forced failure in the same transaction", () => {
+  it("a seating release (reason Completed) that runs, followed by a forced failure in the same transaction, is fully rolled back — the SeatingAssignment remains Assigned, not Released", async () => {
+    const { seatingOrchestrator, floorRepository, transactionManager } = buildFloorHarness(prisma, NOW);
+    const table10 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 10" } });
+    const reservationId = await createReservation({ partySize: 4 });
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 4,
+      resources: [{ tableId: table10.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+
+    // Mirrors AvailabilityOrchestrator.completeWithCapacity's exact
+    // integration shape (release seating with reason "Completed", THEN
+    // the reservation write) — but the "reservation write" here is a
+    // deliberately injected failure, to prove the release alone (already
+    // executed earlier in this same transaction) does not survive rollback.
+    await expect(
+      transactionManager.runInTransaction(async (tx) => {
+        await seatingOrchestrator.releaseActiveAssignmentForReservation(reservationId, staffActor.id, "Completed", tx);
+        throw new Error("simulated failure after seating release, before reservation completion");
+      })
+    ).rejects.toThrow("simulated failure");
+
+    const stillActive = await floorRepository.findActiveAssignmentByReservationId(reservationId);
+    expect(stillActive).not.toBeNull();
+    expect(stillActive?.status).toBe("Assigned");
+    expect(stillActive?.releaseReason).toBeNull();
+  });
+
+  it("AvailabilityOrchestrator.completeWithCapacity itself: an invalid completion transition rolls back its own already-executed seating release, atomically", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const table12 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 12" } });
+    const reservationId = await createReservation({ partySize: 4 });
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 4,
+      resources: [{ tableId: table12.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+
+    // No `evidence` and no `isManualCompletion` -> CAP-D01.01-R30 rejects
+    // this INSIDE the same transaction, AFTER completeWithCapacity's own
+    // seating release already ran — proving that release rolls back too,
+    // through the real production code path (not a synthetic throw).
+    const result = await availabilityOrchestrator.completeWithCapacity({ commandId: cmd(), reservationId, actor: staffActor });
+    expect(result.ok).toBe(false);
+
+    const active = await prisma.seatingAssignment.findFirst({ where: { reservationId, status: "Assigned" } });
+    expect(active).not.toBeNull();
+    expect(active?.releaseReason).toBeNull();
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Confirmed");
   });
 });
 

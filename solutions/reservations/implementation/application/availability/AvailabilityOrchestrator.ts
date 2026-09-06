@@ -37,6 +37,7 @@
 import { CreateReservationHandler, CreateReservationRequest, CreateReservationOutcome, toOutcome } from "../command-handlers/CreateReservationHandler.js";
 import { ModifyReservationHandler, ModifyReservationRequest } from "../command-handlers/ModifyReservationHandler.js";
 import { CancelReservationHandler, CancelReservationRequest } from "../command-handlers/CancelReservationHandler.js";
+import { CompleteReservationHandler, CompleteReservationRequest } from "../command-handlers/CompleteReservationHandler.js";
 import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
 import { CapacityRepository } from "../../domain/repositories/CapacityRepository.js";
 import { TransactionManager } from "../ports/TransactionManager.js";
@@ -51,7 +52,7 @@ import { evaluateTeppanyakiSelfServicePacing } from "../../domain/availability/T
 import { AvailabilityOutcome } from "../../domain/availability/AvailabilityResult.js";
 import { toLocalServiceDate } from "../../domain/availability/ServiceTime.js";
 import { sortLockResources } from "../../domain/availability/LockKey.js";
-import { RuleViolation, violation } from "../../domain/shared/Result.js";
+import { Result, ok, fail, RuleViolation, violation } from "../../domain/shared/Result.js";
 import { SeatingOrchestrator, ResourceSelector } from "../floor/SeatingOrchestrator.js";
 import { SeatingAssignment } from "../../domain/floor/SeatingAssignment.js";
 import { Actor, ActorKind } from "../../domain/value-objects/Actor.js";
@@ -165,7 +166,17 @@ export class AvailabilityOrchestrator {
      * never a silent, partial enforcement. `api/server.ts` (the actual
      * runtime entry point) always supplies a real instance.
      */
-    private readonly servicePeriodService?: ServicePeriodService
+    private readonly servicePeriodService?: ServicePeriodService,
+    /**
+     * R1.5-P1A — optional and LAST, same "add capability, never break a
+     * caller" precedent as `seatingOrchestrator`/`servicePeriodService`
+     * above. Only `completeWithCapacity` uses this; every other method on
+     * this class is unaffected by whether it is supplied. `api/app.ts`
+     * always supplies a real instance when `deps.capacity` is present —
+     * see that file's `completeWithCapacity`-vs-`completeHandler.handle`
+     * branch in the `/reservations/:id/complete` route.
+     */
+    private readonly completeHandler?: CompleteReservationHandler
   ) {}
 
   /**
@@ -696,7 +707,7 @@ export class AvailabilityOrchestrator {
         // a no-op for any caller that hasn't wired a SeatingOrchestrator
         // in (every pre-R1.5 call site).
         if (this.seatingOrchestrator) {
-          await this.seatingOrchestrator.releaseActiveAssignmentForReservation(request.reservationId, request.actor.id, tx);
+          await this.seatingOrchestrator.releaseActiveAssignmentForReservation(request.reservationId, request.actor.id, "GuestCancelled", tx);
         }
 
         if (snapshot) {
@@ -732,6 +743,57 @@ export class AvailabilityOrchestrator {
     } catch (err) {
       if (err instanceof ReservationCommandRaceLost) return { type: "CANCELLED" };
       if (err instanceof OrchestratedValidationFailure) return { type: "VALIDATION_FAILED", violations: err.violations };
+      throw err;
+    }
+  }
+
+  /**
+   * R1.5-P1A — closes the gap `R1_5_FLOOR_SEATING_FINAL_ARCHITECTURE.md`
+   * never scoped: a normal completion left any active SeatingAssignment
+   * permanently occupied (no expiry mechanism exists in this codebase),
+   * the one path — besides Cancel/No-show — that should free a table for
+   * a subsequent turn. Deliberately mirrors `cancelWithCapacity`'s exact
+   * shape: acquire the SAME reservation-scoped advisory lock first
+   * (serializing against any concurrent Move/No-show/Cancel/Modify on
+   * this reservation, no new locking primitive), release any active
+   * assignment with reason "Completed" (an enum value that already
+   * existed, unused, until this milestone), then run
+   * CompleteReservationHandler in the SAME transaction — a rejected
+   * completion (`OrchestratedValidationFailure`) rolls back the seating
+   * release too, exactly like a rejected cancel already does.
+   *
+   * Explicitly does NOT touch `CapacityCommitment` — out of scope for
+   * R1.5-P1A (see that milestone's authorization: "early-completion
+   * capacity behavior is explicitly deferred").
+   */
+  async completeWithCapacity(request: CompleteReservationRequest): Promise<Result<void>> {
+    if (!this.completeHandler) {
+      throw new Error("AvailabilityOrchestrator.completeWithCapacity called without a completeHandler wired in — a composition error, not a runtime outcome.");
+    }
+    const completeHandler = this.completeHandler;
+
+    const alreadyApplied = await this.reservationRepository.findByCommandId(request.commandId);
+    if (alreadyApplied) return ok(undefined);
+
+    try {
+      await this.transactionManager.runInTransaction(async (tx) => {
+        // Tier 1, always first — same reservation-scoped lock family
+        // cancelWithCapacity/moveSeating/markSeated/releaseNoShow all use,
+        // so this serializes against every one of them on this exact
+        // reservation.
+        await this.capacityRepository.acquireReservationLock({ reservationId: request.reservationId, tx });
+
+        if (this.seatingOrchestrator) {
+          await this.seatingOrchestrator.releaseActiveAssignmentForReservation(request.reservationId, request.actor.id, "Completed", tx);
+        }
+
+        const completeResult = await completeHandler.handle({ ...request, tx });
+        if (!completeResult.ok) throw new OrchestratedValidationFailure(completeResult.violations);
+      });
+      return ok(undefined);
+    } catch (err) {
+      if (err instanceof ReservationCommandRaceLost) return ok(undefined);
+      if (err instanceof OrchestratedValidationFailure) return fail(err.violations);
       throw err;
     }
   }

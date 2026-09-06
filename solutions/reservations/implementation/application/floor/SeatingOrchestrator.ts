@@ -270,16 +270,20 @@ export class SeatingOrchestrator {
 
   /**
    * tx-scoped helper — no own transaction, no lock acquisition. Called by
-   * AvailabilityOrchestrator.cancelWithCapacity, which has ALREADY
-   * acquired the reservation-scoped lock (Tier 1) as its own first step
-   * before this is ever invoked — see final architecture §20 ("cancel
-   * ... one transaction") and assignment §27 ("reservation cancellation
-   * must leave zero active SeatingAssignments").
+   * AvailabilityOrchestrator.cancelWithCapacity and .completeWithCapacity
+   * (R1.5-P1A), both of which have ALREADY acquired the reservation-scoped
+   * lock (Tier 1) as their own first step before this is ever invoked —
+   * see final architecture §20 ("cancel ... one transaction") and
+   * assignment §27 ("reservation cancellation must leave zero active
+   * SeatingAssignments"). `reason` is caller-supplied (R1.5-P1A
+   * generalization) rather than hardcoded, so each caller states its own
+   * intent explicitly — cancellation passes "GuestCancelled", completion
+   * passes "Completed"; this method itself picks no default.
    */
-  async releaseActiveAssignmentForReservation(reservationId: string, actorId: string, tx: TransactionContext): Promise<void> {
+  async releaseActiveAssignmentForReservation(reservationId: string, actorId: string, reason: ReleaseReason, tx: TransactionContext): Promise<void> {
     const current = await this.floorRepository.findActiveAssignmentByReservationId(reservationId, tx);
     if (!current) return;
-    await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Released", releaseReason: "GuestCancelled", actorId, tx });
+    await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Released", releaseReason: reason, actorId, tx });
   }
 
   private async acquireReservationLock(reservationId: string, tx: TransactionContext): Promise<void> {

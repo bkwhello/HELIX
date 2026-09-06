@@ -302,7 +302,11 @@ export function createApp(deps: AppDependencies): Express {
         modifyHandler,
         cancelHandler,
         seatingOrchestrator,
-        deps.capacity.servicePeriodService
+        deps.capacity.servicePeriodService,
+        // R1.5-P1A — lets /reservations/:id/complete route through
+        // completeWithCapacity below, releasing any active SeatingAssignment
+        // atomically with completion, whenever capacity infra is present.
+        completeHandler
       )
     : null;
 
@@ -1288,7 +1292,7 @@ export function createApp(deps: AppDependencies): Express {
     if (!req.staffPrincipal) return;
     const actor = principalToActor(req.staffPrincipal);
 
-    const result = await completeHandler.handle({
+    const completeRequest = {
       commandId: body.commandId,
       correlationId: body.correlationId,
       causationId: body.causationId,
@@ -1297,7 +1301,14 @@ export function createApp(deps: AppDependencies): Express {
       evidence: body.evidence ? { ...body.evidence, recordedAt: new Date(body.evidence.recordedAt) } : undefined,
       isManualCompletion: body.isManualCompletion,
       manualCompletionReason: body.manualCompletionReason,
-    });
+    };
+    // R1.5-P1A — when capacity infra is wired, complete through
+    // AvailabilityOrchestrator.completeWithCapacity so any active
+    // SeatingAssignment is released atomically with the completion
+    // itself; a deployment with no capacity infra (availabilityOrchestrator
+    // null) keeps the exact byte-for-byte prior behavior, since it never
+    // had seating infra to release anything from anyway.
+    const result = availabilityOrchestrator ? await availabilityOrchestrator.completeWithCapacity(completeRequest) : await completeHandler.handle(completeRequest);
     if (!result.ok) {
       res.status(422).json({ violations: result.violations });
       return;

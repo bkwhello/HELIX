@@ -432,3 +432,159 @@ describe("Scenario M2 — mark-seated vs move race: a pre-assigned reservation i
     }
   }, 60_000);
 });
+
+/**
+ * R1.5-P1A — both operations serialize on the SAME Tier-1 reservation
+ * lock `completeWithCapacity` now acquires (identical family Move/No-show/
+ * Cancel already use), so there is no gap where either side observes a
+ * half-applied state. Which side's release reason ends up on the final
+ * row depends on lock-acquisition order — that is an accepted, expected
+ * outcome (not a bug): whichever operation's transaction commits first
+ * "wins" the active assignment; the other then observes either no active
+ * assignment (a legitimate no-op) or the winner's newly-created one.
+ */
+describe("Scenario P — Complete vs Move race: a seated reservation is completed while staff concurrently moves it", () => {
+  it("final state is coherent regardless of which side acquires the reservation lock first", async () => {
+    const tableA = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 1" } });
+    const tableB = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 2" } });
+    const reservationId = await createReservation({ partySize: 2 });
+    const { seatingOrchestrator: orchA } = buildFloorHarness(prisma, NOW);
+    const { availabilityOrchestrator: availB, seatingOrchestrator: seatingB } = buildFloorHarness(prismaB, NOW);
+
+    const assigned = await orchA.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: tableA.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+
+    const [completeResult, moveResult] = await Promise.all([
+      availB.completeWithCapacity({ commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed" }),
+      seatingB.moveSeating({ commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2, resources: [{ tableId: tableB.id }], actor: staffActor }),
+    ]);
+
+    // Nothing else touches Reservation.version, so completion itself is
+    // never rejected by this race — only Move's outcome is order-dependent.
+    expect(completeResult.ok).toBe(true);
+    expect(["MOVED", "NO_ACTIVE_ASSIGNMENT"]).toContain(moveResult.type);
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+
+    const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(activeAssignments).toHaveLength(0);
+    const activeResources = await prisma.seatingAssignmentResource.findMany({
+      where: { OR: [{ tableId: tableA.id }, { tableId: tableB.id }], status: { in: ["Assigned", "Seated"] } },
+    });
+    expect(activeResources).toHaveLength(0);
+
+    // Exactly one row if Complete won the lock (nothing left for Move to
+    // find), exactly two if Move won first (its new claim is then the one
+    // Complete releases) — never zero, never three or more.
+    const allAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+    expect(allAssignments.length === 1 || allAssignments.length === 2).toBe(true);
+    for (const row of allAssignments) expect(row.status).toBe("Released");
+  });
+
+  it("5 iterations, 0 integrity flakes — no active assignment or duplicate/corrupted row ever survives, whichever side wins the lock", async () => {
+    const tableA = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 3" } });
+    const tableB = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 5" } });
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const reservationId = await createReservation({ partySize: 2 });
+      const { seatingOrchestrator: orchA } = buildFloorHarness(prisma, NOW);
+      const { availabilityOrchestrator: availB, seatingOrchestrator: seatingB } = buildFloorHarness(prismaB, NOW);
+
+      const assigned = await orchA.assignSeating({
+        commandId: `rep-completemove-pre-${i}`, reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+        resources: [{ tableId: tableA.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+      });
+      expect(assigned.type, `iteration ${i}`).toBe("ASSIGNED");
+
+      const [completeResult, moveResult] = await Promise.all([
+        availB.completeWithCapacity({ commandId: `rep-completemove-complete-${i}`, reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed" }),
+        seatingB.moveSeating({ commandId: `rep-completemove-move-${i}`, reservationId, requestedAreaId: "Sushi", requestedPartySize: 2, resources: [{ tableId: tableB.id }], actor: staffActor }),
+      ]);
+      expect(completeResult.ok, `iteration ${i}`).toBe(true);
+      expect(["MOVED", "NO_ACTIVE_ASSIGNMENT"], `iteration ${i}`).toContain(moveResult.type);
+
+      const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+      expect(reservation.status, `iteration ${i}: Completed`).toBe("Completed");
+
+      const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+      expect(activeAssignments, `iteration ${i}: no active assignment survives`).toHaveLength(0);
+
+      const allAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+      expect(allAssignments.length === 1 || allAssignments.length === 2, `iteration ${i}: 1 or 2 rows, never corrupted`).toBe(true);
+      for (const row of allAssignments) expect(row.status, `iteration ${i}`).toBe("Released");
+    }
+  }, 60_000);
+});
+
+describe("Scenario Q — Complete vs No-show race: a seated reservation is completed while staff concurrently releases it as a No-Show", () => {
+  it("final state is coherent regardless of which side acquires the reservation lock first", async () => {
+    const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 9" } });
+    const reservationId = await createReservation({ partySize: 2 });
+    const { seatingOrchestrator: orchA } = buildFloorHarness(prisma, NOW);
+    const { availabilityOrchestrator: availB, seatingOrchestrator: seatingB } = buildFloorHarness(prismaB, NOW);
+
+    const assigned = await orchA.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    expect(assigned.type).toBe("ASSIGNED");
+
+    const [completeResult, noShowResult] = await Promise.all([
+      availB.completeWithCapacity({ commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed" }),
+      seatingB.releaseNoShow({ reservationId, actor: staffActor }),
+    ]);
+
+    expect(completeResult.ok).toBe(true);
+    expect(["RELEASED", "NO_ACTIVE_ASSIGNMENT"]).toContain(noShowResult.type);
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+
+    // Exactly one assignment row ever exists here (no new claim is ever
+    // created by either operation) — never duplicated, always Released,
+    // and its release reason reflects whichever operation actually
+    // acquired the lock first (either is a valid, non-corrupted outcome).
+    const allAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+    expect(allAssignments).toHaveLength(1);
+    expect(allAssignments[0]?.status).toBe("Released");
+    expect(["Completed", "NoShow"]).toContain(allAssignments[0]?.releaseReason);
+
+    const activeResources = await prisma.seatingAssignmentResource.findMany({ where: { tableId: table.id, status: { in: ["Assigned", "Seated"] } } });
+    expect(activeResources).toHaveLength(0);
+  });
+
+  it("5 iterations, 0 integrity flakes — no active assignment or duplicate/corrupted row ever survives, whichever side wins the lock", async () => {
+    const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 11" } });
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const reservationId = await createReservation({ partySize: 2 });
+      const { seatingOrchestrator: orchA } = buildFloorHarness(prisma, NOW);
+      const { availabilityOrchestrator: availB, seatingOrchestrator: seatingB } = buildFloorHarness(prismaB, NOW);
+
+      const assigned = await orchA.assignSeating({
+        commandId: `rep-completenoshow-pre-${i}`, reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+        resources: [{ tableId: table.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+      });
+      expect(assigned.type, `iteration ${i}`).toBe("ASSIGNED");
+
+      const [completeResult, noShowResult] = await Promise.all([
+        availB.completeWithCapacity({ commandId: `rep-completenoshow-complete-${i}`, reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed" }),
+        seatingB.releaseNoShow({ reservationId, actor: staffActor }),
+      ]);
+      expect(completeResult.ok, `iteration ${i}`).toBe(true);
+      expect(["RELEASED", "NO_ACTIVE_ASSIGNMENT"], `iteration ${i}`).toContain(noShowResult.type);
+
+      const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+      expect(reservation.status, `iteration ${i}: Completed`).toBe("Completed");
+
+      const allAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+      expect(allAssignments, `iteration ${i}: exactly one row, never duplicated`).toHaveLength(1);
+      expect(allAssignments[0]?.status, `iteration ${i}`).toBe("Released");
+      expect(["Completed", "NoShow"], `iteration ${i}`).toContain(allAssignments[0]?.releaseReason);
+    }
+  }, 60_000);
+});
