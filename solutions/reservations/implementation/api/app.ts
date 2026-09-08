@@ -1548,6 +1548,17 @@ export function createApp(deps: AppDependencies): Express {
 
       switch (result.type) {
         case "MODIFIED":
+          // R1.5-P1B — a material automatic seating release must not be
+          // hidden behind an undifferentiated 204: whenever this Modify
+          // went through the capacity-relevant path (seatingDisposition
+          // is defined), report it via 200 + a small JSON body. A
+          // non-capacity-relevant Modify (seatingDisposition undefined —
+          // modifyWithoutCapacityChange never sets it) keeps the exact
+          // prior 204-no-body contract, byte-for-byte.
+          if (result.seatingDisposition !== undefined) {
+            res.status(200).json({ type: "MODIFIED", seatingDisposition: result.seatingDisposition });
+            return;
+          }
           res.status(204).send();
           return;
         case "CAPACITY_UNAVAILABLE":

@@ -3,6 +3,7 @@ import { createTestPrismaClient, truncateReservationDomainTables, truncateSeatin
 import { buildFloorHarness } from "./support/floorTestHarness.js";
 import { seedFloor } from "../../ops/floor/seedFloor.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
+import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 
 /**
  * CAP-D04.01 — failure-injection evidence (R1.5 implementation assignment
@@ -230,5 +231,97 @@ describe("Failure injection — AvailabilityOrchestrator.cancelWithCapacity's re
 
     const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
     expect(reservation.status).toBe("Cancelled");
+  });
+});
+
+describe("Failure injection — R1.5-P1B Modify seating revalidation, forced failure in the same transaction", () => {
+  it("a release-and-recreate that runs, followed by a forced failure in the same transaction, is fully rolled back — the ORIGINAL SeatingAssignment survives Assigned, no replacement persists", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator, capacityRepository, transactionManager } = buildFloorHarness(prisma, NOW);
+    const table13 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 13" } });
+
+    const created = await availabilityOrchestrator.createWithCapacity({
+      commandId: cmd(), servicePeriodId: "sp-floor-fi",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
+      reservationDate: new Date("2026-08-20T18:00:00Z"), partySize: 2,
+      source: { category: ReservationSourceCategory.Telephone }, preferredArea: "Sushi", actor: staffActor,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const reservationId = created.outcome.reservationId;
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table13.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+
+    // Mirrors AvailabilityOrchestrator.modifyWithCapacity's exact
+    // integration shape (Tier 1 lock, then revalidateOrReleaseForModify,
+    // which itself releases the old claim and recreates a new one) — but
+    // the step after it here is a deliberately injected failure, to prove
+    // that release-and-recreate (already fully executed earlier in this
+    // same transaction) does not survive rollback.
+    await expect(
+      transactionManager.runInTransaction(async (tx) => {
+        await capacityRepository.acquireReservationLock({ reservationId, tx });
+        const seatingResult = await seatingOrchestrator.revalidateOrReleaseForModify({
+          reservationId, actor: staffActor, commandId: cmd(),
+          oldAreaId: "Sushi", newAreaId: "Sushi", newPartySize: 2,
+          newStart: new Date("2026-08-20T20:00:00Z"), newEnd: new Date("2026-08-20T21:30:00Z"),
+          tx,
+        });
+        expect(seatingResult.type).toBe("RETAINED"); // the release-and-recreate DID run
+        throw new Error("simulated failure after seating release-and-recreate, before reservation/capacity commit");
+      })
+    ).rejects.toThrow("simulated failure");
+
+    const original = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assigned.assignment.id } });
+    expect(original.status).toBe("Assigned"); // NOT Released — the release itself rolled back
+    expect(original.releaseReason).toBeNull();
+    expect(original.startTime.toISOString()).toBe("2026-08-20T18:00:00.000Z"); // original interval, untouched
+
+    const all = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+    expect(all).toHaveLength(1); // the recreated replacement row never persisted
+  });
+
+  it("AvailabilityOrchestrator.modifyWithCapacity itself: an invalid modification rolls back its own already-executed seating release-and-recreate, atomically", async () => {
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    const table14 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 15" } });
+
+    const created = await availabilityOrchestrator.createWithCapacity({
+      commandId: cmd(), servicePeriodId: "sp-floor-fi",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
+      reservationDate: new Date("2026-08-20T18:00:00Z"), partySize: 2,
+      source: { category: ReservationSourceCategory.Telephone }, preferredArea: "Sushi", actor: staffActor,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const reservationId = created.outcome.reservationId;
+
+    const assigned = await seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2,
+      resources: [{ tableId: table14.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+
+    // A date/time change with NO isServicePeriodStillValid confirmation
+    // and no revalidated Service Period supplied -> CAP-D01.01-R20 rejects
+    // this INSIDE the same transaction, AFTER modifyWithCapacity's own
+    // seating revalidation already ran (it runs before the Reservation
+    // write, per the approved transaction sequence) — proving that
+    // release-and-recreate rolls back too, through the real production
+    // code path, not a synthetic throw.
+    const result = await availabilityOrchestrator.modifyWithCapacity({
+      commandId: cmd(), reservationId, actor: staffActor,
+      changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+    });
+    expect(result.type).toBe("VALIDATION_FAILED");
+
+    const original = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assigned.assignment.id } });
+    expect(original.status).toBe("Assigned");
+    expect(original.releaseReason).toBeNull();
+    const all = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+    expect(all).toHaveLength(1);
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.reservationDate.toISOString()).toBe("2026-08-20T18:00:00.000Z"); // untouched
   });
 });

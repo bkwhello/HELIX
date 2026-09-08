@@ -113,8 +113,16 @@ export type ImmediateWalkInResult =
   | { readonly type: "CREATED_UNSEATED"; readonly outcome: CreateReservationOutcome }
   | { readonly type: "NOT_CREATED"; readonly result: Exclude<CreateWithCapacityResult, { type: "CREATED" }> };
 
+/**
+ * R1.5-P1B — present only for the capacity-relevant path (an active
+ * assignment was considered at all); absent (undefined) for
+ * modifyWithoutCapacityChange, whose response contract is deliberately
+ * unchanged (still 204, no body) — see api/app.ts's PATCH route.
+ */
+export type SeatingDisposition = "UNCHANGED" | "RETAINED" | "RELEASED" | "NO_ACTIVE_ASSIGNMENT";
+
 export type ModifyWithCapacityResult =
-  | { readonly type: "MODIFIED" }
+  | { readonly type: "MODIFIED"; readonly seatingDisposition?: SeatingDisposition }
   | { readonly type: "CAPACITY_UNAVAILABLE"; readonly availability: AvailabilityOutcome }
   | { readonly type: "BOOKING_POLICY_REJECTED"; readonly policy: BookingPolicyOutcome }
   /** The reservation has no active CAP-D02.03 commitment to move (e.g. it predates capacity tracking, or its area is not a managed pool) — this MVA does not attempt to retrofit one. See CAP_D02_03_IMPLEMENTATION_REPORT, Known Limitations. */
@@ -531,7 +539,7 @@ export class AvailabilityOrchestrator {
       | { readonly kind: "NO_ACTIVE_COMMITMENT" }
       | { readonly kind: "BOOKING_POLICY_REJECTED"; readonly policy: BookingPolicyOutcome }
       | { readonly kind: "CAPACITY_UNAVAILABLE"; readonly availability: AvailabilityOutcome }
-      | { readonly kind: "MODIFIED" };
+      | { readonly kind: "MODIFIED"; readonly seatingDisposition: SeatingDisposition };
 
     try {
       const work: ModifyWork = await this.transactionManager.runInTransaction(async (tx) => {
@@ -634,6 +642,31 @@ export class AvailabilityOrchestrator {
           return { kind: "BOOKING_POLICY_REJECTED", policy: pacing };
         }
 
+        // R1.5-P1B — steps 3-7 of the approved transaction sequence:
+        // resolve/revalidate/release-or-retain seating BEFORE the
+        // CapacityCommitment write below, now that every capacity/
+        // booking-policy/pacing check above has passed for the new
+        // facts. Tier 3 (seating-resource locks), acquired inside
+        // revalidateOrReleaseForModify, always comes after Tier 2
+        // (capacity locks, already acquired above) — never before.
+        // Optional dependency: a no-op ("NO_ACTIVE_ASSIGNMENT") for any
+        // caller that hasn't wired a SeatingOrchestrator in.
+        let seatingDisposition: SeatingDisposition = "NO_ACTIVE_ASSIGNMENT";
+        if (this.seatingOrchestrator) {
+          const seatingResult = await this.seatingOrchestrator.revalidateOrReleaseForModify({
+            reservationId: request.reservationId,
+            actor: request.actor,
+            commandId: request.commandId,
+            oldAreaId: currentPoolRaw,
+            newAreaId: newPool,
+            newPartySize,
+            newStart,
+            newEnd,
+            tx,
+          });
+          seatingDisposition = seatingResult.type;
+        }
+
         await this.capacityRepository.updateStatus({ commitmentId: existingCommitment.commitmentId, status: "Superseded", tx });
         const newCommitmentId = this.idGenerator.generate();
         await this.capacityRepository.create({
@@ -652,12 +685,13 @@ export class AvailabilityOrchestrator {
         const modifyResult = await this.modifyHandler.handle({ ...request, tx });
         if (!modifyResult.ok) throw new OrchestratedValidationFailure(modifyResult.violations);
 
-        return { kind: "MODIFIED" };
+        return { kind: "MODIFIED", seatingDisposition };
       });
 
       if (work.kind === "CAPACITY_UNAVAILABLE") return { type: "CAPACITY_UNAVAILABLE", availability: work.availability };
       if (work.kind === "BOOKING_POLICY_REJECTED") return { type: "BOOKING_POLICY_REJECTED", policy: work.policy };
       if (work.kind === "NO_ACTIVE_COMMITMENT") return { type: "NO_ACTIVE_COMMITMENT" };
+      if (work.kind === "MODIFIED") return { type: "MODIFIED", seatingDisposition: work.seatingDisposition };
       return { type: "MODIFIED" };
     } catch (err) {
       if (err instanceof ReservationCommandRaceLost) return { type: "MODIFIED" };

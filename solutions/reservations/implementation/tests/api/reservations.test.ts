@@ -828,7 +828,12 @@ describe("PATCH /availability/reservations/:id — changing the preferred area a
       commandId: "http-cmd-area-edit-1",
       changes: { preferredArea: "Teppanyaki" },
     });
-    expect(switched.status).toBe(204);
+    // R1.5-P1B — a capacity-relevant modification now returns 200 with a
+    // seatingDisposition, not the bare 204 non-capacity-relevant edits
+    // still get; this deployment has no floor infra wired at all, so
+    // there was never any seating to consider — NO_ACTIVE_ASSIGNMENT.
+    expect(switched.status).toBe(200);
+    expect(switched.body).toEqual({ type: "MODIFIED", seatingDisposition: "NO_ACTIVE_ASSIGNMENT" });
 
     const after = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
     expect(after.body.preferredArea).toBe("Teppanyaki");

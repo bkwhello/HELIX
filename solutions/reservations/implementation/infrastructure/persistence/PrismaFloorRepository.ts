@@ -240,6 +240,7 @@ export class PrismaFloorRepository implements FloorRepository {
       readonly endTime: Date;
       readonly assignedBy: string;
       readonly commandId: string;
+      readonly seatedAt?: Date | null;
     };
     readonly resources: readonly { readonly tableId: string | null; readonly seatId: string | null }[];
     readonly tx: TransactionContext;
@@ -254,7 +255,10 @@ export class PrismaFloorRepository implements FloorRepository {
         endTime: input.assignment.endTime,
         assignedBy: input.assignment.assignedBy,
         commandId: input.assignment.commandId,
-        seatedAt: input.assignment.status === "Seated" ? new Date() : null,
+        // R1.5-P1B — `seatedAt` explicitly supplied (even `null`) wins,
+        // verbatim, over the pre-existing default below — see the port's
+        // own doc comment (FloorRepository.createAssignment).
+        seatedAt: input.assignment.seatedAt !== undefined ? input.assignment.seatedAt : input.assignment.status === "Seated" ? new Date() : null,
         resources: {
           create: input.resources.map((r) => ({
             tableId: r.tableId,

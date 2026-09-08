@@ -9,6 +9,7 @@ import { PrismaContactRepository } from "../../../infrastructure/persistence/Pri
 import { UnvalidatedServicePeriodReader } from "../../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { CreateReservationHandler } from "../../../application/command-handlers/CreateReservationHandler.js";
 import { CreateContactHandler } from "../../../application/command-handlers/CreateContactHandler.js";
+import { ConfirmReservationHandler } from "../../../application/command-handlers/ConfirmReservationHandler.js";
 import { ModifyReservationHandler } from "../../../application/command-handlers/ModifyReservationHandler.js";
 import { CancelReservationHandler } from "../../../application/command-handlers/CancelReservationHandler.js";
 import { CompleteReservationHandler } from "../../../application/command-handlers/CompleteReservationHandler.js";
@@ -65,6 +66,11 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date) {
   const modifyHandler = new ModifyReservationHandler(reservationRepository, eventIdGenerator, clock);
   const cancelHandler = new CancelReservationHandler(reservationRepository, eventIdGenerator, clock);
   const completeHandler = new CompleteReservationHandler(reservationRepository, eventIdGenerator, clock);
+  // R1.5-P1B — needed by tests that must reach a real "Confirmed" status
+  // (e.g. before Complete, which CAP-D01.01-R29 only allows from
+  // Confirmed) when exercising the authoritative createWithCapacity path,
+  // which leaves a reservation "Proposed" until explicitly confirmed.
+  const confirmHandler = new ConfirmReservationHandler(reservationRepository, eventIdGenerator, clock);
 
   const availabilityOrchestrator = new AvailabilityOrchestrator(
     reservationRepository,
@@ -84,5 +90,5 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date) {
     completeHandler
   );
 
-  return { floorRepository, seatingOrchestrator, availabilityOrchestrator, reservationRepository, capacityRepository, closingDayStore, idGenerator, transactionManager, completeHandler };
+  return { floorRepository, seatingOrchestrator, availabilityOrchestrator, reservationRepository, capacityRepository, closingDayStore, idGenerator, transactionManager, completeHandler, confirmHandler };
 }

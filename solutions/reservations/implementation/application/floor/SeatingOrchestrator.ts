@@ -71,6 +71,21 @@ export type MoveSeatingOutcome =
 export type MarkSeatedOutcome = { readonly type: "SEATED" } | { readonly type: "NO_ACTIVE_ASSIGNMENT" };
 export type ReleaseNoShowOutcome = { readonly type: "RELEASED" } | { readonly type: "NO_ACTIVE_ASSIGNMENT" };
 
+/**
+ * R1.5-P1B — the four dispositions a capacity-relevant reservation Modify
+ * can leave an active SeatingAssignment in. "UNCHANGED" and "RELEASED"
+ * both leave the ORIGINAL assignment row's identity untouched (no write
+ * at all, or a release with no replacement); only "RETAINED" produces a
+ * new row (release-and-recreate on the SAME resources — see
+ * revalidateOrReleaseForModify's own doc comment for why this is never a
+ * literal in-place interval update).
+ */
+export type ModifySeatingRevalidationResult =
+  | { readonly type: "NO_ACTIVE_ASSIGNMENT" }
+  | { readonly type: "UNCHANGED" }
+  | { readonly type: "RETAINED"; readonly assignment: SeatingAssignment }
+  | { readonly type: "RELEASED"; readonly seatability: SeatabilityOutcome };
+
 export class SeatingOrchestrator {
   constructor(
     private readonly floorRepository: FloorRepository,
@@ -79,9 +94,40 @@ export class SeatingOrchestrator {
     private readonly clock: Clock
   ) {}
 
-  /** Every locked resourceId (Table or Seat) a selector set touches, deduplicated. */
-  private resourceIdsOf(resources: readonly ResourceSelector[]): readonly string[] {
-    return resources.map((r) => r.tableId ?? r.seatId).filter((id): id is string => !!id);
+  /**
+   * R1.5-P1B0 — canonical Tier-3 lock-key derivation: ALWAYS the parent
+   * Table id, never a raw Seat id. `ResourceBlockService.blockTable`/
+   * `unblock` have always locked the parent Table id (a block has no
+   * seat granularity to begin with); before this fix, a Teppanyaki
+   * seat-level claim locked the raw seat id instead, so the two never
+   * shared a lock and could never serialize against each other. No
+   * database constraint spans `seating_assignment_resources` and
+   * `resource_blocks` (verified against every migration during the
+   * P1B0 design gate) — this advisory lock is the ONLY thing that makes
+   * the "no overlapping block" check in buildCandidates/blockTable
+   * trustworthy under concurrency. Resolved and locked BEFORE any
+   * candidate-building/overlap read, in the SAME transaction as that
+   * read, so the resolution itself is transactionally consistent with
+   * everything that follows it — never a separate, racy pre-check.
+   *
+   * Two Seat selectors on the SAME grill correctly dedupe to one lock
+   * (sortSeatingResourceIds); a multi-grill claim (final architecture
+   * Scenario H) correctly sorts across grills in the same fixed global
+   * order every other Tier-3 caller already uses — no new deadlock class,
+   * only the identifiers being sorted change (Table ids, always, instead
+   * of a mix of Table/Seat ids).
+   */
+  private async resolveLockTableIds(resources: readonly ResourceSelector[], tx: TransactionContext): Promise<readonly string[]> {
+    const tableIds: string[] = [];
+    for (const r of resources) {
+      if (r.tableId) {
+        tableIds.push(r.tableId);
+      } else if (r.seatId) {
+        const seat = await this.floorRepository.findSeatById(r.seatId, tx);
+        if (seat) tableIds.push(seat.tableId);
+      }
+    }
+    return sortSeatingResourceIds(tableIds);
   }
 
   private async buildCandidates(
@@ -146,9 +192,10 @@ export class SeatingOrchestrator {
       const activeExisting = await this.floorRepository.findActiveAssignmentByReservationId(request.reservationId, tx);
       if (activeExisting) return { type: "ALREADY_ASSIGNED_ELSEWHERE" };
 
-      // Tier 3 — sorted, deterministic order.
-      const sortedResourceIds = sortSeatingResourceIds(this.resourceIdsOf(request.resources));
-      for (const resourceId of sortedResourceIds) {
+      // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0),
+      // sorted, deterministic order.
+      const lockTableIds = await this.resolveLockTableIds(request.resources, tx);
+      for (const resourceId of lockTableIds) {
         await this.floorRepository.acquireSeatingResourceLock({ resourceId, tx });
       }
 
@@ -196,8 +243,9 @@ export class SeatingOrchestrator {
       const current = await this.floorRepository.findActiveAssignmentByReservationId(request.reservationId, tx);
       if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
 
-      const sortedResourceIds = sortSeatingResourceIds(this.resourceIdsOf(request.resources));
-      for (const resourceId of sortedResourceIds) {
+      // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0).
+      const lockTableIds = await this.resolveLockTableIds(request.resources, tx);
+      for (const resourceId of lockTableIds) {
         await this.floorRepository.acquireSeatingResourceLock({ resourceId, tx });
       }
 
@@ -284,6 +332,119 @@ export class SeatingOrchestrator {
     const current = await this.floorRepository.findActiveAssignmentByReservationId(reservationId, tx);
     if (!current) return;
     await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Released", releaseReason: reason, actorId, tx });
+  }
+
+  /**
+   * R1.5-P1B — tx-scoped helper, no own transaction, no Tier-1 lock of its
+   * own: called by AvailabilityOrchestrator.modifyWithCapacity, which has
+   * ALREADY acquired the reservation lock (Tier 1) and the capacity
+   * pool/date lock(s) (Tier 2) as its own first steps before this is ever
+   * invoked — this method's only job is Tier 3 (seating-resource locks)
+   * and the seating write(s) themselves, in that order.
+   *
+   * Policy 3 (Chief Engineer decision): retain the currently-held
+   * resources when they remain valid under the COMPLETE new reservation
+   * facts (interval, area, party size, active claims, ResourceBlocks);
+   * otherwise release with no replacement. Never a literal in-place
+   * interval update — buildCandidates/FloorRepository.findOverlappingResourceClaims
+   * has no "exclude this assignment's own resource rows" parameter, so a
+   * not-yet-released row would spuriously appear to overlap ITSELF
+   * whenever the new interval intersects the old one. Release-then-
+   * recheck-then-conditionally-recreate sidesteps that entirely, reusing
+   * the exact same primitives moveSeating already relies on, with the
+   * step order corrected for this method's different self-overlap risk
+   * (moveSeating's check-then-release order is safe only because it is,
+   * in practice, always invoked against a DIFFERENT resource than
+   * currently held).
+   *
+   * Tier-3 lock target: the canonical parent-Table id (R1.5-P1B0's
+   * resolveLockTableIds — see that method's own doc comment), the SAME
+   * convention assignSeating/moveSeating now use, so this method's races
+   * against a concurrent assignSeating/moveSeating/blockTable/unblock on
+   * the SAME grill all correctly serialize.
+   */
+  async revalidateOrReleaseForModify(input: {
+    readonly reservationId: string;
+    readonly actor: Actor;
+    readonly commandId: string;
+    readonly oldAreaId: string;
+    readonly newAreaId: string;
+    readonly newPartySize: number;
+    readonly newStart: Date;
+    readonly newEnd: Date;
+    readonly tx: TransactionContext;
+  }): Promise<ModifySeatingRevalidationResult> {
+    const { reservationId, actor, commandId, oldAreaId, newAreaId, newPartySize, newStart, newEnd, tx } = input;
+
+    const current = await this.floorRepository.findActiveAssignmentByReservationId(reservationId, tx);
+    if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
+
+    const currentResourceRows = await this.floorRepository.findAssignmentResources(current.id, tx);
+    const selectors: ResourceSelector[] = currentResourceRows.map((r) => ({ tableId: r.tableId ?? undefined, seatId: r.seatId ?? undefined }));
+
+    const intervalUnchanged = newStart.getTime() === current.startTime.getTime() && newEnd.getTime() === current.endTime.getTime();
+    const areaUnchanged = newAreaId === oldAreaId;
+
+    if (intervalUnchanged && areaUnchanged) {
+      // Capacity-only check — deliberately NOT via buildCandidates/
+      // findOverlappingResourceClaims: the interval is unchanged, so this
+      // row's own overlap/block status is unaffected by this Modify, and
+      // re-running the overlap check would spuriously find the row
+      // overlapping ITSELF at the identical interval. A plain capacity
+      // lookup is the only thing that could possibly have changed.
+      let heldCapacity = 0;
+      for (const r of currentResourceRows) {
+        if (r.tableId) {
+          const table = await this.floorRepository.findTableById(r.tableId, tx);
+          heldCapacity += table?.nominalCapacity ?? 0;
+        } else if (r.seatId) {
+          heldCapacity += 1;
+        }
+      }
+      if (heldCapacity >= newPartySize) {
+        return { type: "UNCHANGED" };
+      }
+      // Falls through: capacity no longer sufficient even though nothing
+      // else changed — release-and-recheck below is the only way to know
+      // whether ANY resource can still satisfy the grown party.
+    }
+
+    // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0),
+    // same convention assignSeating/moveSeating use.
+    const lockTableIds = await this.resolveLockTableIds(selectors, tx);
+    for (const resourceId of lockTableIds) {
+      await this.floorRepository.acquireSeatingResourceLock({ resourceId, tx });
+    }
+
+    // Release BEFORE checking the new facts — see this method's own doc
+    // comment for why (self-overlap false positive otherwise).
+    await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Released", releaseReason: "StaffReassigned", actorId: actor.id, tx });
+
+    const candidates = await this.buildCandidates(selectors, newStart, newEnd, tx);
+    const seatability = evaluateSeatability({ requestedAreaId: newAreaId, requestedPartySize: newPartySize, candidates });
+    if (seatability.type !== "SEATABLE") {
+      return { type: "RELEASED", seatability };
+    }
+
+    const assignment = await this.floorRepository.createAssignment({
+      assignment: {
+        id: this.idGenerator.generate(),
+        reservationId,
+        status: current.status,
+        startTime: newStart,
+        endTime: newEnd,
+        assignedBy: actor.id,
+        commandId,
+        // R1.5-P1B preservation requirement: the ORIGINAL seatedAt,
+        // verbatim — never re-stamped to this Modify's own timestamp,
+        // never lost. `current.seatedAt` is already `null` for an
+        // `Assigned` row, so this is correct for both statuses uniformly.
+        seatedAt: current.seatedAt,
+      },
+      resources: currentResourceRows.map((r) => ({ tableId: r.tableId, seatId: r.seatId })),
+      tx,
+    });
+    return { type: "RETAINED", assignment };
   }
 
   private async acquireReservationLock(reservationId: string, tx: TransactionContext): Promise<void> {

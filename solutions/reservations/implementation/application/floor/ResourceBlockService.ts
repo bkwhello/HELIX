@@ -15,7 +15,11 @@
  * already call, in the opposite direction (does an existing block affect
  * a seating candidate?). This service asks the mirror question (does an
  * existing seating claim or block affect a NEW block?) without adding a
- * second overlap-detection implementation.
+ * second overlap-detection implementation. R1.5-P1B0 — the claims check
+ * includes every child Seat of the target Table (via the existing
+ * findSeatsByTableId), not just the Table itself, so an active
+ * Teppanyaki seat claim correctly blocks a conflicting Table-level block
+ * too — see blockTable's own comment for why this was previously missed.
  *
  * Unblock is a hard delete (Chief Engineer P1-B8 directive: no schema
  * migration, no release-audit columns — ResourceBlock has none to set,
@@ -66,14 +70,26 @@ export class ResourceBlockService {
       // other; neither can observe the other's half-applied state.
       await this.floorRepository.acquireSeatingResourceLock({ resourceId: table.id, tx });
 
+      // R1.5-P1B0 correction — a block is Table-scoped, but Teppanyaki
+      // seats claim individually: checking only `tableIds` missed every
+      // active child-Seat claim, so a block could be created directly
+      // underneath a party still seated at that grill. Resolving the
+      // Table's own child Seats (existing FloorRepository.findSeatsByTableId,
+      // no new repository method needed) and including them in the SAME
+      // findOverlappingResourceClaims call closes that gap without adding
+      // a second overlap-detection path or any per-Seat blocking — a
+      // Sushi Table (no child Seats) sees an empty seatIds list and is
+      // unaffected.
+      const childSeats = await this.floorRepository.findSeatsByTableId(table.id, tx);
       const overlappingClaims = await this.floorRepository.findOverlappingResourceClaims({
         tableIds: [table.id],
-        seatIds: [],
+        seatIds: childSeats.map((s) => s.id),
         rangeStart: request.startTime,
         rangeEnd: request.endTime,
         tx,
       });
-      if (overlappingClaims.tableIds.has(table.id)) {
+      const hasSeatConflict = childSeats.some((s) => overlappingClaims.seatIds.has(s.id));
+      if (overlappingClaims.tableIds.has(table.id) || hasSeatConflict) {
         return { type: "ACTIVE_ASSIGNMENT_CONFLICT" };
       }
 

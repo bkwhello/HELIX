@@ -859,8 +859,32 @@
           showMessage(createMessage, "Kon wijzigingen niet opslaan:\n" + (ruleMessages(data.violations) || data.message || ""), "error");
           return;
         }
-        showMessage(createMessage, "Wijzigingen opgeslagen.", "ok");
+        // R1.5-P1B — a capacity-relevant Modify now returns 200 with a
+        // seatingDisposition; a non-capacity-relevant one keeps the exact
+        // prior 204-no-body response. Both are success; only the message
+        // shown differs, and only when a table was actually released.
+        if (res.status === 200) {
+          const data = await res.json().catch(() => ({}));
+          if (data.seatingDisposition === "RELEASED") {
+            showMessage(createMessage, "Wijzigingen opgeslagen — de zitplaats kon niet worden behouden en moet opnieuw worden toegewezen.", "warn");
+          } else if (data.seatingDisposition === "RETAINED") {
+            showMessage(createMessage, "Wijzigingen opgeslagen; zitplaats behouden.", "ok");
+          } else {
+            // UNCHANGED / NO_ACTIVE_ASSIGNMENT — same generic message as
+            // any other successful save.
+            showMessage(createMessage, "Wijzigingen opgeslagen.", "ok");
+          }
+        } else {
+          showMessage(createMessage, "Wijzigingen opgeslagen.", "ok");
+        }
         exitEditMode();
+        // loadList() already refreshes both the reservation list and the
+        // floor-view-derived late-arrival flags (same /floor read) in one
+        // call — see loadList()'s own P1-B7 doc comment; loadOccupancy()
+        // covers Teppanyaki occupancy. There is no separate "availability"
+        // display surface in this pilot outside of the create form's own
+        // time-slot population, which isn't relevant when editing an
+        // existing reservation.
         await loadList();
         await loadOccupancy();
         return;

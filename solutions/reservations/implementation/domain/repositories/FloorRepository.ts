@@ -71,6 +71,16 @@ export interface FloorRepository {
       readonly endTime: Date;
       readonly assignedBy: string;
       readonly commandId: string;
+      /**
+       * R1.5-P1B — additive, optional. Omitted (the default): existing
+       * behavior, unchanged — `new Date()` is stamped for a fresh
+       * status "Seated" row, `null` otherwise. Explicitly supplied (even
+       * `null`): used verbatim, no matter what `status` is — this is how
+       * a Modify-triggered release-and-recreate that retains a `Seated`
+       * assignment preserves the ORIGINAL `seatedAt` instead of it being
+       * silently re-stamped to the Modify's own timestamp.
+       */
+      readonly seatedAt?: Date | null;
     };
     readonly resources: readonly { readonly tableId: string | null; readonly seatId: string | null }[];
     readonly tx: TransactionContext;

@@ -3,6 +3,9 @@ import { createTestPrismaClient, truncateReservationDomainTables, truncateSeatin
 import { buildFloorHarness } from "./support/floorTestHarness.js";
 import { seedFloor } from "../../ops/floor/seedFloor.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
+import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
+import { ResourceBlockService } from "../../application/floor/ResourceBlockService.js";
+import { deriveSeatingResourceLockKey } from "../../domain/availability/LockKey.js";
 
 /**
  * CAP-D04.01 — the mandatory real-PostgreSQL concurrency matrix
@@ -14,6 +17,94 @@ import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js
  */
 const prisma = createTestPrismaClient();
 const prismaB = createTestPrismaClient();
+// R1.5-P1B0 — a dedicated THIRD connection, used only to observe
+// PostgreSQL's own pg_locks catalog from outside the two contending
+// transactions — never to participate in either of them.
+const prismaC = createTestPrismaClient();
+
+/**
+ * R1.5-P1B0 — bounded poll used ONLY to wait for a database-observable
+ * fact (rows of both granted states appearing in pg_locks for the exact
+ * advisory-lock key under test) to become visible — never as the
+ * correctness assertion itself. The correctness evidence is the returned
+ * rows' `granted` values, read directly from PostgreSQL's own lock
+ * catalog; the poll only accounts for the unavoidable, unbounded-in
+ * principle delay between kicking off a promise and its lock request
+ * becoming visible to a separate connection. A failure to observe both
+ * states within the bound throws, surfacing as a failing assertion, not
+ * a silently-passed timeout.
+ */
+async function waitForContendedAdvisoryLock(
+  namespace: number,
+  key: number,
+  maxAttempts = 100,
+  intervalMs = 20
+): Promise<{ readonly granted: boolean }[]> {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const rows = await prismaC.$queryRaw<{ granted: boolean }[]>`
+      SELECT granted FROM pg_locks WHERE locktype = 'advisory' AND classid = ${namespace} AND objid = ${key}
+    `;
+    const hasGranted = rows.some((r) => r.granted);
+    const hasUngranted = rows.some((r) => !r.granted);
+    if (hasGranted && hasUngranted) return rows;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(
+    `Expected pg_locks to show both a granted and an ungranted advisory-lock row for (classid=${namespace}, objid=${key}) within the bounded poll — never observed both.`
+  );
+}
+
+/**
+ * R1.5-P1B0 — `deriveSeatingResourceLockKey` returns SIGNED int32 values
+ * (required by `pg_advisory_xact_lock(int4, int4)`'s own parameter
+ * types), but `pg_locks.classid`/`objid` are typed `oid` — an UNSIGNED
+ * 32-bit type. Binding a negative JS number as a query parameter for an
+ * `oid` column fails with "OID out of range" (Postgres error 22003).
+ * `>>> 0` reinterprets the same 32 bits as their unsigned equivalent —
+ * the identical bit pattern the advisory-lock machinery itself already
+ * uses internally — so this is a display/comparison-only conversion,
+ * never a different lock.
+ */
+function lockKeyAsUnsignedOid(id: string): { readonly namespace: number; readonly key: number } {
+  const { namespace, key } = deriveSeatingResourceLockKey(id);
+  return { namespace: namespace >>> 0, key: key >>> 0 };
+}
+
+/**
+ * R1.5-P1B0 — snapshot of every currently-held advisory lock in this
+ * namespace, for asserting exactly which resource ids are locked (and
+ * which are NOT). `oid` is unsigned and has no guaranteed JS mapping
+ * through Prisma's `$queryRaw` on its own; casting to `int8` preserves
+ * its full unsigned numeric value exactly (unlike casting to `int4`,
+ * which would reinterpret the sign bit and no longer match
+ * `lockKeyAsUnsignedOid`'s own `>>> 0`-converted comparison values) —
+ * `Number(...)` is then safe since every oid fits well within
+ * `Number.MAX_SAFE_INTEGER`.
+ */
+async function currentSeatingAdvisoryLocks(namespace: number): Promise<{ readonly objid: number; readonly granted: boolean }[]> {
+  const rows = await prismaC.$queryRaw<{ objid: bigint; granted: boolean }[]>`
+    SELECT objid::int8 AS objid, granted FROM pg_locks WHERE locktype = 'advisory' AND classid = ${namespace}
+  `;
+  return rows.map((r) => ({ objid: Number(r.objid), granted: r.granted }));
+}
+
+/**
+ * R1.5-P1B0 — single-transaction variant of the poll above: waits only
+ * for that ONE transaction's own lock acquisition (no contending second
+ * transaction in these dedup/sort tests) to become visible as a granted
+ * row in pg_locks, read from the third connection. Still a database
+ * fact, never elapsed time, as the observed state.
+ */
+async function waitForContendedAdvisoryLockOrGrantedOnly(namespace: number, key: number, maxAttempts = 100, intervalMs = 20): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const rows = await prismaC.$queryRaw<{ granted: boolean }[]>`
+      SELECT granted FROM pg_locks WHERE locktype = 'advisory' AND classid = ${namespace} AND objid = ${key} AND granted = true
+    `;
+    if (rows.length > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`Expected pg_locks to show a granted advisory lock for (classid=${namespace}, objid=${key}) within the bounded poll — never observed it.`);
+}
 const staffActor: Actor = { id: "staff-1", kind: ActorKind.AuthorizedUser, role: ActorRole.Reception };
 const NOW = new Date("2026-08-10T10:00:00Z");
 let cmdCounter = 0;
@@ -46,6 +137,33 @@ async function createReservation(overrides: { partySize?: number; preferredArea?
   return id;
 }
 
+/** R1.5-P1B — Modify needs a REAL CapacityCommitment (createReservation's plain insert has none), so this goes through the authoritative create-with-capacity path and immediately assigns seating. */
+async function createSeatedCapacityReservation(harness: ReturnType<typeof buildFloorHarness>, tableLabel: string, overrides: { partySize?: number; preferredArea?: "Sushi" | "Teppanyaki"; reservationDate?: Date } = {}) {
+  const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: tableLabel } });
+  const created = await harness.availabilityOrchestrator.createWithCapacity({
+    commandId: cmd(), servicePeriodId: "sp-floor-race",
+    contactSelection: { type: "ExistingContact", contactId: "contact-1" },
+    reservationDate: overrides.reservationDate ?? new Date("2026-08-20T18:00:00Z"),
+    partySize: overrides.partySize ?? 2,
+    source: { category: ReservationSourceCategory.Telephone },
+    preferredArea: overrides.preferredArea ?? "Sushi",
+    actor: staffActor,
+  });
+  if (created.type !== "CREATED") throw new Error("unreachable");
+  const reservationId = created.outcome.reservationId;
+  const confirmed = await harness.confirmHandler.handle({ commandId: cmd(), reservationId, actor: staffActor, isReservationDataValid: true });
+  if (!confirmed.ok) throw new Error("unreachable");
+  const assigned = await harness.seatingOrchestrator.assignSeating({
+    commandId: cmd(), reservationId, requestedAreaId: overrides.preferredArea ?? "Sushi", requestedPartySize: overrides.partySize ?? 2,
+    resources: [{ tableId: table.id }],
+    startTime: overrides.reservationDate ?? new Date("2026-08-20T18:00:00Z"),
+    endTime: new Date((overrides.reservationDate ?? new Date("2026-08-20T18:00:00Z")).getTime() + 90 * 60_000),
+    actor: staffActor,
+  });
+  if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+  return { reservationId, table };
+}
+
 async function resetAll(): Promise<void> {
   await truncateSeatingDomainTables(prisma);
   await truncateReservationDomainTables(prisma);
@@ -61,6 +179,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma.$disconnect();
   await prismaB.$disconnect();
+  await prismaC.$disconnect();
 });
 beforeEach(resetAll);
 
@@ -587,4 +706,559 @@ describe("Scenario Q — Complete vs No-show race: a seated reservation is compl
       expect(["Completed", "NoShow"], `iteration ${i}`).toContain(allAssignments[0]?.releaseReason);
     }
   }, 60_000);
+});
+
+/**
+ * R1.5-P1B — Modify's new seating revalidation (AvailabilityOrchestrator.
+ * modifyWithCapacity -> SeatingOrchestrator.revalidateOrReleaseForModify)
+ * acquires the SAME Tier-1 reservation lock every other seating operation
+ * already uses, so it serializes against Move/Complete/No-show/
+ * ResourceBlock exactly like R1.5-P1A's Scenario P/Q already proved for
+ * Complete. Assertions below check the INVARIANTS that hold regardless of
+ * which side wins the lock, not one pinned exact outcome — both orderings
+ * are legitimate, mechanically-understood final states (see this
+ * scenario's own design-gate analysis).
+ */
+describe("Scenario R — Modify vs Move race: a seated reservation has its time changed while staff concurrently moves it", () => {
+  it("final state is coherent regardless of which side acquires the reservation lock first", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const harnessB = buildFloorHarness(prismaB, NOW);
+    const tableA = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 2" } });
+    const tableB = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 3" } });
+    const { reservationId } = await createSeatedCapacityReservation(harnessA, tableA.operationalLabel);
+
+    const [modifyResult, moveResult] = await Promise.all([
+      harnessA.availabilityOrchestrator.modifyWithCapacity({
+        commandId: cmd(), reservationId, actor: staffActor,
+        changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+        isServicePeriodStillValid: true,
+      }),
+      harnessB.seatingOrchestrator.moveSeating({
+        commandId: cmd(), reservationId, requestedAreaId: "Sushi", requestedPartySize: 2, resources: [{ tableId: tableB.id }], actor: staffActor,
+      }),
+    ]);
+
+    expect(modifyResult.type).toBe("MODIFIED");
+    expect(["MOVED", "NOT_SEATABLE", "NO_ACTIVE_ASSIGNMENT"]).toContain(moveResult.type);
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.reservationDate.toISOString()).toBe("2026-08-20T20:00:00.000Z");
+
+    const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(activeAssignments.length).toBeLessThanOrEqual(1); // never two active, never corrupted
+    const allAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId } });
+    for (const row of allAssignments) {
+      if (row.status !== "Assigned" && row.status !== "Seated") expect(row.status).toBe("Released");
+    }
+  });
+
+  it("5 iterations, 0 integrity flakes — never two active assignments, whichever side wins the lock", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const harnessA = buildFloorHarness(prisma, NOW);
+      const harnessB = buildFloorHarness(prismaB, NOW);
+      const tableA = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 2" } });
+      const tableB = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 3" } });
+      const { reservationId } = await createSeatedCapacityReservation(harnessA, tableA.operationalLabel);
+
+      const [modifyResult, moveResult] = await Promise.all([
+        harnessA.availabilityOrchestrator.modifyWithCapacity({
+          commandId: `rep-modmove-mod-${i}`, reservationId, actor: staffActor,
+          changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+          isServicePeriodStillValid: true,
+        }),
+        harnessB.seatingOrchestrator.moveSeating({
+          commandId: `rep-modmove-move-${i}`, reservationId, requestedAreaId: "Sushi", requestedPartySize: 2, resources: [{ tableId: tableB.id }], actor: staffActor,
+        }),
+      ]);
+      expect(modifyResult.type, `iteration ${i}`).toBe("MODIFIED");
+      expect(["MOVED", "NOT_SEATABLE", "NO_ACTIVE_ASSIGNMENT"], `iteration ${i}`).toContain(moveResult.type);
+
+      const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+      expect(activeAssignments.length, `iteration ${i}: never more than one active`).toBeLessThanOrEqual(1);
+    }
+  }, 60_000);
+});
+
+describe("Scenario S — Modify vs Complete race: a seated reservation has its time changed while staff concurrently completes it", () => {
+  it("final state is coherent regardless of which side acquires the reservation lock first", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const harnessB = buildFloorHarness(prismaB, NOW);
+    const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 4" } });
+    const { reservationId } = await createSeatedCapacityReservation(harnessA, table.operationalLabel);
+
+    const [modifyResult, completeResult] = await Promise.all([
+      harnessA.availabilityOrchestrator.modifyWithCapacity({
+        commandId: cmd(), reservationId, actor: staffActor,
+        changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+        isServicePeriodStillValid: true,
+      }),
+      harnessB.availabilityOrchestrator.completeWithCapacity({
+        commandId: cmd(), reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed",
+      }),
+    ]);
+
+    // Modify either succeeds (it ran first, or ran after Complete but
+    // Complete hadn't yet landed) or is rejected by CAP-D01.01-R16 (it ran
+    // AFTER Complete already made the reservation terminal) — both valid.
+    expect(["MODIFIED", "VALIDATION_FAILED"]).toContain(modifyResult.type);
+    expect(completeResult.ok).toBe(true); // nothing Modify does can ever block Complete
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.status).toBe("Completed");
+
+    const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(activeAssignments).toHaveLength(0); // Complete always leaves zero active, regardless of order
+  });
+
+  it("5 iterations, 0 integrity flakes — Complete always leaves zero active assignments, whichever side wins the lock", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const harnessA = buildFloorHarness(prisma, NOW);
+      const harnessB = buildFloorHarness(prismaB, NOW);
+      const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 4" } });
+      const { reservationId } = await createSeatedCapacityReservation(harnessA, table.operationalLabel);
+
+      const [modifyResult, completeResult] = await Promise.all([
+        harnessA.availabilityOrchestrator.modifyWithCapacity({
+          commandId: `rep-modcomplete-mod-${i}`, reservationId, actor: staffActor,
+          changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+          isServicePeriodStillValid: true,
+        }),
+        harnessB.availabilityOrchestrator.completeWithCapacity({
+          commandId: `rep-modcomplete-complete-${i}`, reservationId, actor: staffActor, isManualCompletion: true, manualCompletionReason: "guest departed",
+        }),
+      ]);
+      expect(["MODIFIED", "VALIDATION_FAILED"], `iteration ${i}`).toContain(modifyResult.type);
+      expect(completeResult.ok, `iteration ${i}`).toBe(true);
+
+      const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+      expect(reservation.status, `iteration ${i}`).toBe("Completed");
+      const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+      expect(activeAssignments, `iteration ${i}: zero active assignments`).toHaveLength(0);
+    }
+  }, 60_000);
+});
+
+describe("Scenario T — Modify vs No-show race: a reservation has its time changed while staff concurrently releases it as a No-Show", () => {
+  it("final state is coherent regardless of which side acquires the reservation lock first", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const harnessB = buildFloorHarness(prismaB, NOW);
+    const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 5" } });
+    const { reservationId } = await createSeatedCapacityReservation(harnessA, table.operationalLabel);
+
+    const [modifyResult, noShowResult] = await Promise.all([
+      harnessA.availabilityOrchestrator.modifyWithCapacity({
+        commandId: cmd(), reservationId, actor: staffActor,
+        changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+        isServicePeriodStillValid: true,
+      }),
+      harnessB.seatingOrchestrator.releaseNoShow({ reservationId, actor: staffActor }),
+    ]);
+
+    // Not terminal, so unlike Complete, Modify is never rejected by this race.
+    expect(modifyResult.type).toBe("MODIFIED");
+    expect(["RELEASED", "NO_ACTIVE_ASSIGNMENT"]).toContain(noShowResult.type);
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    expect(reservation.reservationDate.toISOString()).toBe("2026-08-20T20:00:00.000Z");
+    expect(reservation.status).toBe("Confirmed"); // No-Show never touches Reservation.status
+
+    const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(activeAssignments).toHaveLength(0); // either No-show releases it, or Modify already had
+  });
+
+  it("5 iterations, 0 integrity flakes — zero active assignments survive, whichever side wins the lock", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const harnessA = buildFloorHarness(prisma, NOW);
+      const harnessB = buildFloorHarness(prismaB, NOW);
+      const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 5" } });
+      const { reservationId } = await createSeatedCapacityReservation(harnessA, table.operationalLabel);
+
+      const [modifyResult, noShowResult] = await Promise.all([
+        harnessA.availabilityOrchestrator.modifyWithCapacity({
+          commandId: `rep-modnoshow-mod-${i}`, reservationId, actor: staffActor,
+          changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+          isServicePeriodStillValid: true,
+        }),
+        harnessB.seatingOrchestrator.releaseNoShow({ reservationId, actor: staffActor }),
+      ]);
+      expect(modifyResult.type, `iteration ${i}`).toBe("MODIFIED");
+      expect(["RELEASED", "NO_ACTIVE_ASSIGNMENT"], `iteration ${i}`).toContain(noShowResult.type);
+
+      const activeAssignments = await prisma.seatingAssignment.findMany({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+      expect(activeAssignments, `iteration ${i}: zero active assignments`).toHaveLength(0);
+    }
+  }, 60_000);
+});
+
+describe("Scenario U — Modify vs ResourceBlock race: a seated reservation's time is changed onto an interval a concurrent block also targets", () => {
+  it("exactly one of {seating retained at the new interval, block created} ever holds — never both, never neither", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const harnessB = buildFloorHarness(prismaB, NOW);
+    const resourceBlockServiceB = new ResourceBlockService(harnessB.floorRepository, harnessB.transactionManager);
+    const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 8" } });
+    const { reservationId } = await createSeatedCapacityReservation(harnessA, table.operationalLabel);
+
+    const [modifyResult, blockResult] = await Promise.all([
+      harnessA.availabilityOrchestrator.modifyWithCapacity({
+        commandId: cmd(), reservationId, actor: staffActor,
+        changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+        isServicePeriodStillValid: true,
+      }),
+      resourceBlockServiceB.blockTable({
+        operationalLabel: table.operationalLabel, startTime: new Date("2026-08-20T20:00:00Z"), endTime: new Date("2026-08-20T21:30:00Z"), reason: "race test", actor: staffActor,
+      }),
+    ]);
+
+    expect(modifyResult.type).toBe("MODIFIED");
+    if (modifyResult.type !== "MODIFIED") throw new Error("unreachable");
+
+    if (modifyResult.seatingDisposition === "RETAINED") {
+      // Modify won the table first — the block must then see an active
+      // claim and be rejected, never silently coexisting with it.
+      expect(blockResult.type).toBe("ACTIVE_ASSIGNMENT_CONFLICT");
+      const active = await prisma.seatingAssignment.findFirstOrThrow({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+      expect(active.startTime.toISOString()).toBe("2026-08-20T20:00:00.000Z");
+    } else {
+      // The block won the table first — Modify's own revalidation must
+      // then see it as blocked and release, never silently overriding it.
+      expect(modifyResult.seatingDisposition).toBe("RELEASED");
+      expect(blockResult.type).toBe("BLOCKED");
+      const active = await prisma.seatingAssignment.findFirst({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+      expect(active).toBeNull();
+    }
+  });
+
+  it("5 iterations, 0 integrity flakes — exactly one of {retained, blocked} ever holds, whichever side wins the lock", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const harnessA = buildFloorHarness(prisma, NOW);
+      const harnessB = buildFloorHarness(prismaB, NOW);
+      const resourceBlockServiceB = new ResourceBlockService(harnessB.floorRepository, harnessB.transactionManager);
+      const table = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 8" } });
+      const { reservationId } = await createSeatedCapacityReservation(harnessA, table.operationalLabel);
+
+      const [modifyResult, blockResult] = await Promise.all([
+        harnessA.availabilityOrchestrator.modifyWithCapacity({
+          commandId: `rep-modblock-mod-${i}`, reservationId, actor: staffActor,
+          changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+          isServicePeriodStillValid: true,
+        }),
+        resourceBlockServiceB.blockTable({
+          operationalLabel: table.operationalLabel, startTime: new Date("2026-08-20T20:00:00Z"), endTime: new Date("2026-08-20T21:30:00Z"), reason: "race test", actor: staffActor,
+        }),
+      ]);
+      expect(modifyResult.type, `iteration ${i}`).toBe("MODIFIED");
+      if (modifyResult.type !== "MODIFIED") throw new Error("unreachable");
+
+      if (modifyResult.seatingDisposition === "RETAINED") {
+        expect(blockResult.type, `iteration ${i}`).toBe("ACTIVE_ASSIGNMENT_CONFLICT");
+      } else {
+        expect(modifyResult.seatingDisposition, `iteration ${i}`).toBe("RELEASED");
+        expect(blockResult.type, `iteration ${i}`).toBe("BLOCKED");
+      }
+    }
+  }, 60_000);
+});
+
+/**
+ * R1.5-P1B0 — Scenario U (above) only ever exercised a Sushi TABLE, whose
+ * lock key happens to already match ResourceBlockService's own (both
+ * resolve to the table id) — it passed for a reason unrelated to the fix
+ * this scenario exists to prove. This scenario uses a genuine Teppanyaki
+ * SEAT selector, the one resource kind where, before P1B0's
+ * resolveLockTableIds, the seat-assignment side locked the raw seat id
+ * while ResourceBlockService locked the parent Table id — two different
+ * keys, no serialization, a real race. See the P1B0 design gate for the
+ * full evidence (schema inspection, confirmed absence of any database
+ * constraint spanning seating_assignment_resources/resource_blocks).
+ */
+/**
+ * R1.5-P1B0 — ResourceBlockService.blockTable's own overlap check now
+ * includes every child Seat of the target Table (application/floor/
+ * ResourceBlockService.ts), not just the Table itself, closing the gap
+ * this exact scenario originally surfaced (a block could previously be
+ * created directly underneath an active Teppanyaki seat claim, since the
+ * check was hardcoded `seatIds: []`). Combined with the Tier-3 lock-scope
+ * fix (proven in the dedicated database-state-based describe block
+ * below), a Teppanyaki Seat claim and an overlapping parent-Table block
+ * can no longer coexist, exactly like the pre-existing Sushi Table case.
+ */
+describe("Scenario V — Teppanyaki Seat vs ResourceBlock race: a seated reservation on one grill seat has its time changed onto an interval a concurrent block on the parent grill also targets", () => {
+  it("exactly one of {seating retained at the new interval, block created} ever holds — never both, never neither", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const harnessB = buildFloorHarness(prismaB, NOW);
+    const resourceBlockServiceB = new ResourceBlockService(harnessB.floorRepository, harnessB.transactionManager);
+    const grillD = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "D" } });
+    const seatD1 = await prisma.seat.findFirstOrThrow({ where: { tableId: grillD.id, operationalLabel: "D-01" } });
+
+    const created = await harnessA.availabilityOrchestrator.createWithCapacity({
+      commandId: cmd(), servicePeriodId: "sp-floor-race",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
+      reservationDate: new Date("2026-08-20T18:00:00Z"), partySize: 1,
+      source: { category: ReservationSourceCategory.Telephone }, preferredArea: "Teppanyaki", actor: staffActor,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const reservationId = created.outcome.reservationId;
+    const confirmed = await harnessA.confirmHandler.handle({ commandId: cmd(), reservationId, actor: staffActor, isReservationDataValid: true });
+    if (!confirmed.ok) throw new Error("unreachable");
+    const assigned = await harnessA.seatingOrchestrator.assignSeating({
+      commandId: cmd(), reservationId, requestedAreaId: "Teppanyaki", requestedPartySize: 1,
+      resources: [{ seatId: seatD1.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+    });
+    if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+
+    const [modifyResult, blockResult] = await Promise.all([
+      harnessA.availabilityOrchestrator.modifyWithCapacity({
+        commandId: cmd(), reservationId, actor: staffActor,
+        changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+        isServicePeriodStillValid: true,
+      }),
+      resourceBlockServiceB.blockTable({
+        operationalLabel: "D", startTime: new Date("2026-08-20T20:00:00Z"), endTime: new Date("2026-08-20T21:30:00Z"), reason: "race test", actor: staffActor,
+      }),
+    ]);
+
+    expect(modifyResult.type).toBe("MODIFIED");
+    if (modifyResult.type !== "MODIFIED") throw new Error("unreachable");
+
+    if (modifyResult.seatingDisposition === "RETAINED") {
+      expect(blockResult.type).toBe("ACTIVE_ASSIGNMENT_CONFLICT");
+      const active = await prisma.seatingAssignmentResource.findFirstOrThrow({ where: { seatId: seatD1.id, status: { in: ["Assigned", "Seated"] } } });
+      expect(active.startTime.toISOString()).toBe("2026-08-20T20:00:00.000Z");
+      const block = await prisma.resourceBlock.findFirst({ where: { tableId: grillD.id } });
+      expect(block).toBeNull(); // never persisted
+    } else {
+      expect(modifyResult.seatingDisposition).toBe("RELEASED");
+      expect(blockResult.type).toBe("BLOCKED");
+      const active = await prisma.seatingAssignmentResource.findFirst({ where: { seatId: seatD1.id, status: { in: ["Assigned", "Seated"] } } });
+      expect(active).toBeNull();
+    }
+  });
+
+  it("5 iterations, 0 integrity flakes — exactly one of {retained, blocked} ever holds, whichever side wins the lock", async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await resetAll();
+      const harnessA = buildFloorHarness(prisma, NOW);
+      const harnessB = buildFloorHarness(prismaB, NOW);
+      const resourceBlockServiceB = new ResourceBlockService(harnessB.floorRepository, harnessB.transactionManager);
+      const grillD = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "D" } });
+      const seatD1 = await prisma.seat.findFirstOrThrow({ where: { tableId: grillD.id, operationalLabel: "D-01" } });
+
+      const created = await harnessA.availabilityOrchestrator.createWithCapacity({
+        commandId: `rep-modblockseat-create-${i}`, servicePeriodId: "sp-floor-race",
+        contactSelection: { type: "ExistingContact", contactId: "contact-1" },
+        reservationDate: new Date("2026-08-20T18:00:00Z"), partySize: 1,
+        source: { category: ReservationSourceCategory.Telephone }, preferredArea: "Teppanyaki", actor: staffActor,
+      });
+      if (created.type !== "CREATED") throw new Error("unreachable");
+      const reservationId = created.outcome.reservationId;
+      const confirmed = await harnessA.confirmHandler.handle({ commandId: `rep-modblockseat-confirm-${i}`, reservationId, actor: staffActor, isReservationDataValid: true });
+      if (!confirmed.ok) throw new Error("unreachable");
+      const assigned = await harnessA.seatingOrchestrator.assignSeating({
+        commandId: `rep-modblockseat-assign-${i}`, reservationId, requestedAreaId: "Teppanyaki", requestedPartySize: 1,
+        resources: [{ seatId: seatD1.id }], startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), actor: staffActor,
+      });
+      if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
+
+      const [modifyResult, blockResult] = await Promise.all([
+        harnessA.availabilityOrchestrator.modifyWithCapacity({
+          commandId: `rep-modblockseat-mod-${i}`, reservationId, actor: staffActor,
+          changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+          isServicePeriodStillValid: true,
+        }),
+        resourceBlockServiceB.blockTable({
+          operationalLabel: "D", startTime: new Date("2026-08-20T20:00:00Z"), endTime: new Date("2026-08-20T21:30:00Z"), reason: "race test", actor: staffActor,
+        }),
+      ]);
+      expect(modifyResult.type, `iteration ${i}`).toBe("MODIFIED");
+      if (modifyResult.type !== "MODIFIED") throw new Error("unreachable");
+
+      if (modifyResult.seatingDisposition === "RETAINED") {
+        expect(blockResult.type, `iteration ${i}`).toBe("ACTIVE_ASSIGNMENT_CONFLICT");
+      } else {
+        expect(modifyResult.seatingDisposition, `iteration ${i}`).toBe("RELEASED");
+        expect(blockResult.type, `iteration ${i}`).toBe("BLOCKED");
+      }
+    }
+  }, 60_000);
+});
+
+/**
+ * R1.5-P1B0 — database-state-based proof, not a timeout-based one:
+ * PostgreSQL's own pg_locks catalog, read from a third connection
+ * uninvolved in either transaction, is the correctness evidence — never
+ * "still unresolved after N ms". Forces the exact interleaving that
+ * exposed the pre-fix race (a seat-claiming transaction still open,
+ * holding its Tier-3 lock, while a concurrent block-creation attempts
+ * the SAME grill) via an explicit, test-controlled barrier.
+ */
+describe("R1.5-P1B0 — database-state-based proof that a Teppanyaki Seat claim and a ResourceBlock on its parent Table share one Tier-3 lock", () => {
+  it("pg_locks shows B's advisory-lock request as ungranted while A holds the SAME (classid, objid), and B is granted — and correctly rejected — only after A commits", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const harnessB = buildFloorHarness(prismaB, NOW);
+    const grillE = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "E" } });
+    const seatE1 = await prisma.seat.findFirstOrThrow({ where: { tableId: grillE.id, operationalLabel: "E-01" } });
+    const reservationId = await createReservation({ partySize: 1, preferredArea: "Teppanyaki" });
+    const resourceBlockServiceB = new ResourceBlockService(harnessB.floorRepository, harnessB.transactionManager);
+    const { namespace, key } = lockKeyAsUnsignedOid(grillE.id);
+
+    let releaseA: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+
+    // Transaction A: mirrors the CORRECTED application path exactly —
+    // resolves the seat's parent Table (the same lookup
+    // SeatingOrchestrator.resolveLockTableIds performs) and locks THAT
+    // id, never the raw seat id — then pauses on the test's own gate,
+    // deterministically holding the transaction and its lock open.
+    const txA = harnessA.transactionManager.runInTransaction(async (tx) => {
+      const seat = await harnessA.floorRepository.findSeatById(seatE1.id, tx);
+      if (!seat) throw new Error("unreachable");
+      await harnessA.floorRepository.acquireSeatingResourceLock({ resourceId: seat.tableId, tx });
+
+      await gate; // deterministic pause — transaction stays open, lock stays held
+
+      await harnessA.floorRepository.createAssignment({
+        assignment: {
+          id: "p1b0-det-assignment-1", reservationId, status: "Assigned",
+          startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"),
+          assignedBy: staffActor.id, commandId: cmd(),
+        },
+        resources: [{ tableId: null, seatId: seatE1.id }],
+        tx,
+      });
+    });
+
+    // Transaction B: a REAL production call (blockTable), on the SAME
+    // grill — proving the actual corrected code, not a hand-rolled
+    // mirror, converges on the SAME lock key.
+    const txB = resourceBlockServiceB.blockTable({
+      operationalLabel: "E", startTime: new Date("2026-08-20T18:00:00Z"), endTime: new Date("2026-08-20T19:30:00Z"), reason: "race test", actor: staffActor,
+    });
+
+    // Database-state evidence: PostgreSQL's own pg_locks must show BOTH
+    // a granted row (A's) and an ungranted row (B's, waiting) for the
+    // exact same (classid, objid) — read from a connection uninvolved in
+    // either transaction. The bounded poll only waits for this fact to
+    // become visible; the assertion itself is the observed `granted`
+    // values, not elapsed time.
+    const contended = await waitForContendedAdvisoryLock(namespace, key);
+    expect(contended.some((r) => r.granted)).toBe(true);
+    expect(contended.some((r) => !r.granted)).toBe(true);
+
+    releaseA!();
+    await txA;
+    const blockResult = await txB;
+
+    // B was genuinely gated on A (the pg_locks evidence above proves
+    // that), AND — now that ResourceBlockService.blockTable's own
+    // overlap check includes the Table's child Seats (R1.5-P1B0) — B,
+    // once granted, correctly finds A's now-committed seat claim and
+    // refuses to coexist with it.
+    expect(blockResult.type).toBe("ACTIVE_ASSIGNMENT_CONFLICT");
+
+    const activeClaim = await prisma.seatingAssignmentResource.findFirst({ where: { seatId: seatE1.id, status: { in: ["Assigned", "Seated"] } } });
+    const activeBlock = await prisma.resourceBlock.findFirst({ where: { tableId: grillE.id } });
+    expect(activeClaim).not.toBeNull();
+    expect(activeBlock).toBeNull(); // never both coexist
+  });
+});
+
+describe("R1.5-P1B0 — canonical lock-key resolution: dedup/sort proof via pg_locks", () => {
+  it("held-transaction probe: a multi-seat assignment on one grill holds exactly one advisory lock (the grill's), and it is never any seat's own key", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const grillD = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "D" } });
+    const seats = await prisma.seat.findMany({ where: { tableId: grillD.id, operationalLabel: { in: ["D-01", "D-02"] } } });
+    expect(seats).toHaveLength(2);
+
+    let releaseA: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+
+    const txA = harnessA.transactionManager.runInTransaction(async (tx) => {
+      const resolved: string[] = [];
+      for (const s of seats) {
+        const seat = await harnessA.floorRepository.findSeatById(s.id, tx);
+        if (seat) resolved.push(seat.tableId);
+      }
+      const distinct = [...new Set(resolved)]; // mirrors resolveLockTableIds' own dedup
+      expect(distinct).toEqual([grillD.id]); // two seats, same grill -> one id
+      for (const id of distinct) {
+        await harnessA.floorRepository.acquireSeatingResourceLock({ resourceId: id, tx });
+      }
+      await gate; // hold the transaction open so the probe below can observe it
+    });
+
+    const { namespace, key: grillKey } = lockKeyAsUnsignedOid(grillD.id);
+    await waitForContendedAdvisoryLockOrGrantedOnly(namespace, grillKey);
+    const heldLocks = await currentSeatingAdvisoryLocks(namespace);
+    const heldObjids = new Set(heldLocks.filter((r) => r.granted).map((r) => r.objid));
+
+    // Scoped to THIS test's own candidate keys only — `heldObjids` can
+    // legitimately also contain unrelated locks from OTHER test files
+    // running concurrently in vitest's own parallel file execution (all
+    // sharing the same Postgres instance), so asserting a total `.size`
+    // across the whole namespace would be flaky under the full suite.
+    // Checking only the specific keys THIS test cares about is immune to
+    // that.
+    expect(heldObjids.has(grillKey)).toBe(true); // the grill's own lock IS held
+    for (const s of seats) {
+      const { key: seatKey } = lockKeyAsUnsignedOid(s.id);
+      expect(heldObjids.has(seatKey)).toBe(false); // never a raw Seat key — only one Table lock exists for this multi-seat, one-grill claim
+    }
+
+    releaseA!();
+    await txA;
+  });
+
+  it("Seats across multiple grills acquire sorted, deduplicated Table locks — never a raw Seat advisory key", async () => {
+    const harnessA = buildFloorHarness(prisma, NOW);
+    const grillC = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "C" } });
+    const grillF = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "F" } });
+    const seatC1 = await prisma.seat.findFirstOrThrow({ where: { tableId: grillC.id, operationalLabel: "C-01" } });
+    const seatF1 = await prisma.seat.findFirstOrThrow({ where: { tableId: grillF.id, operationalLabel: "F-01" } });
+
+    let releaseA: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+
+    const txA = harnessA.transactionManager.runInTransaction(async (tx) => {
+      const seatC = await harnessA.floorRepository.findSeatById(seatC1.id, tx);
+      const seatF = await harnessA.floorRepository.findSeatById(seatF1.id, tx);
+      if (!seatC || !seatF) throw new Error("unreachable");
+      const distinct = [...new Set([seatC.tableId, seatF.tableId])].sort();
+      for (const id of distinct) {
+        await harnessA.floorRepository.acquireSeatingResourceLock({ resourceId: id, tx });
+      }
+      await gate;
+    });
+
+    const { namespace } = lockKeyAsUnsignedOid(grillC.id);
+    const { key: grillCKey } = lockKeyAsUnsignedOid(grillC.id);
+    await waitForContendedAdvisoryLockOrGrantedOnly(namespace, grillCKey);
+    const heldLocks = await currentSeatingAdvisoryLocks(namespace);
+    const heldObjids = new Set(heldLocks.filter((r) => r.granted).map((r) => r.objid));
+
+    // Scoped to THIS test's own candidate keys only — see the sibling
+    // "held-transaction probe" test's comment above for why a total
+    // `.size` assertion across the shared namespace is flaky under the
+    // full suite's parallel file execution.
+    const { key: grillFKey } = lockKeyAsUnsignedOid(grillF.id);
+    expect(heldObjids.has(grillCKey)).toBe(true);
+    expect(heldObjids.has(grillFKey)).toBe(true);
+
+    const { key: seatC1Key } = lockKeyAsUnsignedOid(seatC1.id);
+    const { key: seatF1Key } = lockKeyAsUnsignedOid(seatF1.id);
+    expect(heldObjids.has(seatC1Key)).toBe(false);
+    expect(heldObjids.has(seatF1Key)).toBe(false);
+
+    releaseA!();
+    await txA;
+  });
 });

@@ -102,6 +102,10 @@ function post(agent: ReturnType<typeof request.agent>, url: string) {
   return agent.post(url).set(CSRF_HEADER_NAME, "1");
 }
 
+function patchReq(agent: ReturnType<typeof request.agent>, url: string) {
+  return agent.patch(url).set(CSRF_HEADER_NAME, "1");
+}
+
 let resCounter = 0;
 async function createReservation(overrides: { partySize?: number; preferredArea?: string; reservationDate?: Date; status?: string } = {}): Promise<string> {
   resCounter += 1;
@@ -430,5 +434,86 @@ describe("POST /reservations/:id/complete — R1.5-P1A: releases the active seat
     const assignment = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assignRes.body.assignmentId } });
     expect(assignment.status).toBe("Seated");
     expect(assignment.releaseReason).toBeNull();
+  });
+});
+
+describe("PATCH /availability/reservations/:id — R1.5-P1B: capacity-relevant modifications return 200 + seatingDisposition", () => {
+  async function createAndAssignViaHttp(tableId: string, reservationDate = "2026-08-25T18:00:00.000Z") {
+    const createRes = await post(sharedAgent, "/availability/reservations").send({
+      commandId: `p1b-http-create-${tableId}-${Date.now()}`,
+      servicePeriodId: "sp-1",
+      contactSelection: { type: "ExistingContact", contactId: "contact-1" },
+      reservationDate,
+      partySize: 2,
+      preferredArea: "Sushi",
+      source: { category: "Telephone" },
+    });
+    expect(createRes.status).toBe(201);
+    const reservationId = createRes.body.reservationId;
+
+    const assignRes = await post(sharedAgent, `/reservations/${reservationId}/seating`).send({
+      commandId: `p1b-http-assign-${tableId}-${Date.now()}`,
+      resources: [{ tableId }],
+    });
+    expect(assignRes.status).toBe(201);
+    return { reservationId, assignmentId: assignRes.body.assignmentId };
+  }
+
+  it("date/time change retaining the same table -> 200, seatingDisposition RETAINED", async () => {
+    const { reservationId, assignmentId } = await createAndAssignViaHttp("sushi-table-5");
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${reservationId}`).send({
+      commandId: "p1b-http-modify-retained-1",
+      changes: { reservationDate: "2026-08-25T20:00:00.000Z" },
+      isServicePeriodStillValid: true,
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toEqual({ type: "MODIFIED", seatingDisposition: "RETAINED" });
+
+    const oldRow = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assignmentId } });
+    expect(oldRow.status).toBe("Released");
+    expect(oldRow.releaseReason).toBe("StaffReassigned");
+    const active = await prisma.seatingAssignment.findFirstOrThrow({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(active.id).not.toBe(assignmentId);
+  });
+
+  it("preferred-area change -> 200, seatingDisposition RELEASED", async () => {
+    const { reservationId } = await createAndAssignViaHttp("sushi-table-6");
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${reservationId}`).send({
+      commandId: "p1b-http-modify-released-1",
+      changes: { preferredArea: "Teppanyaki" },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toEqual({ type: "MODIFIED", seatingDisposition: "RELEASED" });
+
+    const active = await prisma.seatingAssignment.findFirst({ where: { reservationId, status: { in: ["Assigned", "Seated"] } } });
+    expect(active).toBeNull();
+  });
+
+  it("party-size change within held capacity, interval/area unchanged -> 200, seatingDisposition UNCHANGED", async () => {
+    const { reservationId, assignmentId } = await createAndAssignViaHttp("sushi-table-8");
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${reservationId}`).send({
+      commandId: "p1b-http-modify-unchanged-1",
+      changes: { partySize: 3 },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toEqual({ type: "MODIFIED", seatingDisposition: "UNCHANGED" });
+
+    const stillActive = await prisma.seatingAssignment.findUniqueOrThrow({ where: { id: assignmentId } });
+    expect(stillActive.status).toBe("Seated"); // POST /reservations/:id/seating in this file seats immediately
+    expect(stillActive.releaseReason).toBeNull();
+  });
+
+  it("a non-capacity-relevant edit on the SAME reservation keeps the exact prior 204-no-body contract", async () => {
+    const { reservationId } = await createAndAssignViaHttp("sushi-table-9");
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${reservationId}`).send({
+      commandId: "p1b-http-modify-noncapacity-1",
+      changes: { notes: "unaffected by R1.5-P1B" },
+    });
+    expect(patched.status).toBe(204);
+    expect(patched.body).toEqual({});
   });
 });
