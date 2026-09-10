@@ -267,7 +267,7 @@ export function createApp(deps: AppDependencies): Express {
     communicationOutboxService,
     guestManagementTokenService
   );
-  const modifyHandler = new ModifyReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
+  const modifyHandler = new ModifyReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock, deps.servicePeriodReader);
   const confirmHandler = new ConfirmReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const cancelHandler = new CancelReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const completeHandler = new CompleteReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);

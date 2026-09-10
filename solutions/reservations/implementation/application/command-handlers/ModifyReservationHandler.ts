@@ -7,6 +7,8 @@ import { ReservationRepository } from "../../domain/repositories/ReservationRepo
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
+import { ServicePeriodReader } from "../ports/ServicePeriodReader.js";
+import { deriveServiceCode } from "../../domain/availability/Service.js";
 
 export interface ModifyReservationRequest {
   readonly commandId: string;
@@ -39,7 +41,15 @@ export class ModifyReservationHandler {
   constructor(
     private readonly repository: ReservationRepository,
     private readonly eventIdGenerator: EventIdGenerator,
-    private readonly clock: Clock
+    private readonly clock: Clock,
+    /**
+     * R1.6-P2B — required, mirroring CreateReservationHandler's own
+     * mandatory ServicePeriodReader dependency (never optional-last here:
+     * this closes a real "client, not server, was authoritative" gap —
+     * an optional/no-op default would silently reintroduce it for any
+     * caller that omitted the parameter).
+     */
+    private readonly servicePeriodReader: ServicePeriodReader
   ) {}
 
   async handle(request: ModifyReservationRequest): Promise<Result<void>> {
@@ -58,13 +68,52 @@ export class ModifyReservationHandler {
       return fail([violation("CAP-D01.01-R15", "A reservation modification request must reference an existing Reservation Identity.")]);
     }
 
+    // R1.6-P2B — server-authoritative Service-code handling, resolved
+    // BEFORE aggregate.modify()/repository.save() are ever called, so a
+    // rejection here mutates nothing (the surrounding transaction, when
+    // one exists — see AvailabilityOrchestrator.modifyWithCapacity — rolls
+    // back entirely on a failed Result, exactly like every other
+    // validation failure in that method).
+    //
+    //   - date changing + servicePeriodId explicitly supplied: validate
+    //     it against the NEW effective date; a mismatch rejects.
+    //   - date changing + servicePeriodId omitted: derive the correct
+    //     canonical code automatically and inject it into the changes
+    //     passed to the aggregate — the existing CAP-D01.01-R20 rule
+    //     (ModificationRules.requiresServicePeriodRevalidation) then sees
+    //     an explicit value, exactly as if the caller had supplied it.
+    //   - date NOT changing + servicePeriodId explicitly supplied:
+    //     validate it against the CURRENT (unchanged) effective date; a
+    //     mismatch still rejects — an explicit value is always checked.
+    //   - date NOT changing + servicePeriodId omitted: untouched. A
+    //     historical/legacy noncanonical value is never rewritten merely
+    //     because some OTHER field changed.
+    let changes = request.changes;
+    const dateChanging = request.changes.reservationDate !== undefined;
+    const effectiveDate = request.changes.reservationDate ?? aggregate.getReservationDateTime();
+
+    if (request.changes.servicePeriodId !== undefined) {
+      const validation = await this.servicePeriodReader.validateReservation({
+        servicePeriodId: request.changes.servicePeriodId,
+        reservationDate: effectiveDate,
+        partySize: request.changes.partySize ?? aggregate.getPartySize(),
+      });
+      if (!validation.isValid) {
+        return fail([
+          violation("CAP-D01.01-R06", validation.reason ?? "The Service Period is not valid for this reservation date, time, and party size."),
+        ]);
+      }
+    } else if (dateChanging) {
+      changes = { ...request.changes, servicePeriodId: deriveServiceCode(effectiveDate) };
+    }
+
     const result = aggregate.modify(
       {
         eventId: this.eventIdGenerator.generate(),
         correlationId: request.correlationId ?? request.commandId,
         causationId: request.causationId,
         actor: request.actor,
-        changes: request.changes,
+        changes,
         isServicePeriodStillValid: request.isServicePeriodStillValid,
         isAuthorizedCorrection: request.isAuthorizedCorrection,
         correctionReason: request.correctionReason,

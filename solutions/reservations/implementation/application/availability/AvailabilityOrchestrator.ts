@@ -60,6 +60,7 @@ import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
 import { ServicePeriodService } from "./ServicePeriodService.js";
 import { ServicePeriodEligibility } from "../../domain/availability/ServicePeriod.js";
+import { deriveServiceCode } from "../../domain/availability/Service.js";
 
 /** Thrown only inside a runInTransaction callback to force a rollback when a wrapped CAP-D01.01 handler rejects after a capacity write already happened in the same transaction. Never escapes this file. */
 class OrchestratedValidationFailure extends Error {
@@ -422,12 +423,15 @@ export class AvailabilityOrchestrator {
 
     const created = await this.createWithCapacity({
       commandId: request.commandId,
-      // Structurally required by CreateReservationRequest but consumed
-      // only by the OLD placeholder ServicePeriodReader (CreateReservationHandler
-      // step 5), which reports every value valid unconditionally — a fixed,
-      // non-empty sentinel is behaviorally inert here. The REAL ServicePeriod
-      // authority for this path is servicePeriodPolicy: "ImmediateWalkIn" below.
-      servicePeriodId: "walk-in",
+      // R1.6-P2B — CreateReservationHandler step 5 now validates this for
+      // real (CanonicalServicePeriodReader in production wiring), so a
+      // walk-in must supply an actually-canonical value, derived from its
+      // own instant — never the old inert "walk-in" sentinel, which would
+      // now be rejected. The REAL Service-period ELIGIBILITY authority for
+      // this path remains servicePeriodPolicy: "ImmediateWalkIn" below
+      // (a separate, unrelated booking-window concern) — this field only
+      // has to be the canonical code matching commandNow.
+      servicePeriodId: deriveServiceCode(commandNow),
       contactSelection: { type: "CreateNewContact", displayName: request.contactSelection.displayName, phone: request.contactSelection.phone },
       reservationDate: commandNow,
       partySize: request.partySize,

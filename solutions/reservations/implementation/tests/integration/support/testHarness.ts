@@ -6,6 +6,7 @@ import { PrismaClosingDayStore } from "../../../infrastructure/persistence/Prism
 import { PrismaDuplicateReservationChecker } from "../../../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
 import { PrismaContactRepository } from "../../../infrastructure/persistence/PrismaContactRepository.js";
 import { UnvalidatedServicePeriodReader } from "../../../infrastructure/UnvalidatedServicePeriodReader.js";
+import { ServicePeriodReader } from "../../../application/ports/ServicePeriodReader.js";
 import { CreateReservationHandler } from "../../../application/command-handlers/CreateReservationHandler.js";
 import { CreateContactHandler } from "../../../application/command-handlers/CreateContactHandler.js";
 import { ModifyReservationHandler } from "../../../application/command-handlers/ModifyReservationHandler.js";
@@ -62,6 +63,15 @@ export interface HarnessOverrides {
    * enforcement.
    */
   readonly enforceServicePeriod?: boolean;
+  /**
+   * R1.6-P2B — optional, defaulting to UnvalidatedServicePeriodReader
+   * exactly as before, so every existing caller of buildHarness (the vast
+   * majority of the integration suite, many using arbitrary "sp-*"
+   * fixture values) is completely unaffected. Pass
+   * CanonicalServicePeriodReader explicitly only from a test that
+   * specifically exercises the real lunch/dinner validation boundary.
+   */
+  readonly servicePeriodReader?: ServicePeriodReader;
 }
 
 export function buildHarness(prisma: PrismaClient, now: Date, overrides: HarnessOverrides = {}) {
@@ -71,7 +81,7 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
   const closingDayStore = new PrismaClosingDayStore(prisma);
   const duplicateChecker = new PrismaDuplicateReservationChecker(prisma);
   const contactRepository = overrides.contactRepository ?? new PrismaContactRepository(prisma);
-  const servicePeriodReader = new UnvalidatedServicePeriodReader();
+  const servicePeriodReader = overrides.servicePeriodReader ?? new UnvalidatedServicePeriodReader();
   const idGenerator = new SequentialIdGenerator("res");
   const eventIdGenerator = overrides.eventIdGenerator ?? new SequentialIdGenerator("evt");
   const clock = new MutableClock(now);
@@ -105,7 +115,7 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     communicationOutboxService,
     guestManagementTokenService
   );
-  const modifyHandler = new ModifyReservationHandler(repository, eventIdGenerator, clock);
+  const modifyHandler = new ModifyReservationHandler(repository, eventIdGenerator, clock, servicePeriodReader);
   const cancelHandler = new CancelReservationHandler(repository, eventIdGenerator, clock);
 
   // R1.6-C0 — real Prisma-backed ServicePeriod authority, wired ONLY when

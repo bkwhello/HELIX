@@ -7,6 +7,7 @@ import { PrismaClosingDayStore } from "../../../infrastructure/persistence/Prism
 import { PrismaDuplicateReservationChecker } from "../../../infrastructure/persistence/PrismaDuplicateReservationChecker.js";
 import { PrismaContactRepository } from "../../../infrastructure/persistence/PrismaContactRepository.js";
 import { UnvalidatedServicePeriodReader } from "../../../infrastructure/UnvalidatedServicePeriodReader.js";
+import { ServicePeriodReader } from "../../../application/ports/ServicePeriodReader.js";
 import { CreateReservationHandler } from "../../../application/command-handlers/CreateReservationHandler.js";
 import { CreateContactHandler } from "../../../application/command-handlers/CreateContactHandler.js";
 import { ConfirmReservationHandler } from "../../../application/command-handlers/ConfirmReservationHandler.js";
@@ -34,7 +35,15 @@ class FixedClock implements Clock {
  * (AvailabilityOrchestrator.cancelWithCapacity's R1.5 integration point)
  * is exercisable end-to-end against real PostgreSQL.
  */
-export function buildFloorHarness(prisma: PrismaClient, now: Date) {
+/**
+ * R1.6-P2B — `servicePeriodReader` is optional, defaulting to
+ * `UnvalidatedServicePeriodReader` exactly as before, so every existing
+ * caller (dozens, across the floor-seating test files, all using
+ * arbitrary "sp-*" fixture values) is completely unaffected. Pass
+ * `CanonicalServicePeriodReader` explicitly only from a test that
+ * specifically needs the real lunch/dinner validation boundary.
+ */
+export function buildFloorHarness(prisma: PrismaClient, now: Date, servicePeriodReaderOverride?: ServicePeriodReader) {
   const floorRepository = new PrismaFloorRepository(prisma);
   const transactionManager = new PrismaTransactionManager(prisma);
   const idGenerator = new RandomIdGenerator();
@@ -48,7 +57,7 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date) {
   const closingDayStore = new PrismaClosingDayStore(prisma);
   const duplicateChecker = new PrismaDuplicateReservationChecker(prisma);
   const contactRepository = new PrismaContactRepository(prisma);
-  const servicePeriodReader = new UnvalidatedServicePeriodReader();
+  const servicePeriodReader = servicePeriodReaderOverride ?? new UnvalidatedServicePeriodReader();
   const createContactHandler = new CreateContactHandler(contactRepository, idGenerator, clock);
 
   const createHandler = new CreateReservationHandler(
@@ -63,7 +72,7 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date) {
     clock,
     transactionManager
   );
-  const modifyHandler = new ModifyReservationHandler(reservationRepository, eventIdGenerator, clock);
+  const modifyHandler = new ModifyReservationHandler(reservationRepository, eventIdGenerator, clock, servicePeriodReader);
   const cancelHandler = new CancelReservationHandler(reservationRepository, eventIdGenerator, clock);
   const completeHandler = new CompleteReservationHandler(reservationRepository, eventIdGenerator, clock);
   // R1.5-P1B — needed by tests that must reach a real "Confirmed" status

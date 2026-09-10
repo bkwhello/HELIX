@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createTestPrismaClient, truncateReservationDomainTables, truncateSeatingDomainTables } from "./support/testDatabaseSafety.js";
 import { buildFloorHarness } from "./support/floorTestHarness.js";
+import { CanonicalServicePeriodReader } from "../../infrastructure/CanonicalServicePeriodReader.js";
 import { seedFloor } from "../../ops/floor/seedFloor.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
@@ -284,11 +285,21 @@ describe("Failure injection — R1.5-P1B Modify seating revalidation, forced fai
   });
 
   it("AvailabilityOrchestrator.modifyWithCapacity itself: an invalid modification rolls back its own already-executed seating release-and-recreate, atomically", async () => {
-    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW);
+    // R1.6-P2B — this test's own dedicated harness instance, wired with
+    // the REAL CanonicalServicePeriodReader (not the shared, always-valid
+    // UnvalidatedServicePeriodReader every other test in this file uses):
+    // it needs a genuine, real-production-code-path rejection to trigger
+    // AFTER seating revalidation has already run, and a canonical-code
+    // mismatch is now that trigger (see below) — the old "omitted
+    // servicePeriodId, no isServicePeriodStillValid confirmation" trigger
+    // no longer rejects, since the server now derives the correct code
+    // automatically in that case.
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW, new CanonicalServicePeriodReader());
     const table14 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 15" } });
 
     const created = await availabilityOrchestrator.createWithCapacity({
-      commandId: cmd(), servicePeriodId: "sp-floor-fi",
+      // 18:00 UTC on 2026-08-20 is 20:00 Europe/Amsterdam (DST) -> "dinner".
+      commandId: cmd(), servicePeriodId: "dinner",
       contactSelection: { type: "ExistingContact", contactId: "contact-1" },
       reservationDate: new Date("2026-08-20T18:00:00Z"), partySize: 2,
       source: { category: ReservationSourceCategory.Telephone }, preferredArea: "Sushi", actor: staffActor,
@@ -302,16 +313,17 @@ describe("Failure injection — R1.5-P1B Modify seating revalidation, forced fai
     });
     if (assigned.type !== "ASSIGNED") throw new Error("unreachable");
 
-    // A date/time change with NO isServicePeriodStillValid confirmation
-    // and no revalidated Service Period supplied -> CAP-D01.01-R20 rejects
-    // this INSIDE the same transaction, AFTER modifyWithCapacity's own
-    // seating revalidation already ran (it runs before the Reservation
-    // write, per the approved transaction sequence) — proving that
-    // release-and-recreate rolls back too, through the real production
-    // code path, not a synthetic throw.
+    // A date/time change to another still-"dinner" instant, paired with
+    // an explicit, deliberately WRONG servicePeriodId ("lunch") -> the
+    // real CanonicalServicePeriodReader rejects this INSIDE the same
+    // transaction, AFTER modifyWithCapacity's own seating revalidation
+    // already ran (it runs before the Reservation write, per the approved
+    // transaction sequence) — proving that release-and-recreate rolls
+    // back too, through the real production code path, not a synthetic
+    // throw.
     const result = await availabilityOrchestrator.modifyWithCapacity({
       commandId: cmd(), reservationId, actor: staffActor,
-      changes: { reservationDate: new Date("2026-08-20T20:00:00Z") },
+      changes: { reservationDate: new Date("2026-08-20T20:00:00Z"), servicePeriodId: "lunch" },
     });
     expect(result.type).toBe("VALIDATION_FAILED");
 

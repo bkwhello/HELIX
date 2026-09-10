@@ -229,7 +229,7 @@ async function main(): Promise<void> {
       idGenerator,
       sameDayClock,
       createHandler,
-      new ModifyReservationHandler(repository, eventIdGenerator, sameDayClock),
+      new ModifyReservationHandler(repository, eventIdGenerator, sameDayClock, new UnvalidatedServicePeriodReader()),
       new CancelReservationHandler(repository, eventIdGenerator, sameDayClock),
       undefined,
       servicePeriodService

@@ -11,7 +11,7 @@ import { PrismaLoginAttemptTracker } from "../infrastructure/persistence/PrismaL
 import { ScryptPasswordHasher } from "../infrastructure/ScryptPasswordHasher.js";
 import { RandomSessionTokenGenerator } from "../infrastructure/RandomSessionTokenGenerator.js";
 import { PrismaContactRepository } from "../infrastructure/persistence/PrismaContactRepository.js";
-import { UnvalidatedServicePeriodReader } from "../infrastructure/UnvalidatedServicePeriodReader.js";
+import { CanonicalServicePeriodReader } from "../infrastructure/CanonicalServicePeriodReader.js";
 import { SystemClock } from "../infrastructure/SystemClock.js";
 import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
 import { RandomEventIdGenerator } from "../infrastructure/RandomEventIdGenerator.js";
@@ -37,9 +37,12 @@ const app = createApp({
   // CAP-D05.01 — real, PostgreSQL-backed Contact Management (R1.3-I1),
   // replacing the old UnvalidatedContactReader placeholder.
   contactRepository: new PrismaContactRepository(prisma),
-  // PLACEHOLDER adapter — see infrastructure/Unvalidated*.ts. Replace once
-  // Service Period Management exists as a capability.
-  servicePeriodReader: new UnvalidatedServicePeriodReader(),
+  // R1.6-P2B — the real, canonical lunch/dinner Service-code validator,
+  // replacing the old always-valid UnvalidatedServicePeriodReader
+  // placeholder. See domain/availability/Service.ts — this is a minimum,
+  // code-level-only slice of CAP-D02.01, not the full live per-date
+  // Service Period lifecycle (CAP-D02.02, still Designed/unimplemented).
+  servicePeriodReader: new CanonicalServicePeriodReader(),
   closingDayStore: new PrismaClosingDayStore(prisma),
   idGenerator: new RandomIdGenerator(),
   eventIdGenerator: new RandomEventIdGenerator(),
