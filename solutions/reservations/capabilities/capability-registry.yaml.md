@@ -259,6 +259,16 @@ capabilities:
         - Change Reason
       rules:
         - change validation
+        # R1-DOC-3 — closed: R1.5-P1B implemented this rule
+        # (SeatingOrchestrator.revalidateOrReleaseForModify, wired into
+        # AvailabilityOrchestrator.modifyWithCapacity — a capacity-
+        # relevant Modify now retains a still-valid active seating
+        # assignment or releases it, never leaves it silently stale).
+        # No delivery_status change: this capability was already Pilot;
+        # this note only records that its one previously-open owned rule
+        # is now implemented and automated-tested
+        # (tests/integration/floor-seating.test.ts,
+        # tests/api/seating-no-show.test.ts).
         - assignment revalidation
         - change attribution
       events:
@@ -880,7 +890,19 @@ capabilities:
     slug: table-release-turn-management
     domain: CAP-D04
     type: Core
-    delivery_status: Designed
+    # R1-DOC-3 — bumped from Designed to Pilot: R1.5-P1A implemented
+    # reservation-completion seating release (AvailabilityOrchestrator.
+    # completeWithCapacity releases the active SeatingAssignment in the
+    # same transaction as completion), live behind POST
+    # /reservations/:id/complete and covered by
+    # tests/integration/floor-seating.test.ts. All four owned rules below
+    # (reservation completion, assignment completion, resource release,
+    # subsequent availability) are implemented and automated-tested, the
+    # same bar CAP-D04.01/CAP-D02.03/CAP-D01.03 were already held to. No
+    # human smoke test has been performed — see PILOT.md's "Floor &
+    # Seating status" for the same automated-vs-human-tested distinction
+    # already applied to sibling capabilities.
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: High

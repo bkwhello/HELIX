@@ -1,13 +1,15 @@
 # Controlled Pilot — Create Reservation + Daily List + Floor & Seating
 
-Scope: Create Reservation, the daily list (`GET /reservations`), and the
+Scope: Create Reservation, the daily list (`GET /reservations`), the
 Floor & Seating actions (assign, pre-assign, move, mark-seated, no-show
-release, floor/late-arrival view, Resource Blocking, walk-in) — all wired
-into `public/pilot.html` and covered by the automated suite (see "Floor &
-Seating status" below for exactly what that does and does not mean).
-Confirm/Modify/Cancel/Complete are implemented and tested at the domain
-level but have not been through this same pilot-readiness pass — do not
-rely on them operationally yet (see README, Known Limitations).
+release, floor/late-arrival view, Resource Blocking, walk-in), and a
+read-only Security Events view (Owner/Manager only) — all wired into
+`public/pilot.html` and covered by the automated suite (see "Floor &
+Seating status" and "Security Events status" below for exactly what that
+does and does not mean). Confirm/Modify/Cancel/Complete are implemented
+and tested at the domain level but have not been through this same
+pilot-readiness pass — do not rely on them operationally yet (see README,
+Known Limitations).
 
 ## What this actually is
 
@@ -45,6 +47,31 @@ dev environment) — this has not happened yet as of this document.
   tables are currently blocked — Resource Blocking has its own separate
   list in the pilot for that. A blocked table with no reservation on it
   produces no visible signal on the floor view.
+
+**Seating consistency (R1.5-P1A, R1.5-P1B0/P1B)**: completing a
+reservation now releases its active seating assignment; a capacity-
+relevant Modify now retains or releases seating instead of leaving it
+silently stale; the Tier-3 seating-resource lock (assign/move/modify vs.
+Resource Block) was normalized to always lock the parent Table, closing
+a real race window; `ResourceBlockService.blockTable`'s conflict check
+now includes child-Seat claims, not just the Table itself. Same
+automated-only posture as above — see `README.md`'s Status section for
+the full evidence.
+
+## Security Events status (R1.7-P1)
+
+A read-only "Beveiligingsgebeurtenissen" section, visible to Owner and
+Manager only (`Permission.AuditView`), lists recorded `LoginFailed`/
+`OwnerBootstrapped` events — timestamp, event type, resolved actor/target
+identity where available, and a human-readable login-failure reason.
+Nothing in this section can mutate, delete, or acknowledge an event. A
+staff member without `Permission.AuditView` never sees the section at
+all — it hides itself on a `401`/`403` rather than showing an error, the
+server remains the sole authority. Covered by `tests/api/security-events.test.ts`
+(35 tests) and `tests/pilot/security-events-ui.test.ts` (9 source-text
+tests); no human smoke test has been performed, same as Floor & Seating
+above. See `R1_7_SECURITY_EVENT_VISIBILITY_IMPLEMENTATION_REPORT.md` for
+the full design.
 
 ## Before starting
 

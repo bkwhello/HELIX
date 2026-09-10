@@ -90,6 +90,45 @@ Table-scoped only, and the floor view does not surface blocked-table
 state) and for what a smoke test would need to cover before this is
 relied on operationally.
 
+**Seating consistency on Modify/Complete, and a Resource Block conflict
+fix** (R1.5-P1A, R1.5-P1B0/P1B, commits `daea3483`, `9947b7f`) closed
+three further gaps in the Floor & Seating sequence above:
+
+- **Early/normal completion now releases seating.** A capacity-aware
+  `POST /reservations/:id/complete` (`AvailabilityOrchestrator.completeWithCapacity`)
+  releases the reservation's active `SeatingAssignment`, if any, in the
+  same transaction as completion — previously the table stayed
+  permanently occupied with no expiry mechanism. CAP-D04.05's owned
+  rules (reservation completion, assignment completion, resource
+  release, subsequent availability) are now fully implemented; see the
+  capability registry.
+- **A capacity-relevant Modify now revalidates or releases seating.**
+  `SeatingOrchestrator.revalidateOrReleaseForModify`, wired into
+  `AvailabilityOrchestrator.modifyWithCapacity`, retains a still-valid
+  active seating assignment or releases it — a Modify that changed party
+  size/area/time could previously leave a stale assignment in place
+  silently. `PATCH /availability/reservations/:id` now returns
+  `200 {type:"MODIFIED", seatingDisposition}` (`"UNCHANGED"|"RETAINED"|"RELEASED"|"NO_ACTIVE_ASSIGNMENT"`)
+  instead of a plain `204` whenever seating is relevant; `public/pilot.html`'s
+  edit-save flow surfaces `RELEASED` as an explicit warning.
+- **Tier-3 seating-resource locks were normalized to the parent Table.**
+  Assign/move/modify-revalidation previously locked a raw Seat id for a
+  Teppanyaki selector while `ResourceBlockService` locked the parent
+  Table — two different lock keys for the same physical resource, a real
+  race window. `SeatingOrchestrator.resolveLockTableIds` now always
+  resolves to the parent Table id. Proven with database-state
+  (`pg_locks`) evidence, not timing, in
+  `tests/integration/floor-seating-concurrency.test.ts`.
+- **`ResourceBlockService.blockTable`'s conflict check now includes
+  child Seat claims.** It previously checked only Table-level claims
+  (`seatIds: []` hardcoded), so an active Teppanyaki seat claim could
+  not block a conflicting Table-level block request. It now resolves the
+  Table's child Seats (`FloorRepository.findSeatsByTableId`) and includes
+  them in the same overlap check.
+
+Same automated-verification-only posture as the rest of Floor & Seating
+above — no human smoke test, not deployed anywhere.
+
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
 - **Corrected (R1-DOC-2).** This bullet used to say `ContactReader` and
@@ -150,6 +189,25 @@ relied on operationally.
   credentials or other request data) via `SecurityEventRecorder`,
   best-effort and never affecting the login outcome; anti-enumeration
   behavior at the HTTP boundary is unchanged.
+- **Added (R1.7-P1) — Security Event Visibility.** R1.2-P2's recorded
+  `SecurityEvent` rows (`LoginFailed`, `OwnerBootstrapped`) were written
+  but never read back anywhere. `GET /security-events`
+  (`Permission.AuditView` — already defined in
+  `StaffAuthorizationPolicy.ts` and already granted to Owner + Manager,
+  no new permission introduced) now exposes them through an explicit
+  8-field allowlist projection (`application/security/SecurityEventProjection.ts`)
+  that never returns raw `metadata`, an attempted username/password, or
+  any other non-allowlisted data; `since`/`limit` query filtering
+  (`since` requires a complete RFC 3339 timestamp with an explicit
+  timezone — a date-only or timezone-less value is rejected, as is a
+  syntactically-shaped but impossible calendar/time value); a read-only
+  "Beveiligingsgebeurtenissen" section in `public/pilot.html` that hides
+  itself entirely on 401/403 rather than showing an error. See
+  `R1_7_SECURITY_EVENT_VISIBILITY_IMPLEMENTATION_REPORT.md` for the full
+  design and evidence, including this feature's explicit relationship to
+  `CAP-D08.02` (Operational Audit) — it is a narrow, delivered slice
+  adjacent to that capability's broader scope, not a claim that CAP-D08.02
+  itself is now satisfied.
 - The scheduler/cron hosting needed to actually run
   `npm run process-communications` on a recurring basis does not exist
   yet (same still-open prerequisite `ops/backup/createBackup.ts` already
@@ -247,5 +305,6 @@ full test suite on every push/PR touching this directory.
 is a staff-facing page covering Create Reservation, the daily list, and
 Floor & Seating (assign/pre-assign/move/mark-seated/no-show, floor and
 late-arrival view, Resource Blocking, walk-in) — the operations covered
-by the pilot-readiness work above. See `PILOT.md` for scope, known
+by the pilot-readiness work above — plus a read-only Security Events
+view (R1.7-P1, Owner/Manager only). See `PILOT.md` for scope, known
 limitations, and success criteria before using it with real bookings.
