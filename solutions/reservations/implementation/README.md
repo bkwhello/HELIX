@@ -144,9 +144,9 @@ above — no human smoke test, not deployed anywhere.
   - **Service Period Management (CAP-D02.02)**, as the capability registry
     actually defines it — a live per-date service-session lifecycle
     (Created/Opened/Closed states, active-floorplan selection) — remains
-    unimplemented and stays `Designed`. `infrastructure/UnvalidatedServicePeriodReader.ts`
-    is still exactly the placeholder it always was, still wired into
-    `CreateReservationHandler`, and still always reports valid.
+    unimplemented and stays `Designed`. No `Service` or `ServiceSession`
+    table exists; no lifecycle states, active floorplan selection, or
+    reservation-to-session relationship exists.
   - The real, separate `domain/availability/ServicePeriod.ts` +
     `application/availability/ServicePeriodService.ts` "booking-window
     eligibility" behavior (R1.6-A/R1.6-C0) is genuinely implemented and
@@ -157,6 +157,33 @@ above — no human smoke test, not deployed anywhere.
     `ServicePeriod.ts`'s own header comment and
     `R1_6_A_SERVICE_PERIOD_IMPLEMENTATION_REPORT.md` §"BookingPolicy
     Divergence" for the accepted divergence.
+  - **Corrected (R1-DOC-4).** This bullet used to say
+    `infrastructure/UnvalidatedServicePeriodReader.ts` was still wired
+    into `CreateReservationHandler` in production and always reported
+    every value valid — that is no longer true. R1.6-P2B
+    (`R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md`, commit
+    `e7f079fc2fccc2f2a8117678413930cc3f5b99b0`) replaced it in production
+    wiring (`api/server.ts`) with `infrastructure/CanonicalServicePeriodReader.ts`,
+    which validates the supplied `servicePeriodId` against a server-
+    derived canonical Service **code** — a THIRD, distinct concern from
+    both bullets above: not the booking-window eligibility calculator,
+    and not CAP-D02.02's live session lifecycle. `servicePeriodId` must
+    now be exactly `"lunch"` (Europe/Amsterdam local time in
+    `[12:00, 16:00)`) or `"dinner"` (every other eligible time) on
+    creation, is derived automatically when a date/time-changing
+    modification omits it, is validated when explicitly supplied, and an
+    unrelated modification never rewrites a historical/legacy stored
+    value. This is a minimum, code-level-only slice of CAP-D02.01
+    (`domain/availability/Service.ts` — no persisted `Service` table, no
+    administration UI) — CAP-D02.01 and CAP-D02.02 both stay `Designed`;
+    neither capability is claimed as implemented by this change.
+    `UnvalidatedServicePeriodReader` still exists and remains legitimately
+    used across most of the test suite and by
+    `ops/reservations/servicePeriodSmokeTest.ts`, wherever the specific
+    concern under test is unrelated to Service-code validation — a
+    deliberate test double, not a forgotten production leftover. See
+    `R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md` for the
+    full design and evidence.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side

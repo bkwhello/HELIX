@@ -97,10 +97,20 @@ permission) — there is no self-service sign-up.
 
 ## Known, accepted limitations during the pilot
 
-- **No real contact or service-period validation.** Any text is accepted
-  as the guest identifier; any service-period selection is accepted.
-  These become real validations once Contact Management and Service
-  Period Management exist as capabilities — not before.
+- **No real contact validation beyond Contact Management's own scope.**
+  These become fuller validations once Service Period Management exists
+  as a capability — not before.
+- **Corrected (R1-DOC-4).** This bullet used to say "any service-period
+  selection is accepted" — that is no longer true. Since R1.6-P2B, the
+  server validates the pilot's own `servicePeriodId` value (derived
+  automatically from the chosen time, never picked manually — see
+  "Dienst" in `public/pilot.html`) against a canonical `"lunch"`/`"dinner"`
+  code. This is a narrow, code-level Service **classification**
+  (`domain/availability/Service.ts`), not the live per-date Service
+  Period **session** Service Period Management (CAP-D02.02) still lacks
+  — no Service/ServiceSession table, no Created/Opened/Closed lifecycle,
+  and no reservation-to-session relationship exist. See
+  `R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md`.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

@@ -347,6 +347,17 @@ capabilities:
     slug: service-management
     domain: CAP-D02
     type: Supporting
+    # R1-DOC-4 — R1.6-P2B (commit e7f079fc2fccc2f2a8117678413930cc3f5b99b0)
+    # added a minimum, code-level-only Service CLASSIFICATION
+    # (domain/availability/Service.ts: lowercase "lunch"/"dinner",
+    # derived from Europe/Amsterdam local time, [12:00,16:00) lunch)
+    # used to validate Reservation.servicePeriodId on creation and
+    # date/time-changing modification. This is NOT this capability's
+    # owned rules (service naming, default operating times, default
+    # reservation duration) — no persisted Service row, no
+    # ServiceCreated/Modified/Deactivated event, no administration UI.
+    # delivery_status intentionally unchanged — see
+    # R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true
@@ -384,6 +395,17 @@ capabilities:
     slug: service-period-management
     domain: CAP-D02
     type: Core
+    # R1-DOC-4 — R1.6-P2B (commit e7f079fc2fccc2f2a8117678413930cc3f5b99b0)
+    # does NOT implement this capability. It only makes
+    # Reservation.servicePeriodId a validated "lunch"/"dinner"
+    # classification (see CAP-D02.01's own note above) — none of this
+    # capability's owned rules (service period creation/opening/closing,
+    # active floorplan selection) exist. No Service or ServiceSession
+    # table, no Created/Opened/Closed lifecycle, no reservation-to-
+    # session relationship. delivery_status intentionally unchanged —
+    # see R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md and
+    # the still-open R1.6-P2A design addendum for the real, larger,
+    # product-owner-gated work this capability still requires.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true
