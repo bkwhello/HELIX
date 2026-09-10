@@ -37,6 +37,8 @@ import { PasswordHasher } from "../application/ports/PasswordHasher.js";
 import { SessionTokenGenerator } from "../application/ports/SessionTokenGenerator.js";
 import { LoginHandler } from "../application/auth/LoginHandler.js";
 import { SecurityEventRecorder } from "../application/ports/SecurityEventRecorder.js";
+import { SecurityEventReader } from "../application/ports/SecurityEventReader.js";
+import { projectSecurityEvent } from "../application/security/SecurityEventProjection.js";
 import { LogoutHandler } from "../application/auth/LogoutHandler.js";
 import { CreateStaffUserHandler } from "../application/auth/CreateStaffUserHandler.js";
 import { LoginThrottleGuard, LoginThrottleConfig } from "../application/auth/LoginThrottleGuard.js";
@@ -182,6 +184,17 @@ export interface AppDependencies {
      * feature need to supply a real one.
      */
     readonly securityEventRecorder?: SecurityEventRecorder;
+    /**
+     * R1.7-P1 — same "not available in this deployment" optionality as
+     * securityEventRecorder immediately above, for the same reason:
+     * every existing test file that builds AppDependencies stays
+     * unaffected. When omitted, GET /security-events is not mounted at
+     * all — there is no degraded/partial visibility, only "not
+     * available in this deployment". A real deployment (api/server.ts)
+     * supplies a PrismaSecurityEventReader over the SAME shared
+     * PrismaClient the recorder above already uses.
+     */
+    readonly securityEventReader?: SecurityEventReader;
   };
 }
 
@@ -807,6 +820,100 @@ export function createApp(deps: AppDependencies): Express {
     app.delete("/resource-blocks/:id", requireStaffSession, requirePermission(Permission.ResourceBlock), async (req: Request, res: Response) => {
       await resourceBlockService.unblock(routeParam(req, "id"));
       res.status(204).send();
+    });
+  }
+
+  // R1.7-P1 — Security Event Visibility. Permission.AuditView: already
+  // defined in StaffAuthorizationPolicy.ts and already granted to
+  // Owner + Manager in the role matrix (it existed for exactly this
+  // purpose, per that file's own header comment — "no route exists for
+  // either yet"); no new permission is introduced. Pure read: no
+  // transaction, no lock. The ISO-timestamp/positive-integer validation
+  // below is deliberately inline, matching GET /floor's own established
+  // precedent immediately above of not sharing per-route query-parsing
+  // with any other route.
+  // Chief Engineer correction — `since` must be a COMPLETE RFC 3339/
+  // ISO-8601 timestamp: a date component, a time component, AND an
+  // explicit timezone (Z or a numeric offset). A date-only value or a
+  // timezone-less value is rejected, never interpreted as midnight/
+  // machine-local time. The regex alone only enforces shape; calendar/
+  // time validity (e.g. a nonexistent "2026-02-30") is checked
+  // separately below, because `new Date(...)` silently ROLLS OVER an
+  // out-of-range day-of-month (2026-02-30 → 2026-03-02) instead of
+  // rejecting it — relying on Date/isNaN alone would have let that class
+  // of malformed input through.
+  const ISO_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/;
+  const SECURITY_EVENTS_DEFAULT_LIMIT = 50;
+  const SECURITY_EVENTS_MAX_LIMIT = 200;
+
+  function parseStrictSince(raw: string): Date | null {
+    const match = ISO_TIMESTAMP_PATTERN.exec(raw);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    const second = Number(match[6]);
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return null;
+    // Reject calendar rollover (e.g. Feb 30, Apr 31) by re-deriving the
+    // same fields from a UTC timestamp built out of them and requiring
+    // an exact match — the literal date/time as written must exist,
+    // independent of whatever timezone offset it's expressed in.
+    const asUtc = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+    if (asUtc.getUTCFullYear() !== year || asUtc.getUTCMonth() !== month - 1 || asUtc.getUTCDate() !== day) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  }
+
+  if (deps.auth.securityEventReader) {
+    const securityEventReader = deps.auth.securityEventReader;
+    const staffUserRepositoryForEvents = deps.auth.staffUserRepository;
+    app.get("/security-events", requireStaffSession, requirePermission(Permission.AuditView), async (req: Request, res: Response) => {
+      const sinceParam = req.query["since"];
+      let since: Date | undefined;
+      if (sinceParam !== undefined) {
+        if (typeof sinceParam !== "string") {
+          res.status(400).json({ message: "since must be a complete ISO-8601 timestamp with a timezone, e.g. 2026-09-10T12:30:00Z." });
+          return;
+        }
+        const parsed = parseStrictSince(sinceParam);
+        if (!parsed) {
+          res.status(400).json({ message: "since must be a complete ISO-8601 timestamp with a timezone, e.g. 2026-09-10T12:30:00Z." });
+          return;
+        }
+        since = parsed;
+      }
+
+      const limitParam = req.query["limit"];
+      let limit = SECURITY_EVENTS_DEFAULT_LIMIT;
+      if (limitParam !== undefined) {
+        if (typeof limitParam !== "string" || !/^[1-9]\d*$/.test(limitParam)) {
+          res.status(400).json({ message: "limit must be a positive integer." });
+          return;
+        }
+        limit = Math.min(Number(limitParam), SECURITY_EVENTS_MAX_LIMIT);
+      }
+
+      const records = await securityEventReader.listRecent({ since, limit });
+
+      // One batched round of lookups per response, never per-row — the
+      // projection itself stays pure/no I/O (SecurityEventProjection.ts).
+      const staffIds = new Set<string>();
+      for (const record of records) {
+        if (record.actingStaffUserId) staffIds.add(record.actingStaffUserId);
+        if (record.targetStaffUserId) staffIds.add(record.targetStaffUserId);
+      }
+      const usernamesById = new Map<string, string>();
+      await Promise.all(
+        Array.from(staffIds).map(async (id) => {
+          const staffUser = await staffUserRepositoryForEvents.findById(id);
+          if (staffUser) usernamesById.set(id, staffUser.username);
+        })
+      );
+
+      res.status(200).json({ events: records.map((record) => projectSecurityEvent(record, usernamesById)) });
     });
   }
 

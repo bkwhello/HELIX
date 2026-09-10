@@ -543,6 +543,16 @@
     <div id="resource-block-list" style="margin-top: 1rem;"></div>
     <div id="resource-block-empty" class="empty" style="display:none;">Geen actieve tafelblokkades.</div>
   </section>
+
+  <!-- R1.7-P1 — read-only; no form, no buttons. Hidden entirely (see
+       loadSecurityEvents()) for any staff member without Permission.AuditView
+       — the server remains authoritative, this is display convenience only. -->
+  <section id="security-events-section" class="full-width">
+    <h2>Beveiligingsgebeurtenissen</h2>
+    <div id="security-events-message"></div>
+    <div id="security-events-list" style="margin-top: 1rem;"></div>
+    <div id="security-events-empty" class="empty" style="display:none;">Geen recente beveiligingsgebeurtenissen.</div>
+  </section>
 </main>
 
 <footer id="footer-info">HELIX Pilot v0.1</footer>
@@ -593,6 +603,7 @@
     loadClosingDays();
     loadResourceBlocks();
     loadOccupancy();
+    loadSecurityEvents();
   }
 
   function showLoginGate() {
@@ -2006,6 +2017,66 @@
       showMessage(resourceBlockMessage, "Netwerkfout: kon de server niet bereiken.", "error");
     }
   });
+
+  // --- Beveiligingsgebeurtenissen (R1.7-P1) -----------------------------
+  // Read-only: no form, no mutating control anywhere in this block.
+  const securityEventsSection = document.getElementById("security-events-section");
+  const securityEventsMessage = document.getElementById("security-events-message");
+  const securityEventsList = document.getElementById("security-events-list");
+  const securityEventsEmpty = document.getElementById("security-events-empty");
+
+  const SECURITY_EVENT_TYPE_LABELS = {
+    LoginFailed: "Mislukte inlogpoging",
+    OwnerBootstrapped: "Eigenaar aangemaakt",
+  };
+  const LOGIN_FAILURE_REASON_LABELS = {
+    UNKNOWN_USERNAME: "Onbekende gebruikersnaam",
+    INVALID_PASSWORD: "Onjuist wachtwoord",
+    ACCOUNT_DISABLED: "Account uitgeschakeld",
+  };
+
+  async function loadSecurityEvents() {
+    clearMessage(securityEventsMessage);
+    try {
+      const res = await fetch("/security-events");
+      if (res.status === 401 || res.status === 403) {
+        // No Permission.AuditView (or no session) — hide the section
+        // entirely rather than showing an error. UI visibility is
+        // convenience only; the server remains authoritative, and
+        // hiding leaks nothing about why.
+        securityEventsSection.style.display = "none";
+        return;
+      }
+      securityEventsSection.style.display = "";
+      if (!res.ok) {
+        showMessage(securityEventsMessage, "Kon beveiligingsgebeurtenissen niet laden.", "error");
+        return;
+      }
+      const data = await res.json();
+      securityEventsList.innerHTML = "";
+      securityEventsEmpty.style.display = data.events.length === 0 ? "block" : "none";
+      for (const event of data.events) {
+        // Every field rendered here is untrusted (server-controlled
+        // metadata, resolved usernames, an event type string) —
+        // escapeHtml() on each, same convention as loadResourceBlocks().
+        const row = document.createElement("div");
+        row.className = "list-item";
+        const typeLabel = SECURITY_EVENT_TYPE_LABELS[event.type] || event.type;
+        const reasonLabel = event.reason ? LOGIN_FAILURE_REASON_LABELS[event.reason] || event.reason : null;
+        const actingLabel = event.actingStaffUserId ? (event.actingStaffUsername || "onbekende gebruiker") : null;
+        const targetLabel = event.targetStaffUserId ? (event.targetStaffUsername || "onbekende gebruiker") : null;
+        let line = `${formatDateTimeNL(event.occurredAt)} — ${escapeHtml(typeLabel)}`;
+        if (reasonLabel) line += ` — ${escapeHtml(reasonLabel)}`;
+        if (targetLabel) line += ` — doelwit: ${escapeHtml(targetLabel)}`;
+        if (actingLabel) line += ` — door: ${escapeHtml(actingLabel)}`;
+        row.innerHTML = `<span>${line}</span>`;
+        securityEventsList.appendChild(row);
+      }
+    } catch (err) {
+      securityEventsSection.style.display = "";
+      showMessage(securityEventsMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+    }
+  }
 
   // --- Teppanyaki bezetting --------------------------------------------
   const occupancyBody = document.getElementById("occupancy-body");
