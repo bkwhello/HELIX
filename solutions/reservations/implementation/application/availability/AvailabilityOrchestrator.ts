@@ -61,6 +61,8 @@ import { ReservationSourceCategory } from "../../domain/value-objects/Reservatio
 import { ServicePeriodService } from "./ServicePeriodService.js";
 import { ServicePeriodEligibility } from "../../domain/availability/ServicePeriod.js";
 import { deriveServiceCode } from "../../domain/availability/Service.js";
+import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
+import { ServiceSessionSnapshotStatus, lockAndReadServiceSession, requiresOpenedSession } from "./ServiceSessionGate.js";
 
 /** Thrown only inside a runInTransaction callback to force a rollback when a wrapped CAP-D01.01 handler rejects after a capacity write already happened in the same transaction. Never escapes this file. */
 class OrchestratedValidationFailure extends Error {
@@ -75,6 +77,8 @@ export type CreateWithCapacityResult =
   | { readonly type: "BOOKING_POLICY_REJECTED"; readonly policy: BookingPolicyOutcome }
   /** R1.6-C0 — CAP-D02 ServicePeriod authority rejected the requested start (never VALID here — VALID means enforcement proceeds normally). Distinct from BOOKING_POLICY_REJECTED: this asks "is this an offered booking start at all", not "which channel may complete it" — see AvailabilityOrchestrator's own enforcement-site comment and domain/availability/ServicePeriod.ts. */
   | { readonly type: "SERVICE_PERIOD_REJECTED"; readonly eligibility: ServicePeriodEligibility }
+  /** R1.6-P2C-1 — ImmediateWalkIn callers only (servicePeriodPolicy === "ImmediateWalkIn"); an ordinary advance-booking create is never gated. Only ever returned when a ServiceSessionRepository is wired in. */
+  | { readonly type: "SESSION_NOT_OPEN"; readonly sessionStatus: ServiceSessionSnapshotStatus }
   | { readonly type: "VALIDATION_FAILED"; readonly violations: readonly RuleViolation[] };
 
 /**
@@ -185,7 +189,19 @@ export class AvailabilityOrchestrator {
      * see that file's `completeWithCapacity`-vs-`completeHandler.handle`
      * branch in the `/reservations/:id/complete` route.
      */
-    private readonly completeHandler?: CompleteReservationHandler
+    private readonly completeHandler?: CompleteReservationHandler,
+    /**
+     * R1.6-P2C-1 — optional and LAST, same "add capability, never break a
+     * caller" precedent as every other optional-last dependency above.
+     * Every existing test/caller that constructs this class without it
+     * stays completely unaffected — no session gate is enforced,
+     * exactly today's behavior. `api/server.ts` always supplies a real
+     * instance so the gate is genuinely live in production. Used by
+     * `createWithCapacity` (only for `servicePeriodPolicy: "ImmediateWalkIn"`
+     * callers — an ordinary advance-booking create is never gated) and
+     * by `modifyWithCapacity`'s seating-revalidation branch.
+     */
+    private readonly serviceSessionRepository?: ServiceSessionRepository
   ) {}
 
   /**
@@ -297,6 +313,26 @@ export class AvailabilityOrchestrator {
 
     try {
       const work = await this.transactionManager.runInTransaction(async (tx) => {
+        // R1.6-P2C-1 — Tier 1.5, before the Tier 2 capacity lock
+        // immediately below. Gated ONLY for an immediate walk-in
+        // (Chief Engineer decision #7) — an ordinary advance-booking
+        // create remains allowed regardless of session state (decision:
+        // "Pre-booked reservation creation remains allowed before a
+        // session exists or opens"). Reuses the SAME
+        // servicePeriodPolicy flag that already distinguishes the two
+        // callers for the unrelated booking-window-eligibility check
+        // above — no new flag invented.
+        if (this.serviceSessionRepository && request.servicePeriodPolicy === "ImmediateWalkIn") {
+          const sessionSnapshot = await lockAndReadServiceSession({
+            serviceSessionRepository: this.serviceSessionRepository,
+            reservationDateTime: request.reservationDate,
+            tx,
+          });
+          if (requiresOpenedSession(sessionSnapshot)) {
+            return { kind: "SESSION_NOT_OPEN" as const, sessionStatus: sessionSnapshot.status };
+          }
+        }
+
         await this.capacityRepository.acquireCapacityLock({ capacityPoolId: pool, localServiceDate, tx });
 
         // See file header, idempotency layer 2.
@@ -362,6 +398,9 @@ export class AvailabilityOrchestrator {
       }
       if (work.kind === "BOOKING_POLICY_REJECTED") {
         return { type: "BOOKING_POLICY_REJECTED", policy: work.policy };
+      }
+      if (work.kind === "SESSION_NOT_OPEN") {
+        return { type: "SESSION_NOT_OPEN", sessionStatus: work.sessionStatus };
       }
       if (work.kind === "ALREADY_APPLIED") {
         const winner = await this.reservationRepository.findByCommandId(request.commandId);
@@ -573,6 +612,30 @@ export class AvailabilityOrchestrator {
         const currentPoolRaw = authoritative.getPreferredArea();
         if (!existingCommitment || !currentPoolRaw || !isCapacityPoolId(currentPoolRaw)) {
           return { kind: "NO_ACTIVE_COMMITMENT" };
+        }
+
+        // R1.6-P2C-1 — Tier 1.5, before the Tier 2 capacity lock(s) below
+        // (global order: reservation -> service session -> capacity/date
+        // -> seating resource). Chief Engineer decision #10: NOT status-
+        // gated (no rejection based on session state — nothing here ever
+        // returns SESSION_NOT_OPEN), acquired purely so this transaction
+        // serializes against a concurrent session Close via the SAME
+        // lock revalidateOrReleaseForModify's own eventual retain/release
+        // decision depends on being race-free against. Only relevant when
+        // seating integration exists at all — a deployment without
+        // seatingOrchestrator has no active SeatingAssignment for this
+        // lock to ever protect. Locks BOTH the old (pre-change) and new
+        // (post-change) derived session keys, mirroring how the Tier 2
+        // capacity locks immediately below already lock both the old and
+        // new (pool, date) via sortLockResources — the assignment being
+        // revalidated conceptually spans both.
+        if (this.seatingOrchestrator && this.serviceSessionRepository) {
+          const oldReservationDateTime = authoritative.getReservationDateTime();
+          const newReservationDateTime = changes.reservationDate ?? oldReservationDateTime;
+          await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: oldReservationDateTime, tx });
+          if (newReservationDateTime.getTime() !== oldReservationDateTime.getTime()) {
+            await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: newReservationDateTime, tx });
+          }
         }
 
         const newPartySize = changes.partySize ?? authoritative.getPartySize();

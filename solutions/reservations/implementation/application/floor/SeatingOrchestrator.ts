@@ -30,6 +30,8 @@ import { deriveReservationLockKey, sortSeatingResourceIds } from "../../domain/a
 import { asPrismaTx } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { Actor } from "../../domain/value-objects/Actor.js";
+import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
+import { ServiceSessionSnapshotStatus, lockAndReadServiceSession, requiresOpenedSession, rejectsPreAssignment } from "../availability/ServiceSessionGate.js";
 
 export interface ResourceSelector {
   readonly tableId?: string;
@@ -52,7 +54,9 @@ export interface AssignSeatingRequest {
 export type AssignSeatingOutcome =
   | { readonly type: "ASSIGNED"; readonly assignment: SeatingAssignment }
   | { readonly type: "NOT_SEATABLE"; readonly seatability: SeatabilityOutcome }
-  | { readonly type: "ALREADY_ASSIGNED_ELSEWHERE" };
+  | { readonly type: "ALREADY_ASSIGNED_ELSEWHERE" }
+  /** R1.6-P2C-1 — immediate assignment requires an Opened session; pre-assignment rejects only Closed/Cancelled. Only ever returned when a ServiceSessionRepository is wired in. */
+  | { readonly type: "SESSION_NOT_OPEN"; readonly sessionStatus: ServiceSessionSnapshotStatus };
 
 export interface MoveSeatingRequest {
   readonly commandId: string;
@@ -68,7 +72,11 @@ export type MoveSeatingOutcome =
   | { readonly type: "NOT_SEATABLE"; readonly seatability: SeatabilityOutcome }
   | { readonly type: "NO_ACTIVE_ASSIGNMENT" };
 
-export type MarkSeatedOutcome = { readonly type: "SEATED" } | { readonly type: "NO_ACTIVE_ASSIGNMENT" };
+export type MarkSeatedOutcome =
+  | { readonly type: "SEATED" }
+  | { readonly type: "NO_ACTIVE_ASSIGNMENT" }
+  /** R1.6-P2C-1 — requires an Opened session. Only ever returned when a ServiceSessionRepository is wired in. */
+  | { readonly type: "SESSION_NOT_OPEN"; readonly sessionStatus: ServiceSessionSnapshotStatus };
 export type ReleaseNoShowOutcome = { readonly type: "RELEASED" } | { readonly type: "NO_ACTIVE_ASSIGNMENT" };
 
 /**
@@ -91,7 +99,18 @@ export class SeatingOrchestrator {
     private readonly floorRepository: FloorRepository,
     private readonly transactionManager: TransactionManager,
     private readonly idGenerator: IdGenerator,
-    private readonly clock: Clock
+    private readonly clock: Clock,
+    /**
+     * R1.6-P2C-1 — optional, same "not available in this deployment"
+     * posture as every other optional-last dependency in this codebase
+     * (e.g. AvailabilityOrchestrator's own `seatingOrchestrator?`): every
+     * existing test/caller that constructs a SeatingOrchestrator without
+     * this stays completely unaffected — no session gate is enforced,
+     * exactly today's behavior. A real deployment (api/server.ts)
+     * supplies a real ServiceSessionRepository so the gate is genuinely
+     * live in production.
+     */
+    private readonly serviceSessionRepository?: ServiceSessionRepository
   ) {}
 
   /**
@@ -192,6 +211,23 @@ export class SeatingOrchestrator {
       const activeExisting = await this.floorRepository.findActiveAssignmentByReservationId(request.reservationId, tx);
       if (activeExisting) return { type: "ALREADY_ASSIGNED_ELSEWHERE" };
 
+      // R1.6-P2C-1 — Tier 1.5, before any Tier 3 seating-resource lock.
+      // Immediate assignment (seatImmediately: true — walk-in or ordinary
+      // immediate assign) requires an Opened session; pre-assignment
+      // (seatImmediately falsy) rejects only Closed/Cancelled. Derived
+      // from request.startTime — the same instant the created
+      // SeatingAssignment itself is stamped with — never a stored
+      // servicePeriodId.
+      if (this.serviceSessionRepository) {
+        const sessionSnapshot = await lockAndReadServiceSession({
+          serviceSessionRepository: this.serviceSessionRepository,
+          reservationDateTime: request.startTime,
+          tx,
+        });
+        const rejected = request.seatImmediately ? requiresOpenedSession(sessionSnapshot) : rejectsPreAssignment(sessionSnapshot);
+        if (rejected) return { type: "SESSION_NOT_OPEN", sessionStatus: sessionSnapshot.status };
+      }
+
       // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0),
       // sorted, deterministic order.
       const lockTableIds = await this.resolveLockTableIds(request.resources, tx);
@@ -243,6 +279,16 @@ export class SeatingOrchestrator {
       const current = await this.floorRepository.findActiveAssignmentByReservationId(request.reservationId, tx);
       if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
 
+      // R1.6-P2C-1 — Chief Engineer decision #9: Move is NOT status-gated
+      // (no rejection based on session status), but MUST participate in
+      // the session lock so it serializes with a concurrent Close — the
+      // returned snapshot is deliberately ignored. Derived from the
+      // EXISTING assignment's own startTime (the interval Move preserves
+      // unchanged — see the createAssignment call below).
+      if (this.serviceSessionRepository) {
+        await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: current.startTime, tx });
+      }
+
       // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0).
       const lockTableIds = await this.resolveLockTableIds(request.resources, tx);
       for (const resourceId of lockTableIds) {
@@ -284,6 +330,7 @@ export class SeatingOrchestrator {
       await this.acquireReservationLock(input.reservationId, tx);
       const current = await this.floorRepository.findActiveAssignmentByReservationId(input.reservationId, tx);
       if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
+
       // P1-B9 idempotency fix: a repeated call after the party is already
       // Seated must be a true no-op, not a second write — updateAssignmentStatus
       // unconditionally re-stamps seatedAt to "now" whenever status is
@@ -291,8 +338,23 @@ export class SeatingOrchestrator {
       // would otherwise silently overwrite the original seating time on a
       // double-click or client retry. Only the Assigned -> Seated
       // transition itself performs the write; already-Seated short-circuits
-      // before it, still under the same reservation lock.
+      // before it, still under the same reservation lock. Checked BEFORE
+      // the R1.6-P2C-1 session gate below, deliberately — a true no-op
+      // repeat (nothing left to mutate) must never newly fail just
+      // because the session has since closed.
       if (current.status === "Seated") return { type: "SEATED" };
+
+      // R1.6-P2C-1 — Tier 1.5: mark-seated requires an Opened session,
+      // derived from the existing assignment's own startTime.
+      if (this.serviceSessionRepository) {
+        const sessionSnapshot = await lockAndReadServiceSession({
+          serviceSessionRepository: this.serviceSessionRepository,
+          reservationDateTime: current.startTime,
+          tx,
+        });
+        if (requiresOpenedSession(sessionSnapshot)) return { type: "SESSION_NOT_OPEN", sessionStatus: sessionSnapshot.status };
+      }
+
       await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Seated", tx });
       return { type: "SEATED" };
     });

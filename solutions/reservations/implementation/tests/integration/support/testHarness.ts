@@ -24,6 +24,7 @@ import { GuestManagementTokenService } from "../../../application/communications
 import { RandomSessionTokenGenerator } from "../../../infrastructure/RandomSessionTokenGenerator.js";
 import { ServicePeriodService } from "../../../application/availability/ServicePeriodService.js";
 import { PrismaServicePeriodOverrideStore } from "../../../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
+import { ServiceSessionRepository } from "../../../domain/repositories/ServiceSessionRepository.js";
 
 let counter = 0;
 /** Distinct, human-inspectable IDs per test run — not cryptographically random, which is irrelevant for tests and would make failures harder to read. */
@@ -72,6 +73,13 @@ export interface HarnessOverrides {
    * specifically exercises the real lunch/dinner validation boundary.
    */
   readonly servicePeriodReader?: ServicePeriodReader;
+  /**
+   * R1.6-P2C-1 — optional, defaulting to `undefined` (no session gate
+   * enforced), so every existing caller of `buildHarness` is completely
+   * unaffected. Pass a real `ServiceSessionRepository` only from a test
+   * that specifically exercises session enforcement.
+   */
+  readonly serviceSessionRepository?: ServiceSessionRepository;
 }
 
 export function buildHarness(prisma: PrismaClient, now: Date, overrides: HarnessOverrides = {}) {
@@ -136,7 +144,9 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     modifyHandler,
     cancelHandler,
     undefined, // seatingOrchestrator — not needed by this general-purpose harness (see tests/integration/support/floorTestHarness.ts for the R1.5 floor-specific one)
-    servicePeriodService
+    servicePeriodService,
+    undefined, // completeHandler — not needed by this general-purpose harness
+    overrides.serviceSessionRepository
   );
 
   return {
@@ -154,6 +164,7 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     communicationOutboxService,
     guestManagementTokenService,
     servicePeriodService,
+    serviceSessionRepository: overrides.serviceSessionRepository,
   };
 }
 

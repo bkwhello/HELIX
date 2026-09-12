@@ -20,6 +20,7 @@ import { PrismaGuestManagementCredentialRepository } from "../infrastructure/per
 import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
 import { PrismaFloorRepository } from "../infrastructure/persistence/PrismaFloorRepository.js";
+import { PrismaServiceSessionRepository } from "../infrastructure/persistence/PrismaServiceSessionRepository.js";
 import { PrismaSecurityEventRecorder } from "../infrastructure/persistence/PrismaSecurityEventRecorder.js";
 import { PrismaSecurityEventReader } from "../infrastructure/persistence/PrismaSecurityEventReader.js";
 import { resolveAppHost, startListening } from "./serverConfig.js";
@@ -68,6 +69,27 @@ const app = createApp({
   floor: {
     floorRepository: new PrismaFloorRepository(prisma),
     prisma,
+  },
+  // R1.6-P2C-1 — Operational Service Session lifecycle enforcement. Same
+  // shared `prisma` client every other adapter above uses (never a second
+  // connection), same `PrismaTransactionManager` pattern as `capacity`
+  // above. Mounts the five /service-sessions* routes and makes
+  // SeatingOrchestrator/AvailabilityOrchestrator enforce the session gate
+  // on every live assign/pre-assign/mark-seated/move/modify-revalidation
+  // path.
+  //
+  // DEPLOYMENT PRECONDITION: migration `20260910153637_add_service_session`
+  // (adds the `service_sessions` table) MUST be applied to whatever
+  // database this process connects to (via `prisma migrate deploy`)
+  // BEFORE starting a build that includes this wiring — every session-gate
+  // read/write below goes through PrismaServiceSessionRepository, which
+  // depends on that table existing. This repository was not applied to
+  // `helix_reservations_dev` as of this change (R1.6-P2C-1 STOP-gate
+  // report) — do not start this server against that database until a
+  // separate, explicit migration-application step has run.
+  serviceSessions: {
+    serviceSessionRepository: new PrismaServiceSessionRepository(prisma),
+    transactionManager: new PrismaTransactionManager(prisma),
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
   // route. Real EmailDeliveryPort/provider selection remains a separate,

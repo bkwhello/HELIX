@@ -79,3 +79,31 @@ export function dayOfWeekFromLocalDate(localDate: string): number {
 export function toLocalDayOfWeek(instant: Date): number {
   return dayOfWeekFromLocalDate(toLocalServiceDate(instant));
 }
+
+/**
+ * R1.6-P2C-1 — a coarse, generously-padded UTC instant range guaranteed
+ * to fully contain every instant whose Amsterdam-local calendar date is
+ * `localDate`, for use as a SQL pre-filter (never the exact test).
+ * Europe/Amsterdam's UTC offset is always either +01:00 (CET) or +02:00
+ * (CEST); a naive UTC-midnight guess for `localDate` could be up to 2
+ * hours early or late relative to the true local-midnight boundary. 3
+ * hours of padding on each side comfortably covers that in both
+ * directions without hand-maintaining DST transition dates — the caller
+ * MUST still apply `toLocalServiceDate(instant) === localDate` (and, if
+ * relevant, `deriveServiceCode`) to each candidate row for the exact
+ * match, mirroring `CapacityRepository.findOverlappingCommitments`'s own
+ * established "coarse SQL pre-filter, exact test in application code"
+ * precedent.
+ */
+export function localDateToPaddedUtcRange(localDate: string): { readonly rangeStart: Date; readonly rangeEnd: Date } {
+  const naiveMidnightUtc = new Date(`${localDate}T00:00:00Z`);
+  if (Number.isNaN(naiveMidnightUtc.getTime())) {
+    throw new Error(`localDateToPaddedUtcRange: "${localDate}" is not a valid YYYY-MM-DD date.`);
+  }
+  const paddingMs = 3 * 60 * 60 * 1000;
+  const dayMs = 24 * 60 * 60 * 1000;
+  return {
+    rangeStart: new Date(naiveMidnightUtc.getTime() - paddingMs),
+    rangeEnd: new Date(naiveMidnightUtc.getTime() + dayMs + paddingMs),
+  };
+}

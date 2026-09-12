@@ -52,6 +52,9 @@ import { CommunicationOutboxService } from "../application/communications/Commun
 import { GuestManagementTokenService } from "../application/communications/GuestManagementTokenService.js";
 import { ResendConfirmationHandler } from "../application/communications/ResendConfirmationHandler.js";
 import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
+import { ServiceSessionRepository } from "../domain/repositories/ServiceSessionRepository.js";
+import { ServiceSessionService } from "../application/availability/ServiceSessionService.js";
+import { isServiceCode } from "../domain/availability/Service.js";
 import {
   SESSION_COOKIE_NAME,
   createRequireStaffSession,
@@ -141,6 +144,21 @@ export interface AppDependencies {
      * this deployment already uses — never a second, separate connection.
      */
     readonly prisma: PrismaClient;
+  };
+  /**
+   * R1.6-P2C-1 — optional, same "not available in this deployment"
+   * posture as `capacity`/`floor` above. When omitted: the five
+   * `/service-sessions*` routes are not mounted, and
+   * `SeatingOrchestrator`/`AvailabilityOrchestrator` are constructed
+   * without a `serviceSessionRepository` — no session gate is enforced
+   * anywhere, byte-identical to pre-P2C-1 behavior. When present,
+   * requires `capacity` and `floor` too (the only place the gated
+   * orchestrators are constructed) — supplying `serviceSessions` alone
+   * wires nothing.
+   */
+  serviceSessions?: {
+    readonly serviceSessionRepository: ServiceSessionRepository;
+    readonly transactionManager: TransactionManager;
   };
   /**
    * R1.6-B — optional, same "not available in this deployment" posture as
@@ -282,7 +300,13 @@ export function createApp(deps: AppDependencies): Express {
   // ones by accident.
   const seatingOrchestrator =
     deps.capacity && deps.floor
-      ? new SeatingOrchestrator(deps.floor.floorRepository, deps.capacity.transactionManager, deps.idGenerator, deps.clock)
+      ? new SeatingOrchestrator(
+          deps.floor.floorRepository,
+          deps.capacity.transactionManager,
+          deps.idGenerator,
+          deps.clock,
+          deps.serviceSessions?.serviceSessionRepository
+        )
       : undefined;
 
   // P1-B4-A — a pure read; needs floor infrastructure only, deliberately
@@ -319,7 +343,8 @@ export function createApp(deps: AppDependencies): Express {
         // R1.5-P1A — lets /reservations/:id/complete route through
         // completeWithCapacity below, releasing any active SeatingAssignment
         // atomically with completion, whenever capacity infra is present.
-        completeHandler
+        completeHandler,
+        deps.serviceSessions?.serviceSessionRepository
       )
     : null;
 
@@ -917,6 +942,112 @@ export function createApp(deps: AppDependencies): Express {
     });
   }
 
+  // R1.6-P2C-1 — Operational Service Session lifecycle. Permission.CapacitySettingsManage
+  // for mutations (Owner+Manager, the established /closing-days precedent),
+  // requireStaffSession only for the read — same split as every other
+  // date-scoped operational-calendar surface in this deployment. Backend/
+  // API only in this increment: no pilot UI, no /floor response change
+  // (see R1_6_P2C_1_SERVICE_SESSION_IMPLEMENTATION_REPORT.md).
+  if (deps.serviceSessions) {
+    const serviceSessionService = new ServiceSessionService(
+      deps.serviceSessions.serviceSessionRepository,
+      deps.serviceSessions.transactionManager,
+      deps.idGenerator,
+      deps.clock
+    );
+
+    app.get("/service-sessions", requireStaffSession, async (_req: Request, res: Response) => {
+      const sessions = await serviceSessionService.list();
+      res.status(200).json({
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          serviceCode: s.serviceCode,
+          serviceDate: s.serviceDate,
+          status: s.status,
+          openedAt: s.openedAt ? s.openedAt.toISOString() : null,
+          closedAt: s.closedAt ? s.closedAt.toISOString() : null,
+          cancelledAt: s.cancelledAt ? s.cancelledAt.toISOString() : null,
+        })),
+      });
+    });
+
+    app.post("/service-sessions", requireStaffSession, requirePermission(Permission.CapacitySettingsManage), async (req: Request, res: Response) => {
+      if (!req.staffPrincipal) return;
+      const actor = principalToActor(req.staffPrincipal);
+      const body = req.body as { serviceCode?: string; serviceDate?: string };
+      if (typeof body.serviceCode !== "string" || !isServiceCode(body.serviceCode)) {
+        res.status(400).json({ message: 'serviceCode must be "lunch" or "dinner".' });
+        return;
+      }
+      if (typeof body.serviceDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.serviceDate)) {
+        res.status(400).json({ message: "serviceDate must be a YYYY-MM-DD date." });
+        return;
+      }
+      const result = await serviceSessionService.create({ serviceCode: body.serviceCode, serviceDate: body.serviceDate, actor });
+      switch (result.type) {
+        case "CREATED":
+          res.status(201).json({ type: "CREATED", session: result.session });
+          return;
+        case "ALREADY_EXISTS":
+          res.status(409).json({ type: "ALREADY_EXISTS", session: result.session });
+          return;
+        case "INVALID_SERVICE_CODE":
+          res.status(400).json({ message: 'serviceCode must be "lunch" or "dinner".' });
+          return;
+        case "INVALID_SERVICE_DATE":
+          res.status(400).json({ message: "serviceDate must be a valid YYYY-MM-DD date." });
+          return;
+      }
+    });
+
+    function mapTransitionOutcome(res: Response, result: Awaited<ReturnType<typeof serviceSessionService.open>>) {
+      switch (result.type) {
+        case "OPENED":
+        case "CLOSED":
+        case "CANCELLED":
+          res.status(200).json({ type: result.type, session: result.session });
+          return;
+        case "NOT_FOUND":
+          res.status(404).json({ type: "NOT_FOUND" });
+          return;
+        case "INVALID_TRANSITION":
+          res.status(409).json({ type: "INVALID_TRANSITION", currentStatus: result.currentStatus });
+          return;
+        case "ACTIVE_ASSIGNMENTS_EXIST":
+          res.status(409).json({ type: "ACTIVE_ASSIGNMENTS_EXIST", count: result.count });
+          return;
+        case "CONCURRENCY_CONFLICT":
+          res.status(409).json({ type: "CONCURRENCY_CONFLICT" });
+          return;
+      }
+    }
+
+    app.post(
+      "/service-sessions/:id/open",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        mapTransitionOutcome(res, await serviceSessionService.open(paramId(req)));
+      }
+    );
+    app.post(
+      "/service-sessions/:id/close",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        mapTransitionOutcome(res, await serviceSessionService.close(paramId(req)));
+      }
+    );
+    app.post(
+      "/service-sessions/:id/cancel",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        mapTransitionOutcome(res, await serviceSessionService.cancel(paramId(req)));
+      }
+    );
+  }
+
   app.get("/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationView), async (req: Request, res: Response) => {
     const idResult = ReservationId.create(paramId(req));
     if (!idResult.ok) {
@@ -1089,6 +1220,9 @@ export function createApp(deps: AppDependencies): Express {
             // not-yet-exposed seating-move capability (Permission.SeatingMove).
             res.status(409).json({ type: "ALREADY_ASSIGNED_ELSEWHERE" });
             return;
+          case "SESSION_NOT_OPEN":
+            res.status(409).json({ type: "SESSION_NOT_OPEN", sessionStatus: result.sessionStatus });
+            return;
         }
       }
     );
@@ -1178,6 +1312,9 @@ export function createApp(deps: AppDependencies): Express {
           case "ALREADY_ASSIGNED_ELSEWHERE":
             res.status(409).json({ type: "ALREADY_ASSIGNED_ELSEWHERE" });
             return;
+          case "SESSION_NOT_OPEN":
+            res.status(409).json({ type: "SESSION_NOT_OPEN", sessionStatus: result.sessionStatus });
+            return;
         }
       }
     );
@@ -1204,6 +1341,9 @@ export function createApp(deps: AppDependencies): Express {
             return;
           case "NO_ACTIVE_ASSIGNMENT":
             res.status(409).json({ type: "NO_ACTIVE_ASSIGNMENT" });
+            return;
+          case "SESSION_NOT_OPEN":
+            res.status(409).json({ type: "SESSION_NOT_OPEN", sessionStatus: result.sessionStatus });
             return;
         }
       }
@@ -1489,6 +1629,16 @@ export function createApp(deps: AppDependencies): Express {
           // mapping would reuse unchanged.
           res.status(422).json({ servicePeriod: result.eligibility });
           return;
+        case "SESSION_NOT_OPEN":
+          // R1.6-P2C-1 — structurally unreachable on this route: the
+          // session gate only ever applies to servicePeriodPolicy
+          // "ImmediateWalkIn" callers (see AvailabilityOrchestrator.
+          // createWithCapacity's own gate comment), and this ordinary
+          // advance-booking route never sets that. Handled anyway so no
+          // switch case can ever silently fall through without a
+          // response.
+          res.status(409).json({ type: "SESSION_NOT_OPEN", sessionStatus: result.sessionStatus });
+          return;
         case "VALIDATION_FAILED":
           res.status(422).json({ violations: result.violations });
           return;
@@ -1566,6 +1716,9 @@ export function createApp(deps: AppDependencies): Express {
                 return;
               case "SERVICE_PERIOD_REJECTED":
                 res.status(422).json({ servicePeriod: result.result.eligibility });
+                return;
+              case "SESSION_NOT_OPEN":
+                res.status(409).json({ type: "SESSION_NOT_OPEN", sessionStatus: result.result.sessionStatus });
                 return;
               case "VALIDATION_FAILED":
                 res.status(422).json({ violations: result.result.violations });

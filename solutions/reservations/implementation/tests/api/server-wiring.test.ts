@@ -15,10 +15,13 @@ import { fileURLToPath } from "node:url";
  * directly in a test.
  */
 const serverTsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "api", "server.ts");
+const appTsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "api", "app.ts");
 let source: string;
+let appSource: string;
 
 beforeAll(() => {
   source = readFileSync(serverTsPath, "utf-8");
+  appSource = readFileSync(appTsPath, "utf-8");
 });
 
 describe("api/server.ts — loopback binding (P1-B11A)", () => {
@@ -47,9 +50,10 @@ describe("api/server.ts — loopback binding (P1-B11A)", () => {
 });
 
 describe("api/server.ts — existing runtime wiring remains intact", () => {
-  it("still constructs every existing AppDependencies block: capacity, floor, communications, auth", () => {
+  it("still constructs every existing AppDependencies block: capacity, floor, serviceSessions, communications, auth", () => {
     expect(source).toMatch(/capacity:\s*\{/);
     expect(source).toMatch(/floor:\s*\{/);
+    expect(source).toMatch(/serviceSessions:\s*\{/);
     expect(source).toMatch(/communications:\s*\{/);
     expect(source).toMatch(/auth:\s*\{/);
   });
@@ -68,5 +72,48 @@ describe("api/server.ts — existing runtime wiring remains intact", () => {
   it("still constructs exactly one PrismaClient — no second connection introduced", () => {
     const matches = source.match(/new PrismaClient\(\)/g) || [];
     expect(matches).toHaveLength(1);
+  });
+});
+
+describe("api/server.ts — R1.6-P2C-1 Service Session production wiring", () => {
+  it("imports PrismaServiceSessionRepository", () => {
+    expect(source).toContain(
+      'import { PrismaServiceSessionRepository } from "../infrastructure/persistence/PrismaServiceSessionRepository.js";'
+    );
+  });
+
+  it("supplies a real serviceSessions block using the SAME shared `prisma` client, not a new PrismaClient", () => {
+    const match = source.match(/serviceSessions:\s*\{([\s\S]*?)\},/);
+    expect(match).not.toBeNull();
+    const block = match?.[1] ?? "";
+    expect(block).toContain("serviceSessionRepository: new PrismaServiceSessionRepository(prisma)");
+    expect(block).not.toMatch(/new PrismaClient\(\)/);
+  });
+
+  it("supplies transactionManager inside serviceSessions using the same PrismaTransactionManager(prisma) pattern as capacity", () => {
+    const match = source.match(/serviceSessions:\s*\{([\s\S]*?)\},/);
+    const block = match?.[1] ?? "";
+    expect(block).toContain("transactionManager: new PrismaTransactionManager(prisma)");
+  });
+
+  it("still constructs exactly one PrismaClient overall — the serviceSessions block adds no second connection", () => {
+    const matches = source.match(/new PrismaClient\(\)/g) || [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it("documents the deployment precondition: the service_sessions migration must be applied before this wiring is started against a database", () => {
+    expect(source).toContain("20260910153637_add_service_session");
+    expect(source).toMatch(/DEPLOYMENT PRECONDITION/);
+  });
+
+  it("api/app.ts constructs the real ServiceSessionService from the supplied serviceSessions block, not a no-op stand-in", () => {
+    expect(appSource).toMatch(
+      /new ServiceSessionService\(\s*deps\.serviceSessions\.serviceSessionRepository,\s*deps\.serviceSessions\.transactionManager,/
+    );
+  });
+
+  it("api/app.ts passes the real serviceSessionRepository into both SeatingOrchestrator and AvailabilityOrchestrator — the session gate is not silently disabled in production", () => {
+    expect(appSource).toMatch(/new SeatingOrchestrator\(\s*[\s\S]*?deps\.serviceSessions\?\.serviceSessionRepository/);
+    expect(appSource).toMatch(/new AvailabilityOrchestrator\(\s*[\s\S]*?deps\.serviceSessions\?\.serviceSessionRepository/);
   });
 });

@@ -8,6 +8,7 @@ import { PrismaDuplicateReservationChecker } from "../../../infrastructure/persi
 import { PrismaContactRepository } from "../../../infrastructure/persistence/PrismaContactRepository.js";
 import { UnvalidatedServicePeriodReader } from "../../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { ServicePeriodReader } from "../../../application/ports/ServicePeriodReader.js";
+import { ServiceSessionRepository } from "../../../domain/repositories/ServiceSessionRepository.js";
 import { CreateReservationHandler } from "../../../application/command-handlers/CreateReservationHandler.js";
 import { CreateContactHandler } from "../../../application/command-handlers/CreateContactHandler.js";
 import { ConfirmReservationHandler } from "../../../application/command-handlers/ConfirmReservationHandler.js";
@@ -43,14 +44,26 @@ class FixedClock implements Clock {
  * `CanonicalServicePeriodReader` explicitly only from a test that
  * specifically needs the real lunch/dinner validation boundary.
  */
-export function buildFloorHarness(prisma: PrismaClient, now: Date, servicePeriodReaderOverride?: ServicePeriodReader) {
+export function buildFloorHarness(
+  prisma: PrismaClient,
+  now: Date,
+  servicePeriodReaderOverride?: ServicePeriodReader,
+  /**
+   * R1.6-P2C-1 — optional, defaulting to `undefined` (no session gate
+   * enforced), so every existing caller of `buildFloorHarness` (dozens,
+   * across the floor-seating test files) is completely unaffected. Pass
+   * a real `ServiceSessionRepository` only from a test that specifically
+   * exercises session enforcement.
+   */
+  serviceSessionRepositoryOverride?: ServiceSessionRepository
+) {
   const floorRepository = new PrismaFloorRepository(prisma);
   const transactionManager = new PrismaTransactionManager(prisma);
   const idGenerator = new RandomIdGenerator();
   const eventIdGenerator = new RandomEventIdGenerator();
   const clock = new FixedClock(now);
 
-  const seatingOrchestrator = new SeatingOrchestrator(floorRepository, transactionManager, idGenerator, clock);
+  const seatingOrchestrator = new SeatingOrchestrator(floorRepository, transactionManager, idGenerator, clock, serviceSessionRepositoryOverride);
 
   const reservationRepository = new PrismaReservationRepository(prisma);
   const capacityRepository = new PrismaCapacityRepository(prisma);
@@ -96,7 +109,8 @@ export function buildFloorHarness(prisma: PrismaClient, now: Date, servicePeriod
     undefined,
     // R1.5-P1A — lets completeWithCapacity be exercised end-to-end
     // against real PostgreSQL, mirroring cancel-with-seating-release above.
-    completeHandler
+    completeHandler,
+    serviceSessionRepositoryOverride
   );
 
   return { floorRepository, seatingOrchestrator, availabilityOrchestrator, reservationRepository, capacityRepository, closingDayStore, idGenerator, transactionManager, completeHandler, confirmHandler };

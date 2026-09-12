@@ -140,3 +140,33 @@ export function deriveSeatingResourceLockKey(resourceId: string): LockKey {
 export function sortSeatingResourceIds(resourceIds: readonly string[]): readonly string[] {
   return [...new Set(resourceIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
+
+/**
+ * R1.6-P2C-1 — CAP-D02.02-adjacent Service Session enforcement. A NEW
+ * tier, inserted into the existing global lock order (Chief Engineer
+ * directive):
+ *
+ *   reservation (Tier 1) -> service session (Tier 1.5, this namespace)
+ *   -> capacity pool/date (Tier 2) -> seating resource (Tier 3)
+ *
+ * Every path that can create, retain, or recreate an active
+ * SeatingAssignment acquires this lock before any Tier 2/3 lock, so a
+ * concurrent session Close (which also acquires this same lock before
+ * checking/transitioning) can never race a check-then-write on the other
+ * side — whichever transaction acquires the lock first completes before
+ * the other proceeds, closing the exact TOCTOU window optimistic
+ * versioning alone cannot close across separate aggregates.
+ *
+ * "HALT" (Helix AvaiLability Time-session) — a FOURTH namespace, distinct
+ * from CAPACITY_LOCK_NAMESPACE, RESERVATION_LOCK_NAMESPACE, and
+ * SEATING_RESOURCE_LOCK_NAMESPACE, so this lock family can never collide
+ * with any existing one even if hashes happened to coincide.
+ */
+export const SERVICE_SESSION_LOCK_NAMESPACE = 0x48414c54 | 0;
+
+export function deriveServiceSessionLockKey(serviceCode: string, serviceDate: string): LockKey {
+  if (!serviceCode || !serviceDate) {
+    throw new Error("deriveServiceSessionLockKey: serviceCode and serviceDate are both required.");
+  }
+  return { namespace: SERVICE_SESSION_LOCK_NAMESPACE, key: fnv1a32(`${serviceCode}|${serviceDate}`) };
+}

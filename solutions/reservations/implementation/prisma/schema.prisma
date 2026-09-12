@@ -176,6 +176,38 @@ model CapacityCommitment {
   @@index([commandId])
 }
 
+// R1.6-P2C-1 — a minimum operational Service Session lifecycle
+// (Created/Opened/Closed/Cancelled) for a dated meal-based Service
+// ("lunch"/"dinner", R1.6-P2B — see domain/availability/Service.ts).
+// Deliberately NOT the full CAP-D02.02 capability (still Designed): no
+// area/capacity-pool field (a session applies across both areas, per
+// Chief Engineer decision — a capacity pool is not a Service), no
+// foreign key from Reservation or SeatingAssignment (both remain
+// entirely unmodified by this table's existence; session membership is
+// always derived at read time from Reservation.reservationDate — see
+// domain/availability/Service.ts's deriveServiceCode and
+// ServiceTime.ts's toLocalServiceDate), no floorplan-version selection.
+// serviceDate is a pure @db.Date column (no time-of-day/timezone
+// component), matching ServicePeriodOverride.date's own established
+// convention exactly.
+model ServiceSession {
+  id          String    @id @default(cuid())
+  serviceCode String    @map("service_code")
+  serviceDate DateTime  @map("service_date") @db.Date
+  // Created | Opened | Closed | Cancelled — see domain/availability/ServiceSession.ts.
+  status      String
+  openedAt    DateTime? @map("opened_at") @db.Timestamptz
+  closedAt    DateTime? @map("closed_at") @db.Timestamptz
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  // Optimistic-concurrency token — same convention as Reservation.version.
+  version     Int       @default(1)
+
+  @@map("service_sessions")
+  @@unique([serviceCode, serviceDate])
+}
+
 // CAP-D05.01 — Reservation Contact Management (R1.3-I1). Replaces the
 // UnvalidatedContactReader placeholder: a Reservation now references a
 // real, validated Contact record instead of an arbitrary string (in the
