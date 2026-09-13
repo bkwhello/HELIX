@@ -11,7 +11,17 @@ import { TransactionContext } from "../shared/TransactionContext.js";
 export interface ServiceSessionRepository {
   findByKey(serviceCode: string, serviceDate: string, tx?: TransactionContext): Promise<ServiceSession | null>;
   findById(id: string, tx?: TransactionContext): Promise<ServiceSession | null>;
-  list(tx?: TransactionContext): Promise<readonly ServiceSession[]>;
+
+  /**
+   * R1.6-P2C-2A — the ONLY list read this repository exposes: bounded to
+   * exactly one calendar `serviceDate`, ordered deterministically by
+   * `serviceCode` ASC then `id` ASC. Replaces a previous unbounded
+   * `list()` that had exactly one caller (the HTTP read route), which is
+   * now itself bounded — there is no remaining need for an all-date
+   * read, so none is kept "just in case" (add one back only if a real
+   * caller needs it).
+   */
+  listByServiceDate(serviceDate: string, tx?: TransactionContext): Promise<readonly ServiceSession[]>;
 
   /** Rejects (translated by the caller) on the `(serviceCode, serviceDate)` unique-constraint collision — never a pre-check-then-write. */
   create(input: {

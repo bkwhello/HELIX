@@ -127,14 +127,82 @@ afterAll(async () => {
 
 describe("GET /service-sessions — authentication only, no specific permission", () => {
   it("no session -> 401", async () => {
-    const res = await request(app).get("/service-sessions");
+    const res = await request(app).get(`/service-sessions?serviceDate=${nextServiceDate()}`);
     expect(res.status).toBe(401);
   });
 
   it("any authenticated role (including one without CapacitySettingsManage) -> 200", async () => {
-    const res = await receptionAgent.get("/service-sessions");
+    const res = await receptionAgent.get(`/service-sessions?serviceDate=${nextServiceDate()}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.sessions)).toBe(true);
+  });
+});
+
+describe("GET /service-sessions — serviceDate is mandatory, strict, and bounded", () => {
+  it("missing serviceDate -> 400", async () => {
+    const res = await receptionAgent.get("/service-sessions");
+    expect(res.status).toBe(400);
+  });
+
+  it("repeated (array-valued) serviceDate -> 400", async () => {
+    const date = nextServiceDate();
+    const res = await receptionAgent.get(`/service-sessions?serviceDate=${date}&serviceDate=${nextServiceDate()}`);
+    expect(res.status).toBe(400);
+  });
+
+  it.each(["2028-1-1", "not-a-date", "2028/01/01", "", "2028-01-01T00:00:00Z"])("malformed serviceDate (%s) -> 400", async (serviceDate) => {
+    const res = await receptionAgent.get(`/service-sessions?serviceDate=${encodeURIComponent(serviceDate)}`);
+    expect(res.status).toBe(400);
+  });
+
+  it.each(["2028-02-30", "2028-13-01", "2028-00-01", "2028-04-31"])("impossible calendar date (%s) -> 400, never silently rolled over", async (serviceDate) => {
+    const res = await receptionAgent.get(`/service-sessions?serviceDate=${serviceDate}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("a valid date with zero sessions -> 200 with an empty array, never an error", async () => {
+    const res = await receptionAgent.get(`/service-sessions?serviceDate=${nextServiceDate()}`);
+    expect(res.status).toBe(200);
+    expect(res.body.sessions).toEqual([]);
+  });
+
+  it("returns only sessions for the exact requested date — isolated from sessions on other dates", async () => {
+    const dateA = nextServiceDate();
+    const dateB = nextServiceDate();
+    await post(ownerAgent, "/service-sessions").send({ serviceCode: "lunch", serviceDate: dateA });
+    await post(ownerAgent, "/service-sessions").send({ serviceCode: "dinner", serviceDate: dateB });
+
+    const resA = await receptionAgent.get(`/service-sessions?serviceDate=${dateA}`);
+    expect(resA.body.sessions).toHaveLength(1);
+    expect(resA.body.sessions[0]).toMatchObject({ serviceCode: "lunch", serviceDate: dateA });
+
+    const resB = await receptionAgent.get(`/service-sessions?serviceDate=${dateB}`);
+    expect(resB.body.sessions).toHaveLength(1);
+    expect(resB.body.sessions[0]).toMatchObject({ serviceCode: "dinner", serviceDate: dateB });
+  });
+
+  it("both lunch and dinner rows for the same date are returned together", async () => {
+    const date = nextServiceDate();
+    await post(ownerAgent, "/service-sessions").send({ serviceCode: "lunch", serviceDate: date });
+    await post(ownerAgent, "/service-sessions").send({ serviceCode: "dinner", serviceDate: date });
+
+    const res = await receptionAgent.get(`/service-sessions?serviceDate=${date}`);
+    expect(res.body.sessions).toHaveLength(2);
+    expect(res.body.sessions.map((s: { serviceCode: string }) => s.serviceCode).sort()).toEqual(["dinner", "lunch"]);
+  });
+
+  it("ordering is deterministic: serviceCode ASC (dinner before lunch), then id ASC", async () => {
+    const date = nextServiceDate();
+    // Created in the OPPOSITE order (lunch first) so a passing order
+    // proves real sorting, not creation-order coincidence.
+    await post(ownerAgent, "/service-sessions").send({ serviceCode: "lunch", serviceDate: date });
+    await post(ownerAgent, "/service-sessions").send({ serviceCode: "dinner", serviceDate: date });
+
+    const first = await receptionAgent.get(`/service-sessions?serviceDate=${date}`);
+    const second = await receptionAgent.get(`/service-sessions?serviceDate=${date}`);
+    expect(first.body.sessions.map((s: { serviceCode: string }) => s.serviceCode)).toEqual(["dinner", "lunch"]);
+    // Repeatable across calls — not an accident of a single response.
+    expect(second.body.sessions.map((s: { serviceCode: string }) => s.serviceCode)).toEqual(["dinner", "lunch"]);
   });
 });
 

@@ -73,9 +73,12 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
     return row ? toDomain(row) : null;
   }
 
-  async list(tx?: TransactionContext): Promise<readonly ServiceSession[]> {
+  async listByServiceDate(serviceDate: string, tx?: TransactionContext): Promise<readonly ServiceSession[]> {
     const client = tx ? asPrismaTx(tx) : this.prisma;
-    const rows = await client.serviceSession.findMany({ orderBy: [{ serviceDate: "desc" }, { serviceCode: "asc" }] });
+    const rows = await client.serviceSession.findMany({
+      where: { serviceDate: toDateOnly(serviceDate) },
+      orderBy: [{ serviceCode: "asc" }, { id: "asc" }],
+    });
     return rows.map(toDomain);
   }
 

@@ -246,6 +246,14 @@
   .status-Confirmed { background: var(--status-blue-bg); color: var(--status-blue-text); }
   .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
   .status-Completed { background: var(--status-purple-bg); color: var(--status-purple-text); }
+  /* R1.6-P2C-2 — Service Session status badges, daily-list Dienst column and the Servicesessies panel. Reuses the SAME color tokens the reservation-status badges above already use — no new palette. */
+  .session-status-NotCreated { background: var(--status-grey-bg); color: var(--status-grey-text); }
+  .session-status-Created { background: var(--status-blue-bg); color: var(--status-blue-text); }
+  .session-status-Opened { background: var(--ok-bg); color: var(--ok-text); }
+  .session-status-Closed { background: var(--status-purple-bg); color: var(--status-purple-text); }
+  .session-status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
+  .service-session-row { gap: 0.75rem; }
+  .service-session-label { display: flex; align-items: center; gap: 0.5rem; }
   .time-cell { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
   @media (max-width: 639px) {
     .time-cell { font-size: 16px; }
@@ -345,15 +353,31 @@
         <col style="width: 110px" />
         <col style="width: 140px" />
         <col style="width: 110px" />
+        <col style="width: 110px" />
         <col />
         <col style="width: 90px" />
       </colgroup>
       <thead>
-        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Aankomst</th><th>Opmerkingen</th><th></th></tr>
+        <tr><th>Tijd</th><th>Gast</th><th>Aantal</th><th>Voorkeur</th><th>Tafel</th><th>Bron</th><th>Status</th><th>Dienst</th><th>Aankomst</th><th>Opmerkingen</th><th></th></tr>
       </thead>
       <tbody id="list-body"></tbody>
     </table>
     <div id="list-empty" class="empty" style="display:none;">Geen reserveringen voor deze datum.</div>
+  </section>
+
+  <!-- R1.6-P2C-2 — Service Session pilot panel. Follows the SAME
+       Dagoverzicht date (list-date) — no date picker of its own. Reads
+       via the existing GET /service-sessions contract (that endpoint has
+       no date parameter; this panel filters client-side to the selected
+       date), mutates via the four existing POST /service-sessions*
+       routes exactly as they exist. UI gating below (which button shows
+       for which status) is convenience only — every transition is
+       re-validated authoritatively server-side regardless of what this
+       file predicts. -->
+  <section class="full-width">
+    <h2>Servicesessies</h2>
+    <div id="service-session-message"></div>
+    <div id="service-session-list" class="service-session-list"></div>
   </section>
 
   <!-- P1-B4-C — the ONE authoritative seating panel, shared by BOTH entry
@@ -600,6 +624,7 @@
   // page-load/script-parse time, so no fetch happens before login.
   function initApp() {
     loadList();
+    loadServiceSessions();
     loadClosingDays();
     loadResourceBlocks();
     loadOccupancy();
@@ -656,6 +681,77 @@
 
   function ruleMessages(violations) {
     return (violations || []).map((v) => `${v.ruleId}: ${v.message}`).join("\n");
+  }
+
+  /**
+   * R1.6-P2C-2 correction — the ONE canonical lunch/dinner minute
+   * boundary this pilot uses anywhere: hour 12 up to (not including) 16
+   * is lunch, everything else is dinner. Every classification helper
+   * below calls this — the threshold itself is never re-written a second
+   * time or duplicated as a separate literal.
+   */
+  function isLunchHour(hour) {
+    return hour >= 12 && hour < 16;
+  }
+
+  // Mirrors domain/availability/ServiceTime.ts's own toLocalHourMinute()
+  // technique exactly (en-GB, explicit Europe/Amsterdam timeZone,
+  // hour12:false, formatToParts + %24 midnight normalization) — this
+  // static pilot page has no import boundary to that backend module, so
+  // the identical technique is reproduced here rather than a second,
+  // different one invented. A staff member's own machine can be set to
+  // any timezone; this must never depend on it.
+  const AMSTERDAM_HOUR_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Amsterdam",
+    hour: "2-digit",
+    hour12: false,
+  });
+
+  function amsterdamHourFromInstant(date) {
+    const parts = AMSTERDAM_HOUR_FORMATTER.formatToParts(date);
+    const hourPart = parts.find((p) => p.type === "hour");
+    if (!hourPart) return null;
+    // Intl's 24-hour format uses "24" for midnight in some locales/environments.
+    return Number(hourPart.value) % 24;
+  }
+
+  /**
+   * For an ABSOLUTE reservation timestamp (e.g. r.reservationDate, an
+   * ISO instant string from the server) — extracts the hour in explicit
+   * Europe/Amsterdam time via Intl.DateTimeFormat, NEVER browser-local
+   * getHours()/machine timezone. Returns null (never a guessed "dinner")
+   * for a missing or unparseable timestamp — callers must render a
+   * neutral placeholder for null, never invent a status from it. Reused
+   * verbatim by the Servicesessies panel/daily list's session-status
+   * join — never read from the stored Reservation.servicePeriodId, which
+   * can carry a stale/historical value (mirrors the backend's own choice,
+   * R1.6-P2C-1's deriveServiceCode, to derive purely from the instant).
+   */
+  function deriveServicePeriodFromInstant(value) {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const hour = amsterdamHourFromInstant(date);
+    if (hour === null) return null;
+    return isLunchHour(hour) ? "lunch" : "dinner";
+  }
+
+  /**
+   * For the create-reservation form's own local "HH:mm" time-select
+   * value ONLY — this pilot's staff always enter that as the Amsterdam
+   * wall-clock service time directly (there is no separate timezone
+   * field anywhere in this form), so the hour is read straight from the
+   * string. Deliberately never constructed into a Date and re-parsed:
+   * a bare "YYYY-MM-DDTHH:mm" string with no offset is interpreted by
+   * the Date constructor as browser-LOCAL time (wrong on non-Amsterdam
+   * hardware), and forcing it through Date.UTC would instead misread an
+   * already-local wall-clock reading as if it were UTC and shift it by a
+   * whole DST offset — a plain "HH:mm" string has neither ambiguity.
+   */
+  function deriveServicePeriodFromLocalTimeString(hhmm) {
+    if (typeof hhmm !== "string" || !/^\d{2}:\d{2}$/.test(hhmm)) return null;
+    const hour = Number(hhmm.slice(0, 2));
+    return isLunchHour(hour) ? "lunch" : "dinner";
   }
 
   // R1.6-C0 — /availability/reservations can reject a create for four
@@ -821,12 +917,12 @@
     }
     const datetimeValue = `${dateInput.value}T${timeSelect.value}`;
 
-    // Dienst is derived from the chosen time, not picked manually: lunch
-    // only runs 12:00-16:00 (Fri/Sat/Sun in practice, but the time alone
-    // already makes lunch vs. dinner unambiguous, so there is nothing left
-    // for a separate field to disambiguate).
-    const hour = Number(timeSelect.value.slice(0, 2));
-    const servicePeriodId = hour >= 12 && hour < 16 ? "lunch" : "dinner";
+    // Dienst is derived from the chosen time, not picked manually — via
+    // deriveServicePeriodFromLocalTimeString() (see its own doc comment
+    // for why this reads the "HH:mm" select value directly rather than
+    // constructing a Date from it), sharing the one canonical
+    // isLunchHour() boundary with the Amsterdam-instant path below.
+    const servicePeriodId = deriveServicePeriodFromLocalTimeString(timeSelect.value);
 
     createSubmit.disabled = true;
     try {
@@ -1822,6 +1918,22 @@
         editButton.addEventListener("click", () => enterEditMode(r));
         actionCell.appendChild(editButton);
 
+        // R1.6-P2C-2 — joined by the derived Lunch/Dinner classification
+        // of THIS row's own reservationDate, in explicit Amsterdam time
+        // (deriveServicePeriodFromInstant — never browser-local/machine
+        // timezone, never the stored servicePeriodId, which can carry a
+        // stale/historical value), paired with the session rows
+        // loadServiceSessions() already fetched for the currently
+        // selected list-date. A session not yet loaded, OR an
+        // unparseable reservationDate (sessionCode null), renders as
+        // "…" — never guessed as Created/Opened, never an invented status.
+        const sessionCode = deriveServicePeriodFromInstant(r.reservationDate);
+        const sessionForRow = sessionCode ? serviceSessionsByCode[sessionCode] : undefined;
+        const sessionStatus = sessionForRow === undefined ? undefined : sessionForRow === null ? "NotCreated" : sessionForRow.status;
+        const dienstCellHtml = sessionStatus
+          ? `<span class="status session-status-${escapeHtml(sessionStatus)}">${escapeHtml(SESSION_STATUS_LABELS[sessionStatus] || sessionStatus)}</span>`
+          : "…";
+
         tr.innerHTML = `
           <td class="time-cell" data-label="Tijd">${time}</td>
           <td data-label="Gast">${guest}${lateBadge}</td>
@@ -1830,21 +1942,23 @@
           <td></td>
           <td data-label="Bron">${SOURCE_LABELS[r.sourceCategory] || r.sourceCategory || "—"}</td>
           <td data-label="Status"><span class="status status-${r.status}">${STATUS_LABELS[r.status] || r.status}</span></td>
+          <td data-label="Dienst">${dienstCellHtml}</td>
           <td></td>
           <td></td>
           <td></td>
         `;
         tr.children[3].replaceWith(preferenceCell);
         tr.children[4].replaceWith(tableCell);
-        tr.children[7].replaceWith(arrivalCell);
-        tr.children[8].replaceWith(notesCell);
-        tr.children[9].replaceWith(actionCell);
+        tr.children[8].replaceWith(arrivalCell);
+        tr.children[9].replaceWith(notesCell);
+        tr.children[10].replaceWith(actionCell);
         listBody.appendChild(tr);
     }
   }
 
   document.getElementById("reload-list").addEventListener("click", loadList);
   listDateInput.addEventListener("change", loadList);
+  listDateInput.addEventListener("change", loadServiceSessions);
   searchInput.addEventListener("input", renderList);
   areaFilterBar.addEventListener("click", (event) => {
     const button = event.target.closest(".filter-button");
@@ -1853,6 +1967,311 @@
     areaFilterBar.querySelectorAll(".filter-button").forEach((b) => b.classList.toggle("active", b === button));
     renderList();
   });
+
+  // --- Servicesessies (R1.6-P2C-2 / P2C-2A) ------------------------------
+  // Exposes the existing, already-implemented ServiceSession backend
+  // lifecycle (R1.6-P2C-1) in the pilot. Reads via the now date-bounded
+  // GET /service-sessions?serviceDate=YYYY-MM-DD contract (R1.6-P2C-2A —
+  // the server itself filters to exactly the requested date; this panel
+  // never fetches or relies on an unfiltered/all-date collection);
+  // mutates via the four existing POST /service-sessions* routes,
+  // unchanged. Every button shown here is convenience only: the server
+  // re-validates every transition regardless of what this panel predicts,
+  // and a rejection is always rendered as a clear message, never silently
+  // retried or hidden.
+  const SERVICE_CODES = ["lunch", "dinner"];
+  const SERVICE_CODE_LABELS = { lunch: "Lunch", dinner: "Diner" };
+  const SESSION_STATUS_LABELS = {
+    NotCreated: "Niet aangemaakt",
+    Created: "Aangemaakt",
+    Opened: "Geopend",
+    Closed: "Gesloten",
+    Cancelled: "Geannuleerd",
+  };
+
+  const serviceSessionMessage = document.getElementById("service-session-message");
+  const serviceSessionList = document.getElementById("service-session-list");
+
+  // Keyed by serviceCode ("lunch"/"dinner"). undefined = not yet loaded
+  // for the current list-date; null = loaded and confirmed absent
+  // ("Niet aangemaakt"); otherwise the real session object returned by
+  // the server. Reset to {} (never guessed/carried over) at the START of
+  // every loadServiceSessions() call, so a slow load or a date switch can
+  // never leave the PREVIOUS date's session rows, badges, or action
+  // buttons on screen.
+  let serviceSessionsByCode = {};
+  // A single, panel-wide in-flight guard — this panel only ever has one
+  // plausible mutation happening at a time (two slots, each gated to
+  // exactly one available action), so one shared flag is simpler than a
+  // per-button one and still fully prevents a double submission.
+  let serviceSessionActionInFlight = false;
+  // R1.6-P2C-2 correction — a monotonic token so a slower, earlier
+  // loadServiceSessions() call can never overwrite state with a response
+  // for a date the user has since navigated away from. Bumped at the
+  // very start of every call; any await-boundary check that finds the
+  // token has since moved on discards its own result instead of
+  // rendering it.
+  let serviceSessionsRequestToken = 0;
+
+  function renderServiceSessionsPanel() {
+    serviceSessionList.innerHTML = "";
+    for (const code of SERVICE_CODES) {
+      const session = serviceSessionsByCode[code];
+      const status = session === undefined ? undefined : session === null ? "NotCreated" : session.status;
+
+      const row = document.createElement("div");
+      row.className = "list-item service-session-row";
+
+      const label = document.createElement("span");
+      label.className = "service-session-label";
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = SERVICE_CODE_LABELS[code];
+      label.appendChild(nameSpan);
+      const badge = document.createElement("span");
+      badge.className = "status" + (status ? " session-status-" + status : "");
+      badge.textContent = status ? SESSION_STATUS_LABELS[status] : "…";
+      label.appendChild(badge);
+      row.appendChild(label);
+
+      const actions = document.createElement("div");
+      actions.className = "action-cell";
+      if (status === "NotCreated") {
+        actions.appendChild(makeSessionActionButton("Aanmaken", "confirm-button", () => createServiceSession(code)));
+      } else if (status === "Created") {
+        actions.appendChild(makeSessionActionButton("Openen", "confirm-button", () => openServiceSession(session)));
+        actions.appendChild(makeSessionActionButton("Annuleren", "cancel-button", () => cancelServiceSession(session)));
+      } else if (status === "Opened") {
+        actions.appendChild(makeSessionActionButton("Sluiten", "cancel-button", () => closeServiceSession(session)));
+      }
+      // Closed/Cancelled (terminal) and undefined (still loading): no
+      // mutation action — matches the required action matrix exactly.
+      row.appendChild(actions);
+
+      serviceSessionList.appendChild(row);
+    }
+  }
+
+  function makeSessionActionButton(label, className, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = label;
+    button.disabled = serviceSessionActionInFlight;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  async function loadServiceSessions() {
+    // Captured FIRST, before any await — the value this specific call is
+    // authoritative for, independent of whatever list-date is showing by
+    // the time the response actually arrives.
+    const requestedDate = listDateInput.value;
+    const requestToken = ++serviceSessionsRequestToken;
+
+    serviceSessionsByCode = {};
+    clearMessage(serviceSessionMessage);
+    renderServiceSessionsPanel();
+    renderList(); // clears any stale Dienst-column status immediately too, even before this load resolves
+    try {
+      // R1.6-P2C-2A — GET /service-sessions is now server-bounded to
+      // exactly one calendar date: the server itself (not this client)
+      // is authoritative for which rows come back. requestedDate is
+      // URL-encoded even though a valid YYYY-MM-DD date never contains a
+      // character that needs it — defensive, matching how every other
+      // dynamic path/query segment in this file is built. No unfiltered/
+      // all-date request is ever made. requireStaffSession only (no
+      // specific permission) — so a 401/403 here means the session
+      // itself is no longer valid, not a role restriction; still handled
+      // defensively rather than assumed.
+      const res = await fetch(`/service-sessions?serviceDate=${encodeURIComponent(requestedDate)}`, { headers: actorHeaders() });
+      // A newer loadServiceSessions() call (a later date switch) has
+      // since started — this response is for a date the user has
+      // already navigated away from; discard it rather than render it.
+      if (requestToken !== serviceSessionsRequestToken) return;
+      if (res.status === 401 || res.status === 403) {
+        showMessage(serviceSessionMessage, "Je hebt geen rechten om servicesessies te bekijken.", "error");
+        renderList();
+        return;
+      }
+      if (!res.ok) {
+        showMessage(serviceSessionMessage, "Kon servicesessies niet laden.", "error");
+        renderList();
+        return;
+      }
+      const data = await res.json();
+      if (requestToken !== serviceSessionsRequestToken) return;
+      const byCode = {};
+      for (const code of SERVICE_CODES) byCode[code] = null;
+      // Defensive mapping only — the server already guarantees every row
+      // is for requestedDate; this never re-filters by date (that would
+      // be exactly the "browser-side filtering substituting for the
+      // server date filter" this correction removes), it only guards
+      // against an unexpected/foreign serviceCode value.
+      for (const session of data.sessions || []) {
+        if (SERVICE_CODES.includes(session.serviceCode)) {
+          byCode[session.serviceCode] = session;
+        }
+      }
+      serviceSessionsByCode = byCode;
+      renderServiceSessionsPanel();
+      renderList();
+    } catch (err) {
+      if (requestToken !== serviceSessionsRequestToken) return;
+      // Cleared above already — re-asserted here for clarity: a failed
+      // load must never leave a guessed/previous status on screen, only
+      // a visible warning, while the reservation list itself (dailyReservations,
+      // rendered by the same renderList() call) remains fully usable.
+      serviceSessionsByCode = {};
+      showMessage(serviceSessionMessage, "Netwerkfout: kon servicesessies niet laden.", "error");
+      renderServiceSessionsPanel();
+      renderList();
+    }
+  }
+
+  // Typed outcomes (api/app.ts's mapTransitionOutcome/create switch)
+  // rendered as clear staff-facing Dutch text — never the raw type
+  // string, never a stack trace, never internal identifiers.
+  function serviceSessionMutationErrorMessage(data, res) {
+    if (res.status === 401 || res.status === 403) return "Je hebt geen rechten om deze actie uit te voeren.";
+    switch (data.type) {
+      case "ALREADY_EXISTS":
+        return "Deze sessie bestaat al.";
+      case "NOT_FOUND":
+        return "Sessie niet gevonden — de lijst wordt ververst.";
+      case "INVALID_TRANSITION":
+        return "Deze actie is niet meer geldig voor de huidige status — de lijst wordt ververst.";
+      case "ACTIVE_ASSIGNMENTS_EXIST":
+        return data.count === 1
+          ? "Kan niet sluiten: er is nog 1 actieve tafeltoewijzing voor deze dienst."
+          : `Kan niet sluiten: er zijn nog ${Number(data.count) || 0} actieve tafeltoewijzingen voor deze dienst.`;
+      case "CONCURRENCY_CONFLICT":
+        return "Er ging iets mis door een gelijktijdige wijziging — probeer opnieuw.";
+      case "INVALID_SERVICE_CODE":
+      case "INVALID_SERVICE_DATE":
+        return "Kon sessie niet aanmaken.";
+      default:
+        return data.message || "Kon actie niet uitvoeren.";
+    }
+  }
+
+  // Sets/clears the shared in-flight guard around one action, disabling
+  // (via a full re-render) every button in this panel for its duration —
+  // the one place double-submission is prevented for every session
+  // action. Re-renders again once fn() settles (success OR failure) so
+  // controls always end up re-enabled against the latest known state.
+  async function runServiceSessionAction(fn) {
+    if (serviceSessionActionInFlight) return;
+    serviceSessionActionInFlight = true;
+    renderServiceSessionsPanel();
+    try {
+      await fn();
+    } finally {
+      serviceSessionActionInFlight = false;
+      renderServiceSessionsPanel();
+    }
+  }
+
+  async function createServiceSession(code) {
+    await runServiceSessionAction(async () => {
+      try {
+        const res = await fetch("/service-sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({ serviceCode: code, serviceDate: listDateInput.value }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(serviceSessionMessage, serviceSessionMutationErrorMessage(data, res), "error");
+          await loadServiceSessions();
+          return;
+        }
+        showMessage(serviceSessionMessage, `${SERVICE_CODE_LABELS[code]}-sessie aangemaakt.`, "ok");
+        await loadServiceSessions();
+        await loadList();
+      } catch (err) {
+        showMessage(serviceSessionMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  async function openServiceSession(session) {
+    await runServiceSessionAction(async () => {
+      try {
+        const res = await fetch(`/service-sessions/${session.id}/open`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(serviceSessionMessage, serviceSessionMutationErrorMessage(data, res), "error");
+          await loadServiceSessions();
+          return;
+        }
+        showMessage(serviceSessionMessage, `${SERVICE_CODE_LABELS[session.serviceCode]}-sessie geopend.`, "ok");
+        await loadServiceSessions();
+        await loadList();
+      } catch (err) {
+        showMessage(serviceSessionMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  // Closing is not reversible through this panel (Opened -> Closed has no
+  // way back, matching the backend's own terminal transition), so this is
+  // one of the two actions this panel confirms first — same established
+  // confirm-then-act pattern as cancelReservation()/markNoShow() above.
+  // Confirmation happens BEFORE runServiceSessionAction/the in-flight
+  // guard, exactly like the daily list's own confirmed actions.
+  async function closeServiceSession(session) {
+    if (!confirm(`${SERVICE_CODE_LABELS[session.serviceCode]}-sessie sluiten? Dit kan niet ongedaan worden gemaakt.`)) return;
+    await runServiceSessionAction(async () => {
+      try {
+        const res = await fetch(`/service-sessions/${session.id}/close`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(serviceSessionMessage, serviceSessionMutationErrorMessage(data, res), "error");
+          await loadServiceSessions();
+          return;
+        }
+        showMessage(serviceSessionMessage, `${SERVICE_CODE_LABELS[session.serviceCode]}-sessie gesloten.`, "ok");
+        await loadServiceSessions();
+        await loadList();
+      } catch (err) {
+        showMessage(serviceSessionMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  // Cancelling a session is also terminal (Created -> Cancelled, no way
+  // back) — confirmed first, same reasoning as closeServiceSession above.
+  async function cancelServiceSession(session) {
+    if (!confirm(`${SERVICE_CODE_LABELS[session.serviceCode]}-sessie annuleren? Dit kan niet ongedaan worden gemaakt.`)) return;
+    await runServiceSessionAction(async () => {
+      try {
+        const res = await fetch(`/service-sessions/${session.id}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(serviceSessionMessage, serviceSessionMutationErrorMessage(data, res), "error");
+          await loadServiceSessions();
+          return;
+        }
+        showMessage(serviceSessionMessage, `${SERVICE_CODE_LABELS[session.serviceCode]}-sessie geannuleerd.`, "ok");
+        await loadServiceSessions();
+        await loadList();
+      } catch (err) {
+        showMessage(serviceSessionMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
 
   // --- Sluitingsdagen -------------------------------------------------
   const closingDayForm = document.getElementById("closing-day-form");

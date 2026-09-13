@@ -39,8 +39,8 @@ const OUTCOME_TYPE_BY_STATUS: Readonly<Record<"Opened" | "Closed" | "Cancelled",
  * R1.6-P2C-1 — the four lifecycle operations (create/open/close/cancel),
  * each its own transaction, each acquiring the Tier-1.5 session lock
  * before reading or writing the row — see `domain/availability/LockKey.ts`.
- * `list`/`findByKey`/`findById` are pure reads, delegated straight to the
- * repository (no lock needed for a read-only query).
+ * `listByServiceDate`/`findByKey`/`findById` are pure reads, delegated
+ * straight to the repository (no lock needed for a read-only query).
  */
 export class ServiceSessionService {
   constructor(
@@ -50,8 +50,9 @@ export class ServiceSessionService {
     private readonly clock: Clock
   ) {}
 
-  async list(): Promise<readonly ServiceSession[]> {
-    return this.repository.list();
+  /** R1.6-P2C-2A — the caller (api/app.ts's GET /service-sessions route) is responsible for validating serviceDate's shape/calendar-validity BEFORE calling this; this method assumes an already-valid YYYY-MM-DD string, matching create()/findByKey()'s own division of responsibility. */
+  async listByServiceDate(serviceDate: string): Promise<readonly ServiceSession[]> {
+    return this.repository.listByServiceDate(serviceDate);
   }
 
   async findById(id: string): Promise<ServiceSession | null> {

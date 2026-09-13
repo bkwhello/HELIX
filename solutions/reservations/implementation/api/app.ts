@@ -956,8 +956,44 @@ export function createApp(deps: AppDependencies): Express {
       deps.clock
     );
 
-    app.get("/service-sessions", requireStaffSession, async (_req: Request, res: Response) => {
-      const sessions = await serviceSessionService.list();
+    // R1.6-P2C-2A — GET /service-sessions is now bounded: exactly one
+    // `serviceDate` query parameter, mandatory, strict YYYY-MM-DD, a real
+    // calendar date. Same reconstruct-and-compare rollover check as
+    // parseStrictSince above (GET /security-events' own `since` parser) —
+    // a naive `new Date(...)` parse alone would silently roll an
+    // impossible date like 2026-02-30 over to 2026-03-02 instead of
+    // rejecting it, exactly the bug class that function's own comment
+    // documents. Scoped locally: no other route needs it.
+    const SERVICE_DATE_QUERY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+    function parseStrictServiceDate(raw: string): string | null {
+      const match = SERVICE_DATE_QUERY_PATTERN.exec(raw);
+      if (!match) return null;
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      const asUtc = new Date(Date.UTC(year, month - 1, day));
+      if (asUtc.getUTCFullYear() !== year || asUtc.getUTCMonth() !== month - 1 || asUtc.getUTCDate() !== day) return null;
+      return raw;
+    }
+
+    app.get("/service-sessions", requireStaffSession, async (req: Request, res: Response) => {
+      const serviceDateParam = req.query["serviceDate"];
+      // Express/qs parses a repeated query key (?serviceDate=a&serviceDate=b)
+      // as an array — typeof !== "string" catches both that and the
+      // missing (undefined) case in one check, same posture as
+      // parsePreferredArea/parseStrictSince's own strict-shape parsing
+      // elsewhere in this file.
+      if (typeof serviceDateParam !== "string") {
+        res.status(400).json({ message: "serviceDate is required and must be a single YYYY-MM-DD date." });
+        return;
+      }
+      const serviceDate = parseStrictServiceDate(serviceDateParam);
+      if (!serviceDate) {
+        res.status(400).json({ message: "serviceDate must be a valid YYYY-MM-DD date." });
+        return;
+      }
+      const sessions = await serviceSessionService.listByServiceDate(serviceDate);
       res.status(200).json({
         sessions: sessions.map((s) => ({
           id: s.id,
