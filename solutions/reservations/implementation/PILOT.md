@@ -73,6 +73,39 @@ tests); no human smoke test has been performed, same as Floor & Seating
 above. See `R1_7_SECURITY_EVENT_VISIBILITY_IMPLEMENTATION_REPORT.md` for
 the full design.
 
+## Service Session status (R1.6-P2C)
+
+A "Servicesessies" panel shows both canonical slots (`lunch`/`dinner`)
+for the Dagoverzicht date, each slot's authoritative state
+(`Niet aangemaakt`/`Aangemaakt`/`Geopend`/`Gesloten`/`Geannuleerd`) and
+the one valid action for that state (Create / Open + Cancel / Close /
+none) — reads via `GET /service-sessions?serviceDate=`, mutations via
+the existing four lifecycle routes, gated by the same
+`Permission.CapacitySettingsManage` Owner/Manager already have for
+`/closing-days`. The daily list gained a matching "Dienst" status
+column, joined by the same Amsterdam-derived lunch/dinner classification
+the panel uses — never the stored, potentially-stale
+`Reservation.servicePeriodId`. Every mutation is confirmed first when it
+is not reversible (Close, Cancel), disabled against double submission
+while in flight, and re-validated authoritatively server-side regardless
+of what the panel predicts; a rejection (including "active table
+assignments exist" when closing) is always rendered as a clear,
+staff-facing message.
+
+The migration (`20260910153637_add_service_session`) has been applied
+to `helix_reservations_dev` — the table exists. **As of this writing,
+development contains zero `ServiceSession` rows.** Same
+automated-verification-only posture as Floor & Seating and Security
+Events above: no staff member has yet opened the pilot and created,
+opened, or closed a session against a real dev deployment, and this has
+not been deployed anywhere. Covered by `tests/api/service-sessions.test.ts`
+(36 tests), `tests/integration/service-session-lifecycle.test.ts` (10
+tests), `tests/integration/service-session-enforcement.test.ts` (29
+tests, including real-PostgreSQL concurrency proofs for every gated
+action), and `tests/pilot/service-session-ui.test.ts` (68 source-text
+and live-executed tests). See
+`R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md` for the full design.
+
 ## Before starting
 
 1. `npm install && npx prisma migrate deploy && npm run typecheck && npm test` — all green.
@@ -107,10 +140,21 @@ permission) — there is no self-service sign-up.
   "Dienst" in `public/pilot.html`) against a canonical `"lunch"`/`"dinner"`
   code. This is a narrow, code-level Service **classification**
   (`domain/availability/Service.ts`), not the live per-date Service
-  Period **session** Service Period Management (CAP-D02.02) still lacks
-  — no Service/ServiceSession table, no Created/Opened/Closed lifecycle,
-  and no reservation-to-session relationship exist. See
-  `R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md`.
+  Period **session** lifecycle — see the next bullet for what that now
+  is. See `R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md`.
+- **Corrected (R1-DOC-5).** The bullet above used to continue "...
+  Service Period Management (CAP-D02.02) still lacks — no
+  Service/ServiceSession table, no Created/Opened/Closed lifecycle, and
+  no reservation-to-session relationship exist." That is no longer
+  accurate: R1.6-P2C added a real, persisted `ServiceSession` lifecycle
+  (`Created`/`Opened`/`Closed`/`Cancelled`, per `(serviceCode,
+  serviceDate)`), enforced across every live seating/walk-in path, and
+  exposed in the pilot as the "Servicesessies" panel — see "Service
+  Session status" below. What still does **not** exist: a persisted
+  reservation-to-session relationship (the join is derivation-only, at
+  read time), active-floorplan selection, and CAP-D02.01's own persisted
+  Service definition. CAP-D02.02 (and CAP-D02.01) remain `Designed`. See
+  `R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md`.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

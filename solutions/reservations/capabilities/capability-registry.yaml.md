@@ -406,6 +406,34 @@ capabilities:
     # see R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md and
     # the still-open R1.6-P2A design addendum for the real, larger,
     # product-owner-gated work this capability still requires.
+    #
+    # R1-DOC-5 — R1.6-P2C (commits bea39228d706df7a9a89d1631a10899b14833817,
+    # 2026-09-12, and 1c7b7192e0929153c9f8951e3ebf8f9fc1ed5973,
+    # 2026-09-13) delivered a REAL, substantial slice of this
+    # capability's own owned rules: a persisted, per-(serviceCode,
+    # serviceDate) ServiceSession row with an enforced
+    # Created/Opened/Closed/Cancelled lifecycle (session period
+    # creation/opening/closing, in this capability's own vocabulary),
+    # atomic enforcement (a Tier-1.5 advisory lock ahead of capacity/
+    # seating locks; immediate walk-in, immediate assignment, and
+    # mark-seated require Opened; pre-assignment allowed for absent/
+    # Created/Opened, rejected for Closed/Cancelled; Move and modify-time
+    # revalidation participate in the lock without status-gating; the
+    # successful-close zero-active-assignment invariant is proven under
+    # genuine concurrency), a five-route HTTP API (a date-bounded
+    # GET /service-sessions?serviceDate=, the existing
+    # CapacitySettingsManage permission, no new permission), and a
+    # pilot-exposed "Servicesessies" panel + daily-list status column.
+    # The migration is applied in `helix_reservations_dev` (0 rows as of
+    # this writing; no real workflow exercised there). This is still NOT
+    # the complete registered capability: no reservation-to-session
+    # relationship is persisted (join is derivation-only, at read time),
+    # active-floorplan selection does not exist (CAP-D03.02, itself
+    # still Designed, remains a prerequisite for that), and CAP-D02.01's
+    # own persisted Service definition still does not exist either.
+    # delivery_status intentionally unchanged — see
+    # R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md for the full
+    # evidence and the explicit boundary of what remains undelivered.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true

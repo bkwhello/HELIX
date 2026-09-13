@@ -141,12 +141,40 @@ above — no human smoke test, not deployed anywhere.
     creation/correction with dedicated value-object validation, and both
     HTTP and pilot-UI exposure — see `tests/integration/contact-management.test.ts`
     and `tests/pilot/contact-snapshot-edit-ui.test.ts`.
-  - **Service Period Management (CAP-D02.02)**, as the capability registry
-    actually defines it — a live per-date service-session lifecycle
-    (Created/Opened/Closed states, active-floorplan selection) — remains
-    unimplemented and stays `Designed`. No `Service` or `ServiceSession`
-    table exists; no lifecycle states, active floorplan selection, or
-    reservation-to-session relationship exists.
+  - **Corrected (R1-DOC-5).** This bullet used to say **Service Period
+    Management (CAP-D02.02)** remained entirely unimplemented — "No
+    `Service` or `ServiceSession` table exists; no lifecycle states,
+    active floorplan selection, or reservation-to-session relationship
+    exists." That is no longer accurate. R1.6-P2C (commits `bea3922`,
+    2026-09-12, and `1c7b719`, 2026-09-13) delivered a real, persisted
+    `ServiceSession` row (`(serviceCode, serviceDate)` identity, a
+    `lunch`/`dinner` code set, and an enforced
+    `Created`/`Opened`/`Closed`/`Cancelled` lifecycle with idempotent
+    repeats), atomic enforcement across every live seating/walk-in path
+    (a Tier-1.5 advisory lock ahead of capacity/seating locks; immediate
+    walk-in, immediate assignment, and mark-seated require `Opened`;
+    pre-assignment allowed for absent/`Created`/`Opened`, rejected for
+    `Closed`/`Cancelled`; Move and modify-time seating revalidation
+    participate in the lock without being status-gated; a successful
+    close is proven, under genuine concurrency, to leave zero active
+    seating assignments for its service/date), a date-bounded HTTP API
+    (`GET /service-sessions?serviceDate=YYYY-MM-DD` plus the four
+    lifecycle mutation routes, gated by the existing
+    `Permission.CapacitySettingsManage` — no new permission), and a
+    "Servicesessies" pilot panel with daily-list status visibility. The
+    migration (`20260910153637_add_service_session`) is applied in
+    `helix_reservations_dev`, which currently holds **zero**
+    `ServiceSession` rows — no real staff workflow has been exercised
+    against it, and nothing here has been deployed. This is still a
+    **partial** slice of CAP-D02.02, not the complete registered
+    capability: no reservation-to-session relationship is persisted (the
+    join is derivation-only, at read time), and active-floorplan
+    selection does not exist (`CAP-D03.02`, itself still `Designed`,
+    remains a prerequisite). CAP-D02.01's own persisted Service
+    definition also still does not exist. Both `CAP-D02.01` and
+    `CAP-D02.02` remain `Designed` in the capability registry — see
+    `R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md` for the full
+    design, evidence, and explicit boundary of what remains undelivered.
   - The real, separate `domain/availability/ServicePeriod.ts` +
     `application/availability/ServicePeriodService.ts` "booking-window
     eligibility" behavior (R1.6-A/R1.6-C0) is genuinely implemented and
@@ -333,5 +361,8 @@ is a staff-facing page covering Create Reservation, the daily list, and
 Floor & Seating (assign/pre-assign/move/mark-seated/no-show, floor and
 late-arrival view, Resource Blocking, walk-in) — the operations covered
 by the pilot-readiness work above — plus a read-only Security Events
-view (R1.7-P1, Owner/Manager only). See `PILOT.md` for scope, known
+view (R1.7-P1, Owner/Manager only) and a "Servicesessies" panel (R1.6-P2C,
+`Permission.CapacitySettingsManage` for mutations) exposing the
+per-date `lunch`/`dinner` operational session lifecycle, with a matching
+status column on the daily list. See `PILOT.md` for scope, known
 limitations, and success criteria before using it with real bookings.
