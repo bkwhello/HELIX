@@ -23,8 +23,8 @@ datasource db {
 // Current authoritative reservation state. CAP-D01.01-R01/R02: id is the
 // stable, immutable internal Reservation Identity.
 model Reservation {
-  id                 String   @id
-  servicePeriodId    String
+  id                    String    @id
+  servicePeriodId       String
   // CAP-D05.01 — Reservation Contact Management. For a reservation
   // created under this capability, this references a real Contact.id.
   // Historical rows created before CAP-D05.01 existed may hold a legacy,
@@ -33,50 +33,50 @@ model Reservation {
   // Compatibility". Deliberately NOT a foreign key: enforcing one would
   // require backfilling or rejecting every pre-existing row, which this
   // slice explicitly does not attempt.
-  contactId          String
+  contactId             String
   // CAP-D01.01-R07 / CAP-D05.01 — reservation-time NAME snapshot. Already
   // had snapshot semantics before CAP-D05.01 (never re-validated against
   // the Contact on modify); evolved in place rather than duplicated.
-  contactName        String?
+  contactName           String?
   // CAP-D05.01 — reservation-time PHONE/EMAIL snapshots, captured from the
   // Contact at booking time. Updating the Contact later must not rewrite
   // these — see domain-model.md's existing "Reservation Contact" concept
   // and rule-model.md CAP-D05.01-R04.
-  contactPhoneSnapshot String?
-  contactEmailSnapshot String?
-  status             String
-  reservationDate    DateTime @db.Timestamptz
-  partySize          Int
-  sourceCategory     String
-  externalReference  String?
-  importedBy         String?
+  contactPhoneSnapshot  String?
+  contactEmailSnapshot  String?
+  status                String
+  reservationDate       DateTime  @db.Timestamptz
+  partySize             Int
+  sourceCategory        String
+  externalReference     String?
+  importedBy            String?
   // CAP-D01.01-R48: a guest preference (Sushi / Teppanyaki), never a
   // seating guarantee — Warning severity, so it stays nullable.
-  preferredArea      String?
+  preferredArea         String?
   // CAP-D01.01-R36/R37: operational context (allergies, special requests).
   // Not the authoritative allergy record — see the rule comments.
-  notes              String?
+  notes                 String?
   // CAP-D01.01-R48: manual, staff-entered table note (e.g. "C1"). Not an
   // owned Seating Assignment guarantee — see the rule comments.
-  tableAssignment    String?
+  tableAssignment       String?
   // Operational arrival marker, staff-toggled during service. Outside the
   // scope of this capability's formal rule model (no Rxx) — like
   // tableAssignment, it's a pragmatic staff-facing field, not a modeled
   // check-in/Seating Management capability.
-  arrivedAt          DateTime? @db.Timestamptz
+  arrivedAt             DateTime? @db.Timestamptz
   // R1.6-B — guest-facing communication language ("nl" | "en"), frozen at
   // creation time (domain/value-objects/CommunicationLanguage.ts).
   // Defaults to "nl" for legacy/internal callers that predate this
   // concept (assignment §4) — never inferred, only defaulted.
-  communicationLanguage String @default("nl") @map("communication_language")
-  createdBy          String
-  createdAt          DateTime @db.Timestamptz
-  updatedAt          DateTime @updatedAt @db.Timestamptz
+  communicationLanguage String    @default("nl") @map("communication_language")
+  createdBy             String
+  createdAt             DateTime  @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @db.Timestamptz
   // Optimistic-concurrency token. Incremented on every write; save()
   // rejects a write whose expected version no longer matches this column.
-  version            Int      @default(1)
+  version               Int       @default(1)
 
-  events             ReservationEvent[]
+  events ReservationEvent[]
 
   @@map("reservations")
 }
@@ -91,10 +91,10 @@ model ReservationEvent {
   occurredAt    DateTime @db.Timestamptz
   payload       String
 
-  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  reservation Reservation @relation(fields: [reservationId], references: [id])
 
-  @@map("reservation_events")
   @@index([reservationId])
+  @@map("reservation_events")
 }
 
 // CAP-D01.01-R44 — Duplicate Command Processing Must Be Safe. A command
@@ -170,10 +170,10 @@ model CapacityCommitment {
   commandId      String   @map("command_id")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  @@map("capacity_commitments")
   @@index([capacityPoolId, startTime, endTime])
   @@index([reservationId])
   @@index([commandId])
+  @@map("capacity_commitments")
 }
 
 // R1.6-P2C-1 — a minimum operational Service Session lifecycle
@@ -204,8 +204,86 @@ model ServiceSession {
   // Optimistic-concurrency token — same convention as Reservation.version.
   version     Int       @default(1)
 
-  @@map("service_sessions")
   @@unique([serviceCode, serviceDate])
+  @@map("service_sessions")
+}
+
+// R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version
+// foundation only (design gates R1.5-P2/P2A). Table-level membership only
+// (Seats inherit membership from their parent grill Table — no seatId
+// column anywhere here). This increment is deliberately inert: nothing
+// outside this capability's own service/routes reads these tables yet —
+// no ServiceSession, seatability, floor-read, or pilot change.
+//
+// Floorplan.defaultVersionId is a SEPARATE fact from FloorplanVersion's
+// own immutability lifecycle (Draft -> Published -> Archived) — there is
+// deliberately no "Active" status (see R1.5-P2A's own correction of an
+// earlier draft of this design). The composite FK below
+// (Floorplan (id, defaultVersionId) -> FloorplanVersion (floorplanId, id))
+// is what actually guarantees a Floorplan's default can only ever point
+// at one of ITS OWN versions at the database level — Postgres composite
+// FKs use MATCH SIMPLE by default, so a NULL defaultVersionId trivially
+// satisfies the constraint (no default set yet); a non-NULL value must
+// resolve to a FloorplanVersion row with the matching floorplanId. This
+// does NOT by itself guarantee the referenced version's status is
+// Published — that is not expressible as a static constraint (it depends
+// on a target row's column value, not its existence) and is enforced in
+// application code (FloorplanService.setDefaultVersion) instead.
+model Floorplan {
+  id               String   @id @default(cuid())
+  name             String
+  defaultVersionId String?  @map("default_version_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  versions       FloorplanVersion[] @relation("FloorplanVersions")
+  defaultVersion FloorplanVersion?  @relation("FloorplanDefaultVersion", fields: [id, defaultVersionId], references: [floorplanId, id])
+
+  @@map("floorplans")
+}
+
+// status: Draft | Published | Archived — see domain/floor/Floorplan.ts.
+// Published and Archived are both immutable (no further membership
+// changes, no un-archiving) — a correction is always a NEW Draft/revision,
+// never a mutation of an already-Published row (same discipline as
+// ServiceSession's own idempotent-repeat-never-restamp rule).
+model FloorplanVersion {
+  id          String    @id @default(cuid())
+  floorplanId String    @map("floorplan_id")
+  revision    Int
+  status      String
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+  createdBy   String    @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  floorplan    Floorplan                  @relation("FloorplanVersions", fields: [floorplanId], references: [id])
+  asDefaultFor Floorplan[]                @relation("FloorplanDefaultVersion")
+  members      FloorplanVersionResource[]
+
+  @@unique([floorplanId, revision])
+  // Target side of the composite FK from Floorplan.defaultVersionId —
+  // required so Postgres can enforce "a Floorplan's default must belong
+  // to that same Floorplan" as a real constraint, not just an
+  // application-level check.
+  @@unique([floorplanId, id])
+  @@map("floorplan_versions")
+}
+
+// One (version, Table) membership row — Table-level only (R1.5-P2A
+// decision #4). A Teppanyaki grill Table's membership implicitly covers
+// all of its child Seats; there is no independent Seat membership row.
+// onDelete: Restrict — a Table referenced by any FloorplanVersionResource
+// (published or not) can never be deleted out from under it.
+model FloorplanVersionResource {
+  id                 String @id @default(cuid())
+  floorplanVersionId String @map("floorplan_version_id")
+  tableId            String @map("table_id")
+
+  version FloorplanVersion @relation(fields: [floorplanVersionId], references: [id])
+  table   Table            @relation(fields: [tableId], references: [id], onDelete: Restrict)
+
+  @@unique([floorplanVersionId, tableId])
+  @@index([tableId])
+  @@map("floorplan_version_resources")
 }
 
 // CAP-D05.01 — Reservation Contact Management (R1.3-I1). Replaces the
@@ -237,24 +315,24 @@ model ServiceSession {
 // MATCH signal for staff, never proof of identity, so this schema must
 // not silently treat two guests sharing a phone as an error.
 model Contact {
-  id                   String    @id @default(cuid())
-  displayName          String    @map("display_name")
-  phoneRaw             String?   @map("phone_raw")
+  id                     String   @id @default(cuid())
+  displayName            String   @map("display_name")
+  phoneRaw               String?  @map("phone_raw")
   // Bounded NL/international normalizer — see
   // domain/value-objects/PhoneNumber.ts. Not a maintained third-party
   // parsing library: no evidence in this repository of a guest base
   // broad enough to justify one yet (R1.3 architecture investigation §13).
-  phoneNormalized      String?   @map("phone_normalized")
-  emailRaw             String?   @map("email_raw")
-  emailNormalized      String?   @map("email_normalized")
+  phoneNormalized        String?  @map("phone_normalized")
+  emailRaw               String?  @map("email_raw")
+  emailNormalized        String?  @map("email_normalized")
   // Active | Anonymized — see domain/value-objects/ContactStatus.ts.
   // Anonymized, never deleted: a Reservation may still reference this id
   // (CAP-D05.01-R? / INV-G06 in the architecture investigation) and must
   // not be left with a dangling reference.
-  status               String    @default("Active")
-  createdBy            String    @map("created_by")
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  status                 String   @default("Active")
+  createdBy              String   @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz
   // Retention anchor for the owner-confirmed 5-year PII policy (R1.3-I1
   // assignment §"Retention anchor"). Updated when this Contact
   // participates in a new reservation or is explicitly edited.
@@ -264,9 +342,9 @@ model Contact {
   // determine retention eligibility without redesigning this table.
   lastRelevantActivityAt DateTime @map("last_relevant_activity_at") @db.Timestamptz
 
-  @@map("contacts")
   @@index([phoneNormalized])
   @@index([emailNormalized])
+  @@map("contacts")
 }
 
 // R1.2 — Identity & Access. Real staff identity, replacing the
@@ -308,7 +386,7 @@ model StaffUser {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  sessions     StaffSession[]
+  sessions StaffSession[]
 
   @@map("staff_users")
 }
@@ -335,10 +413,10 @@ model StaffSession {
   expiresAt   DateTime  @map("expires_at") @db.Timestamptz
   revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
 
-  staffUser   StaffUser @relation(fields: [staffUserId], references: [id])
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id])
 
-  @@map("staff_sessions")
   @@index([staffUserId])
+  @@map("staff_sessions")
 }
 
 // R1.2 §26 — a separate log from ReservationDomainEvent: account-lifecycle
@@ -350,15 +428,15 @@ model StaffSession {
 // left out unless a real operational need justifies collecting it
 // ("do not over-collect").
 model SecurityEvent {
-  id                 String   @id @default(cuid())
-  type               String
-  occurredAt         DateTime @default(now()) @map("occurred_at") @db.Timestamptz
-  actingStaffUserId  String?  @map("acting_staff_user_id")
-  targetStaffUserId  String?  @map("target_staff_user_id")
-  metadata           String?
+  id                String   @id @default(cuid())
+  type              String
+  occurredAt        DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  actingStaffUserId String?  @map("acting_staff_user_id")
+  targetStaffUserId String?  @map("target_staff_user_id")
+  metadata          String?
 
-  @@map("security_events")
   @@index([targetStaffUserId])
+  @@map("security_events")
 }
 
 // R1.2 final P1 closure — login abuse protection
@@ -416,11 +494,15 @@ model Table {
   status                String   @default("Active")
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  seats        Seat[]
-  resourceBlocks ResourceBlock[]
+  seats                     Seat[]
+  resourceBlocks            ResourceBlock[]
+  // R1.5-P2B — required by Prisma for FloorplanVersionResource's explicit
+  // relation to resolve; FloorRepository/FloorReadModel/seatability are
+  // NOT changed by this addition — this is schema-level plumbing only.
+  floorplanVersionResources FloorplanVersionResource[]
 
-  @@map("tables")
   @@index([areaId])
+  @@map("tables")
 }
 
 // One individually-claimable seat at a supportsSharedSeating Table
@@ -436,8 +518,8 @@ model Seat {
 
   table Table @relation(fields: [tableId], references: [id])
 
-  @@map("seats")
   @@index([tableId])
+  @@map("seats")
 }
 
 // CAP-D02.03-owned concept (capability-registry.yaml.md already registers
@@ -467,8 +549,8 @@ model ResourceBlock {
 
   table Table @relation(fields: [tableId], references: [id])
 
-  @@map("resource_blocks")
   @@index([tableId, startTime, endTime])
+  @@map("resource_blocks")
 }
 
 // CAP-D04.01 — Seating Assignment (R1.5). One SeatingAssignment belongs to
@@ -504,9 +586,9 @@ model SeatingAssignment {
 
   resources SeatingAssignmentResource[]
 
-  @@map("seating_assignments")
   @@index([reservationId])
   @@index([commandId])
+  @@map("seating_assignments")
 }
 
 // One row per physical Table or Seat claimed by a SeatingAssignment —
@@ -535,10 +617,10 @@ model SeatingAssignmentResource {
 
   assignment SeatingAssignment @relation(fields: [assignmentId], references: [id])
 
-  @@map("seating_assignment_resources")
   @@index([assignmentId])
   @@index([tableId])
   @@index([seatId])
+  @@map("seating_assignment_resources")
 }
 
 // "Service Period" booking-window eligibility (R1.6-A, Chief Engineer
@@ -571,7 +653,7 @@ model ServicePeriodOverride {
   id        String   @id @default(cuid())
   areaId    String   @map("area_id")
   date      DateTime @db.Date
-  status    String   // "Open" | "Closed"
+  status    String // "Open" | "Closed"
   reason    String?
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -579,8 +661,8 @@ model ServicePeriodOverride {
 
   windows ServicePeriodOverrideWindow[]
 
-  @@map("service_period_overrides")
   @@unique([areaId, date])
+  @@map("service_period_overrides")
 }
 
 // One booking window (first/last valid START minute-of-day, local) for an
@@ -596,8 +678,8 @@ model ServicePeriodOverrideWindow {
 
   override ServicePeriodOverride @relation(fields: [overrideId], references: [id], onDelete: Cascade)
 
-  @@map("service_period_override_windows")
   @@index([overrideId])
+  @@map("service_period_override_windows")
 }
 
 // R1.6-B — CAP-D06.01/CAP-D06.02-adjacent. The transactional communication
@@ -644,9 +726,9 @@ model CommunicationMessage {
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
   sentAt            DateTime? @map("sent_at") @db.Timestamptz
 
-  @@map("communication_messages")
   @@index([reservationId])
   @@index([status, availableAt])
+  @@map("communication_messages")
 }
 
 // R1.6-B — guest-management token foundation (architecture report §22/§23;
@@ -665,6 +747,6 @@ model GuestManagementCredential {
   expiresAt     DateTime  @map("expires_at") @db.Timestamptz
   revokedAt     DateTime? @map("revoked_at") @db.Timestamptz
 
-  @@map("guest_management_credentials")
   @@index([reservationId])
+  @@map("guest_management_credentials")
 }

@@ -55,6 +55,8 @@ import { ServicePeriodService } from "../application/availability/ServicePeriodS
 import { ServiceSessionRepository } from "../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSessionService } from "../application/availability/ServiceSessionService.js";
 import { isServiceCode } from "../domain/availability/Service.js";
+import { FloorplanRepository } from "../domain/repositories/FloorplanRepository.js";
+import { FloorplanService } from "../application/floor/FloorplanService.js";
 import {
   SESSION_COOKIE_NAME,
   createRequireStaffSession,
@@ -158,6 +160,21 @@ export interface AppDependencies {
    */
   serviceSessions?: {
     readonly serviceSessionRepository: ServiceSessionRepository;
+    readonly transactionManager: TransactionManager;
+  };
+  /**
+   * R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version
+   * foundation only. Optional, same "not available in this deployment"
+   * posture as `serviceSessions` above. When omitted, the `/floorplans*`
+   * routes are not mounted. Requires `floor` too (the only source of a
+   * `FloorRepository`, needed to validate a Table exists before it can be
+   * added as a version member) — supplying `floorplans` alone wires
+   * nothing. Deliberately does NOT touch `capacity`/`serviceSessions`/the
+   * seating orchestrators — this increment is inert outside its own
+   * routes (R1.5-P2A stages 3/4 remain unbuilt).
+   */
+  floorplans?: {
+    readonly floorplanRepository: FloorplanRepository;
     readonly transactionManager: TransactionManager;
   };
   /**
@@ -1080,6 +1097,223 @@ export function createApp(deps: AppDependencies): Express {
       requirePermission(Permission.CapacitySettingsManage),
       async (req: Request, res: Response) => {
         mapTransitionOutcome(res, await serviceSessionService.cancel(paramId(req)));
+      }
+    );
+  }
+
+  // R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version
+  // foundation only. Same permission split as every other operational-
+  // calendar surface in this deployment: requireStaffSession for reads,
+  // the existing Permission.CapacitySettingsManage (no new permission)
+  // for every mutation. Backend-only in this increment — no pilot UI, no
+  // ServiceSession/seatability wiring (R1.5-P2A stages 3/4, unbuilt).
+  if (deps.floorplans && deps.floor) {
+    const floorplanService = new FloorplanService(
+      deps.floorplans.floorplanRepository,
+      deps.floor.floorRepository,
+      deps.floorplans.transactionManager,
+      deps.idGenerator,
+      deps.clock
+    );
+
+    function serializeFloorplan(f: Awaited<ReturnType<typeof floorplanService.findFloorplanById>>) {
+      if (!f) return null;
+      return { id: f.id, name: f.name, defaultVersionId: f.defaultVersionId, createdAt: f.createdAt.toISOString() };
+    }
+    function serializeVersion(v: NonNullable<Awaited<ReturnType<typeof floorplanService.findVersionById>>>) {
+      return {
+        id: v.id,
+        floorplanId: v.floorplanId,
+        revision: v.revision,
+        status: v.status,
+        publishedAt: v.publishedAt ? v.publishedAt.toISOString() : null,
+        createdBy: v.createdBy,
+        createdAt: v.createdAt.toISOString(),
+      };
+    }
+
+    // R1.5-P2B correction — exactly nine routes, the authorized public
+    // contract. The provisional nested paths this increment originally
+    // shipped with (GET /floorplans/:id, GET /floorplans/:id/versions/:versionId,
+    // POST .../members, POST .../publish, POST .../set-default,
+    // POST .../archive) are REMOVED, not aliased — this feature was never
+    // committed or deployed, so there is no compatibility surface to
+    // preserve.
+
+    // 1. GET /floorplans
+    app.get("/floorplans", requireStaffSession, async (_req: Request, res: Response) => {
+      const floorplans = await floorplanService.listFloorplans();
+      res.status(200).json({ floorplans: floorplans.map((f) => serializeFloorplan(f)) });
+    });
+
+    // 2. GET /floorplans/:id/versions
+    app.get("/floorplans/:id/versions", requireStaffSession, async (req: Request, res: Response) => {
+      const floorplan = await floorplanService.findFloorplanById(paramId(req));
+      if (!floorplan) {
+        res.status(404).json({ message: "Floorplan not found." });
+        return;
+      }
+      const versions = await floorplanService.listVersionsByFloorplanId(floorplan.id);
+      res.status(200).json({ versions: versions.map(serializeVersion) });
+    });
+
+    // 3. GET /floorplan-versions/:id
+    app.get("/floorplan-versions/:id", requireStaffSession, async (req: Request, res: Response) => {
+      const version = await floorplanService.findVersionById(paramId(req));
+      if (!version) {
+        res.status(404).json({ message: "Floorplan version not found." });
+        return;
+      }
+      const members = await floorplanService.listMembers(version.id);
+      const tableIds = members.map((m) => m.tableId).sort();
+      res.status(200).json({ version: serializeVersion(version), tableIds });
+    });
+
+    // 4. POST /floorplans
+    app.post("/floorplans", requireStaffSession, requirePermission(Permission.CapacitySettingsManage), async (req: Request, res: Response) => {
+      if (!req.staffPrincipal) return;
+      const actor = principalToActor(req.staffPrincipal);
+      const body = req.body as { name?: string };
+      if (typeof body.name !== "string" || body.name.trim().length === 0) {
+        res.status(400).json({ message: "name is required." });
+        return;
+      }
+      const result = await floorplanService.createFloorplan({ name: body.name.trim(), actor });
+      res.status(201).json({ type: "CREATED", floorplan: serializeFloorplan(result.floorplan) });
+    });
+
+    // 5. POST /floorplans/:id/versions
+    app.post(
+      "/floorplans/:id/versions",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+        const result = await floorplanService.createDraftVersion({ floorplanId: paramId(req), actor });
+        switch (result.type) {
+          case "CREATED":
+            res.status(201).json({ type: "CREATED", version: serializeVersion(result.version) });
+            return;
+          case "FLOORPLAN_NOT_FOUND":
+            res.status(404).json({ type: "FLOORPLAN_NOT_FOUND" });
+            return;
+        }
+      }
+    );
+
+    // 6. PUT /floorplan-versions/:id/resources — full, atomic membership replace.
+    app.put(
+      "/floorplan-versions/:id/resources",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+        const body = req.body as { tableIds?: unknown };
+        if (!Array.isArray(body.tableIds) || body.tableIds.some((t) => typeof t !== "string" || t.length === 0)) {
+          res.status(422).json({ message: "tableIds must be an array of non-empty strings." });
+          return;
+        }
+        const result = await floorplanService.replaceMembers({ floorplanVersionId: paramId(req), tableIds: body.tableIds as string[], actor });
+        switch (result.type) {
+          case "REPLACED":
+            res.status(200).json({ type: "REPLACED", tableIds: result.tableIds });
+            return;
+          case "VERSION_NOT_FOUND":
+            res.status(404).json({ type: "VERSION_NOT_FOUND" });
+            return;
+          case "VERSION_NOT_DRAFT":
+            res.status(409).json({ type: "VERSION_NOT_DRAFT", currentStatus: result.currentStatus });
+            return;
+          case "UNKNOWN_TABLE_IDS":
+            res.status(422).json({ type: "UNKNOWN_TABLE_IDS", tableIds: result.tableIds });
+            return;
+        }
+      }
+    );
+
+    // 7. POST /floorplan-versions/:id/publish
+    app.post(
+      "/floorplan-versions/:id/publish",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+        const result = await floorplanService.publishVersion({ versionId: paramId(req), actor });
+        switch (result.type) {
+          case "PUBLISHED":
+            res.status(200).json({ type: "PUBLISHED", version: serializeVersion(result.version) });
+            return;
+          case "VERSION_NOT_FOUND":
+            res.status(404).json({ type: "VERSION_NOT_FOUND" });
+            return;
+          case "INVALID_TRANSITION":
+            res.status(409).json({ type: "INVALID_TRANSITION", currentStatus: result.currentStatus });
+            return;
+          case "NO_MEMBERS":
+            res.status(409).json({ type: "NO_MEMBERS" });
+            return;
+        }
+      }
+    );
+
+    // 8. POST /floorplans/:id/default-version
+    app.post(
+      "/floorplans/:id/default-version",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+        const body = req.body as { versionId?: string };
+        if (typeof body.versionId !== "string" || body.versionId.length === 0) {
+          res.status(400).json({ message: "versionId is required." });
+          return;
+        }
+        const result = await floorplanService.setDefaultVersion({ floorplanId: paramId(req), versionId: body.versionId, actor });
+        switch (result.type) {
+          case "DEFAULT_SET":
+            res.status(200).json({ type: "DEFAULT_SET", floorplan: serializeFloorplan(result.floorplan) });
+            return;
+          case "FLOORPLAN_NOT_FOUND":
+            res.status(404).json({ type: "FLOORPLAN_NOT_FOUND" });
+            return;
+          case "VERSION_NOT_FOUND":
+          case "VERSION_BELONGS_TO_DIFFERENT_FLOORPLAN":
+            res.status(404).json({ type: result.type });
+            return;
+          case "VERSION_NOT_PUBLISHED":
+            res.status(409).json({ type: "VERSION_NOT_PUBLISHED", currentStatus: result.currentStatus });
+            return;
+        }
+      }
+    );
+
+    // 9. POST /floorplan-versions/:id/archive
+    app.post(
+      "/floorplan-versions/:id/archive",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        if (!req.staffPrincipal) return;
+        const actor = principalToActor(req.staffPrincipal);
+        const result = await floorplanService.archiveVersion({ versionId: paramId(req), actor });
+        switch (result.type) {
+          case "ARCHIVED":
+            res.status(200).json({ type: "ARCHIVED", version: serializeVersion(result.version) });
+            return;
+          case "VERSION_NOT_FOUND":
+            res.status(404).json({ type: "VERSION_NOT_FOUND" });
+            return;
+          case "INVALID_TRANSITION":
+            res.status(409).json({ type: "INVALID_TRANSITION", currentStatus: result.currentStatus });
+            return;
+          case "CANNOT_ARCHIVE_DEFAULT_VERSION":
+            res.status(409).json({ type: "CANNOT_ARCHIVE_DEFAULT_VERSION" });
+            return;
+        }
       }
     );
   }

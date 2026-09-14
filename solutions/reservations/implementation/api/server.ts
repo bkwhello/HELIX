@@ -21,6 +21,7 @@ import { PrismaServicePeriodOverrideStore } from "../infrastructure/persistence/
 import { ServicePeriodService } from "../application/availability/ServicePeriodService.js";
 import { PrismaFloorRepository } from "../infrastructure/persistence/PrismaFloorRepository.js";
 import { PrismaServiceSessionRepository } from "../infrastructure/persistence/PrismaServiceSessionRepository.js";
+import { PrismaFloorplanRepository } from "../infrastructure/persistence/PrismaFloorplanRepository.js";
 import { PrismaSecurityEventRecorder } from "../infrastructure/persistence/PrismaSecurityEventRecorder.js";
 import { PrismaSecurityEventReader } from "../infrastructure/persistence/PrismaSecurityEventReader.js";
 import { resolveAppHost, startListening } from "./serverConfig.js";
@@ -89,6 +90,27 @@ const app = createApp({
   // separate, explicit migration-application step has run.
   serviceSessions: {
     serviceSessionRepository: new PrismaServiceSessionRepository(prisma),
+    transactionManager: new PrismaTransactionManager(prisma),
+  },
+  // R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version
+  // foundation only. Same shared `prisma` client every other adapter
+  // above uses (never a second connection). Mounts the `/floorplans*`
+  // routes; wires nothing into ServiceSession/seatability (R1.5-P2A
+  // stages 3/4, unbuilt) — this block has no effect on any existing
+  // request path.
+  //
+  // DEPLOYMENT PRECONDITION: migration `20260914073245_add_floorplan_versioning`
+  // must be applied (via `prisma migrate deploy`) to whatever database
+  // this process connects to BEFORE starting a build that includes this
+  // wiring — every /floorplans* read/write goes through
+  // PrismaFloorplanRepository, which depends on the floorplans/
+  // floorplan_versions/floorplan_version_resources tables existing. This
+  // migration was NOT applied to `helix_reservations_dev` as of this
+  // change (R1.5-P2B STOP-gate report) — do not start this server
+  // against that database until a separate, explicit migration-
+  // application step has run, mirroring R1.6-P2C-1/1A's own precedent.
+  floorplans: {
+    floorplanRepository: new PrismaFloorplanRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend

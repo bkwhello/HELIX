@@ -170,3 +170,41 @@ export function deriveServiceSessionLockKey(serviceCode: string, serviceDate: st
   }
   return { namespace: SERVICE_SESSION_LOCK_NAMESPACE, key: fnv1a32(`${serviceCode}|${serviceDate}`) };
 }
+
+/**
+ * R1.5-P2B — CAP-D03.02 Floorplan Management foundation. A NEW tier,
+ * inserted between the reservation and service-session tiers (Chief
+ * Engineer directive, R1.5-P2A design addendum):
+ *
+ *   reservation (Tier 1) -> floorplan (Tier 1.4, this namespace)
+ *   -> service session (Tier 1.5) -> capacity pool/date (Tier 2)
+ *   -> seating resource (Tier 3)
+ *
+ * In THIS increment, acquired only by FloorplanService's own mutating
+ * methods (createDraftVersion, publishVersion, setDefaultVersion,
+ * archiveVersion, addMember) — fully serializing all mutations to one
+ * Floorplan's version set against each other. No ServiceSession or
+ * seating-write path acquires this lock yet (that wiring is explicitly
+ * out of scope for this increment — R1.5-P2A stages 3/4). The tier
+ * position (1.4, strictly between reservation and service-session) is
+ * reserved now so that future wiring has an unambiguous place to insert:
+ * a future ServiceSession.open() acquiring both this lock and the
+ * service-session lock must do so in this order — floorplan first, then
+ * service session — never the reverse, exactly mirroring how Tier 1.5
+ * itself was inserted ahead of Tier 2 without disturbing Tier 2/3's own
+ * existing relative order.
+ *
+ * "HALF" (Helix ALoorFplan — sic, chosen only to keep the four-letter
+ * "HAL_" mnemonic family going while staying visually distinct from
+ * HALR/HALS/HALT/HALX) — a FIFTH namespace, distinct from every existing
+ * one, so this lock family can never collide with any other even if
+ * hashes happened to coincide.
+ */
+export const FLOORPLAN_LOCK_NAMESPACE = 0x48414c46 | 0;
+
+export function deriveFloorplanLockKey(floorplanId: string): LockKey {
+  if (!floorplanId) {
+    throw new Error("deriveFloorplanLockKey: floorplanId is required.");
+  }
+  return { namespace: FLOORPLAN_LOCK_NAMESPACE, key: fnv1a32(floorplanId) };
+}

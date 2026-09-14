@@ -50,10 +50,11 @@ describe("api/server.ts — loopback binding (P1-B11A)", () => {
 });
 
 describe("api/server.ts — existing runtime wiring remains intact", () => {
-  it("still constructs every existing AppDependencies block: capacity, floor, serviceSessions, communications, auth", () => {
+  it("still constructs every existing AppDependencies block: capacity, floor, serviceSessions, floorplans, communications, auth", () => {
     expect(source).toMatch(/capacity:\s*\{/);
     expect(source).toMatch(/floor:\s*\{/);
     expect(source).toMatch(/serviceSessions:\s*\{/);
+    expect(source).toMatch(/floorplans:\s*\{/);
     expect(source).toMatch(/communications:\s*\{/);
     expect(source).toMatch(/auth:\s*\{/);
   });
@@ -115,5 +116,45 @@ describe("api/server.ts — R1.6-P2C-1 Service Session production wiring", () =>
   it("api/app.ts passes the real serviceSessionRepository into both SeatingOrchestrator and AvailabilityOrchestrator — the session gate is not silently disabled in production", () => {
     expect(appSource).toMatch(/new SeatingOrchestrator\(\s*[\s\S]*?deps\.serviceSessions\?\.serviceSessionRepository/);
     expect(appSource).toMatch(/new AvailabilityOrchestrator\(\s*[\s\S]*?deps\.serviceSessions\?\.serviceSessionRepository/);
+  });
+});
+
+describe("api/server.ts — R1.5-P2B Floorplan production wiring", () => {
+  it("imports PrismaFloorplanRepository", () => {
+    expect(source).toContain('import { PrismaFloorplanRepository } from "../infrastructure/persistence/PrismaFloorplanRepository.js";');
+  });
+
+  it("supplies a real floorplans block using the SAME shared `prisma` client, not a new PrismaClient", () => {
+    const match = source.match(/floorplans:\s*\{([\s\S]*?)\},/);
+    expect(match).not.toBeNull();
+    const block = match?.[1] ?? "";
+    expect(block).toContain("floorplanRepository: new PrismaFloorplanRepository(prisma)");
+    expect(block).toContain("transactionManager: new PrismaTransactionManager(prisma)");
+    expect(block).not.toMatch(/new PrismaClient\(\)/);
+  });
+
+  it("still constructs exactly one PrismaClient overall — the floorplans block adds no second connection", () => {
+    const matches = source.match(/new PrismaClient\(\)/g) || [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it("documents the deployment precondition: the floorplan-versioning migration must be applied before this wiring is started against a database", () => {
+    expect(source).toContain("20260914073245_add_floorplan_versioning");
+    expect(source).toMatch(/DEPLOYMENT PRECONDITION/);
+  });
+
+  it("api/app.ts constructs the real FloorplanService from the supplied floorplans block, not a no-op stand-in", () => {
+    expect(appSource).toMatch(
+      /new FloorplanService\(\s*deps\.floorplans\.floorplanRepository,\s*deps\.floor\.floorRepository,\s*deps\.floorplans\.transactionManager,/
+    );
+  });
+
+  it("this increment is deliberately inert — floorplans is never passed into SeatingOrchestrator or AvailabilityOrchestrator (R1.5-P2A stages 3/4 remain unbuilt)", () => {
+    const seatingCtor = appSource.match(/new SeatingOrchestrator\(([\s\S]*?)\n\s*\)/);
+    const availabilityCtor = appSource.match(/new AvailabilityOrchestrator\(([\s\S]*?)\n\s*\)/);
+    expect(seatingCtor).not.toBeNull();
+    expect(availabilityCtor).not.toBeNull();
+    expect(seatingCtor![1]).not.toMatch(/deps\.floorplans/);
+    expect(availabilityCtor![1]).not.toMatch(/deps\.floorplans/);
   });
 });
