@@ -15,6 +15,7 @@
     "bootstrap-owner": "tsx infrastructure/bootstrap/bootstrapOwner.ts",
     "setup-test-db": "tsx ops/testDatabaseSetup.ts",
     "seed-floor": "tsx ops/floor/seedFloor.ts",
+    "seed-floorplan": "tsx ops/floor/bootstrapMainFloorplan.ts",
     "floor-smoke-test": "tsx ops/floor/floorSmokeTest.ts",
     "service-period-smoke-test": "tsx ops/reservations/servicePeriodSmokeTest.ts",
     "backup": "tsx ops/backup/createBackup.ts",
