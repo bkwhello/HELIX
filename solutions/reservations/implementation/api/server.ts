@@ -88,9 +88,27 @@ const app = createApp({
   // `helix_reservations_dev` as of this change (R1.6-P2C-1 STOP-gate
   // report) — do not start this server against that database until a
   // separate, explicit migration-application step has run.
+  //
+  // R1.5-P2C — `floorplanRepository` (SAME shared `prisma` client, a
+  // second stateless PrismaFloorplanRepository instance — no second
+  // connection) is now mandatory here too: ServiceSessionService.open()
+  // reads MAIN_FLOORPLAN_ID's default version through it, with no
+  // production no-op fallback.
+  //
+  // DEPLOYMENT PRECONDITION (additional): migration
+  // `20260917081629_add_service_session_floorplan_snapshot` (adds
+  // `service_sessions.floorplan_version_id`, its FK, and the Opened/Closed
+  // CHECK constraint) MUST also be applied before starting a build that
+  // includes this wiring. As of this change, this migration has been
+  // applied to `helix_reservations_test` ONLY — NOT to
+  // `helix_reservations_dev` (R1.5-P2C STOP-gate report) — do not start
+  // this server against that database until a separate, explicit
+  // migration-application step has run, mirroring R1.6-P2C-1/1A's own
+  // precedent.
   serviceSessions: {
     serviceSessionRepository: new PrismaServiceSessionRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
+    floorplanRepository: new PrismaFloorplanRepository(prisma),
   },
   // R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version
   // foundation only. Same shared `prisma` client every other adapter

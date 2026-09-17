@@ -119,6 +119,31 @@ describe("api/server.ts — R1.6-P2C-1 Service Session production wiring", () =>
   });
 });
 
+describe("api/server.ts — R1.5-P2C ServiceSession Floorplan snapshot production wiring", () => {
+  it("supplies a real floorplanRepository inside the serviceSessions block — no production no-op fallback", () => {
+    const match = source.match(/serviceSessions:\s*\{([\s\S]*?)\},/);
+    expect(match).not.toBeNull();
+    const block = match?.[1] ?? "";
+    expect(block).toContain("floorplanRepository: new PrismaFloorplanRepository(prisma)");
+  });
+
+  it("api/app.ts constructs ServiceSessionService with the real floorplanRepository, not omitted", () => {
+    expect(appSource).toMatch(
+      /new ServiceSessionService\(\s*deps\.serviceSessions\.serviceSessionRepository,\s*deps\.serviceSessions\.transactionManager,\s*deps\.idGenerator,\s*deps\.clock,\s*deps\.serviceSessions\.floorplanRepository/
+    );
+  });
+
+  it("still constructs exactly one PrismaClient overall — the new floorplanRepository wiring adds no second connection", () => {
+    const matches = source.match(/new PrismaClient\(\)/g) || [];
+    expect(matches).toHaveLength(1);
+  });
+
+  it("documents the additional deployment precondition: the floorplan-snapshot migration must be applied before this wiring is started against a database", () => {
+    expect(source).toContain("20260917081629_add_service_session_floorplan_snapshot");
+    expect(source).toMatch(/DEPLOYMENT PRECONDITION/);
+  });
+});
+
 describe("api/server.ts — R1.5-P2B Floorplan production wiring", () => {
   it("imports PrismaFloorplanRepository", () => {
     expect(source).toContain('import { PrismaFloorplanRepository } from "../infrastructure/persistence/PrismaFloorplanRepository.js";');

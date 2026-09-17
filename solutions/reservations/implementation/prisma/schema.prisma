@@ -196,6 +196,20 @@ model ServiceSession {
   serviceDate DateTime  @map("service_date") @db.Date
   // Created | Opened | Closed | Cancelled — see domain/availability/ServiceSession.ts.
   status      String
+  // R1.5-P2C — the FloorplanVersion snapshotted at Open time (see
+  // domain/availability/ServiceSession.ts's own doc comment on this
+  // field). Nullable: Created and Cancelled-from-Created sessions never
+  // acquire one. RESTRICT (not CASCADE/SET NULL): an open or historically-
+  // closed session's snapshot reference must never silently disappear out
+  // from under it — archiving/deleting is a version-lifecycle concern
+  // (FloorplanService), never a reason to corrupt a session's own record
+  // of what floorplan it actually opened against. The CHECK constraint
+  // below (added via raw SQL in this field's own migration — Prisma's
+  // schema language has no native CHECK syntax used elsewhere in this
+  // project) is the real enforcement that Opened/Closed always carry a
+  // non-null value; the nullability here only expresses that Created/
+  // Cancelled legitimately do not.
+  floorplanVersionId String? @map("floorplan_version_id")
   openedAt    DateTime? @map("opened_at") @db.Timestamptz
   closedAt    DateTime? @map("closed_at") @db.Timestamptz
   cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
@@ -203,6 +217,8 @@ model ServiceSession {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   // Optimistic-concurrency token — same convention as Reservation.version.
   version     Int       @default(1)
+
+  floorplanVersion FloorplanVersion? @relation(fields: [floorplanVersionId], references: [id], onDelete: Restrict)
 
   @@unique([serviceCode, serviceDate])
   @@map("service_sessions")
@@ -258,6 +274,13 @@ model FloorplanVersion {
   floorplan    Floorplan                  @relation("FloorplanVersions", fields: [floorplanId], references: [id])
   asDefaultFor Floorplan[]                @relation("FloorplanDefaultVersion")
   members      FloorplanVersionResource[]
+  // R1.5-P2C — ServiceSessions snapshotted against this version at Open
+  // time. Required by Prisma for ServiceSession.floorplanVersion's
+  // explicit relation to resolve; archiving this version does not affect
+  // any existing snapshot reference (RESTRICT prevents deleting the row
+  // outright, not the Published -> Archived status transition, which is
+  // unrelated to this FK).
+  serviceSessions ServiceSession[]
 
   @@unique([floorplanId, revision])
   // Target side of the composite FK from Floorplan.defaultVersionId —

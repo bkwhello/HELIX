@@ -157,10 +157,25 @@ export interface AppDependencies {
    * requires `capacity` and `floor` too (the only place the gated
    * orchestrators are constructed) — supplying `serviceSessions` alone
    * wires nothing.
+   *
+   * R1.5-P2C — `floorplanRepository` is mandatory within this block (not
+   * a separate optional field): ServiceSessionService.open() always needs
+   * a real Floorplan repository to snapshot the current default against,
+   * with no production no-op fallback. A deployment supplying
+   * `serviceSessions` at all must supply this too. `floorplanId` is
+   * optional and exists ONLY as a testing seam (mirrors
+   * ServiceSessionService's own constructor default) — omitted here, it
+   * resolves to the real MAIN_FLOORPLAN_ID, exactly like every real
+   * deployment (api/server.ts never sets it). A test building its own
+   * AppDependencies can supply an isolated fixture id instead, so HTTP-
+   * level open() tests never need to touch the literal "main-floor" row
+   * tests/ops/main-floorplan-bootstrap.test.ts owns exclusively.
    */
   serviceSessions?: {
     readonly serviceSessionRepository: ServiceSessionRepository;
     readonly transactionManager: TransactionManager;
+    readonly floorplanRepository: FloorplanRepository;
+    readonly floorplanId?: string;
   };
   /**
    * R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version
@@ -970,7 +985,9 @@ export function createApp(deps: AppDependencies): Express {
       deps.serviceSessions.serviceSessionRepository,
       deps.serviceSessions.transactionManager,
       deps.idGenerator,
-      deps.clock
+      deps.clock,
+      deps.serviceSessions.floorplanRepository,
+      deps.serviceSessions.floorplanId
     );
 
     // R1.6-P2C-2A — GET /service-sessions is now bounded: exactly one
@@ -1017,6 +1034,7 @@ export function createApp(deps: AppDependencies): Express {
           serviceCode: s.serviceCode,
           serviceDate: s.serviceDate,
           status: s.status,
+          floorplanVersionId: s.floorplanVersionId,
           openedAt: s.openedAt ? s.openedAt.toISOString() : null,
           closedAt: s.closedAt ? s.closedAt.toISOString() : null,
           cancelledAt: s.cancelledAt ? s.cancelledAt.toISOString() : null,
@@ -1068,6 +1086,9 @@ export function createApp(deps: AppDependencies): Express {
           return;
         case "ACTIVE_ASSIGNMENTS_EXIST":
           res.status(409).json({ type: "ACTIVE_ASSIGNMENTS_EXIST", count: result.count });
+          return;
+        case "NO_DEFAULT_FLOORPLAN_VERSION":
+          res.status(409).json({ type: "NO_DEFAULT_FLOORPLAN_VERSION" });
           return;
         case "CONCURRENCY_CONFLICT":
           res.status(409).json({ type: "CONCURRENCY_CONFLICT" });

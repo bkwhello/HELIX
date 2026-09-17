@@ -1,6 +1,8 @@
 import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSession, ServiceSessionStatus, isValidServiceSessionTransition } from "../../domain/availability/ServiceSession.js";
 import { isServiceCode } from "../../domain/availability/Service.js";
+import { FloorplanRepository } from "../../domain/repositories/FloorplanRepository.js";
+import { MAIN_FLOORPLAN_ID } from "../../domain/floor/Floorplan.js";
 import { TransactionManager } from "../ports/TransactionManager.js";
 import { IdGenerator } from "../ports/IdGenerator.js";
 import { Clock } from "../ports/Clock.js";
@@ -19,6 +21,13 @@ export type ServiceSessionTransitionOutcome =
   | { readonly type: "NOT_FOUND" }
   | { readonly type: "INVALID_TRANSITION"; readonly currentStatus: ServiceSessionStatus }
   | { readonly type: "ACTIVE_ASSIGNMENTS_EXIST"; readonly count: number }
+  /**
+   * R1.5-P2C — open() only. No Floorplan exists, no default version is
+   * set, the default does not belong to MAIN_FLOORPLAN_ID, or the default
+   * is not Published — zero session mutation in every case (the check
+   * runs after both locks are held but before any write).
+   */
+  | { readonly type: "NO_DEFAULT_FLOORPLAN_VERSION" }
   /** Defensive-only — structurally unreachable while the session lock is held for the full transition; see handle()'s own comment. */
   | { readonly type: "CONCURRENCY_CONFLICT" };
 
@@ -47,7 +56,17 @@ export class ServiceSessionService {
     private readonly repository: ServiceSessionRepository,
     private readonly transactionManager: TransactionManager,
     private readonly idGenerator: IdGenerator,
-    private readonly clock: Clock
+    private readonly clock: Clock,
+    private readonly floorplanRepository: FloorplanRepository,
+    /**
+     * Defaults to the one real production identity — see
+     * domain/floor/Floorplan.ts's own doc comment. Overridable only so
+     * that test files needing an isolated Floorplan fixture (never
+     * colliding with tests that exercise the literal "main-floor" bootstrap
+     * identity directly) can supply their own; production wiring never
+     * passes anything here.
+     */
+    private readonly floorplanId: string = MAIN_FLOORPLAN_ID
   ) {}
 
   /** R1.6-P2C-2A — the caller (api/app.ts's GET /service-sessions route) is responsible for validating serviceDate's shape/calendar-validity BEFORE calling this; this method assumes an already-valid YYYY-MM-DD string, matching create()/findByKey()'s own division of responsibility. */
@@ -90,8 +109,59 @@ export class ServiceSessionService {
     });
   }
 
+  /**
+   * R1.5-P2C — the only transition that reads Floorplan state. Lock order
+   * (domain/availability/LockKey.ts): floorplan (Tier 1.4) BEFORE service
+   * session (Tier 1.5), always — the same fixed global order every other
+   * multi-tier caller in this codebase follows, so this can never form a
+   * wait-cycle with FloorplanService's own mutations (which acquire only
+   * the floorplan lock) or with close()/cancel() (which acquire only the
+   * session lock).
+   *
+   * Kept as its own method rather than folded into transition() below:
+   * unlike close()/cancel(), it needs a second lock, a Floorplan read, and
+   * a distinct idempotent-repeat rule (never re-snapshot on a repeat
+   * open() even if the global default has since changed).
+   */
   async open(id: string): Promise<ServiceSessionTransitionOutcome> {
-    return this.transition(id, "Opened", new Set<ServiceSessionStatus>(["Created"]));
+    const preLookup = await this.repository.findById(id);
+    if (!preLookup) return { type: "NOT_FOUND" };
+
+    return this.transactionManager.runInTransaction(async (tx) => {
+      await this.floorplanRepository.acquireFloorplanLock({ floorplanId: this.floorplanId, tx });
+      await this.repository.acquireSessionLock({ serviceCode: preLookup.serviceCode, serviceDate: preLookup.serviceDate, tx });
+
+      const current = await this.repository.findById(id, tx);
+      if (!current) return { type: "NOT_FOUND" };
+
+      // Idempotent repeat — preserves the ORIGINAL snapshot (floorplanVersionId,
+      // openedAt, version) exactly, never re-reads the current default.
+      if (current.status === "Opened") {
+        return { type: "OPENED", session: current };
+      }
+      if (current.status !== "Created" || !isValidServiceSessionTransition(current.status, "Opened")) {
+        return { type: "INVALID_TRANSITION", currentStatus: current.status };
+      }
+
+      const floorplan = await this.floorplanRepository.findFloorplanById(this.floorplanId, tx);
+      const defaultVersion = floorplan?.defaultVersionId ? await this.floorplanRepository.findVersionById(floorplan.defaultVersionId, tx) : null;
+      const eligible = floorplan !== null && defaultVersion !== null && defaultVersion.floorplanId === floorplan.id && defaultVersion.status === "Published";
+      if (!eligible) return { type: "NO_DEFAULT_FLOORPLAN_VERSION" };
+
+      const result = await this.repository.updateStatus({
+        id: current.id,
+        expectedVersion: current.version,
+        newStatus: "Opened",
+        timestamp: this.clock.now(),
+        floorplanVersionId: defaultVersion.id,
+        tx,
+      });
+      // Structurally unreachable — see transition()'s own identical comment;
+      // the session lock has been held continuously since before this
+      // transaction's own `current` re-read.
+      if (result.type === "VERSION_CONFLICT") return { type: "CONCURRENCY_CONFLICT" };
+      return { type: "OPENED", session: result.session };
+    });
   }
 
   /** Chief Engineer decision #12 — blocked ONLY by active Assigned/Seated SeatingAssignments for the derived service/date; Reservation/CapacityCommitment state never blocks. */
@@ -103,9 +173,10 @@ export class ServiceSessionService {
     return this.transition(id, "Cancelled", new Set<ServiceSessionStatus>(["Created"]));
   }
 
+  /** Handles Closed/Cancelled only — open() (above) is a dedicated method; see its own doc comment for why. */
   private async transition(
     id: string,
-    targetStatus: "Opened" | "Closed" | "Cancelled",
+    targetStatus: "Closed" | "Cancelled",
     allowedFrom: ReadonlySet<ServiceSessionStatus>
   ): Promise<ServiceSessionTransitionOutcome> {
     // Pre-transaction lookup ONLY to discover which (serviceCode,

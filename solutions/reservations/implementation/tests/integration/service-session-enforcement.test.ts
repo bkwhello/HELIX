@@ -6,6 +6,8 @@ import { CanonicalServicePeriodReader } from "../../infrastructure/CanonicalServ
 import { PrismaServiceSessionRepository } from "../../infrastructure/persistence/PrismaServiceSessionRepository.js";
 import { ServiceSessionService } from "../../application/availability/ServiceSessionService.js";
 import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
+import { PrismaFloorplanRepository } from "../../infrastructure/persistence/PrismaFloorplanRepository.js";
+import { createPublishedFloorplanFixture } from "./support/floorplanFixture.js";
 import { RandomIdGenerator } from "../../infrastructure/RandomIdGenerator.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
@@ -47,6 +49,15 @@ function cmd(): string {
 let resCounter = 0;
 
 /**
+ * R1.5-P2C — every open() call in this file now needs a Floorplan with an
+ * eligible (Published, belonging) default. A dedicated fixture id, NOT
+ * "main-floor" (see floorplanFixture.ts's own doc comment), created once
+ * in beforeAll below and passed to every harness()'s ServiceSessionService.
+ */
+const ENF_RUN_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const FLOORPLAN_FIXTURE_ID = `svs-enforcement-floorplan-fixture-${ENF_RUN_ID}`;
+
+/**
  * `now` defaults to DINNER_INSTANT — every pre-existing call site in this
  * file (`harness()`, no argument) is byte-identical to before. The optional
  * override exists ONLY for the Close-vs-walk-in/Open-vs-walk-in races
@@ -58,7 +69,14 @@ let resCounter = 0;
 function harness(now: Date = DINNER_INSTANT) {
   const serviceSessionRepository = new PrismaServiceSessionRepository(prisma);
   const built = buildFloorHarness(prisma, now, new CanonicalServicePeriodReader(), serviceSessionRepository);
-  const sessionService = new ServiceSessionService(serviceSessionRepository, new PrismaTransactionManager(prisma), new RandomIdGenerator(), { now: () => new Date() });
+  const sessionService = new ServiceSessionService(
+    serviceSessionRepository,
+    new PrismaTransactionManager(prisma),
+    new RandomIdGenerator(),
+    { now: () => new Date() },
+    new PrismaFloorplanRepository(prisma),
+    FLOORPLAN_FIXTURE_ID
+  );
   return { ...built, serviceSessionRepository, sessionService };
 }
 
@@ -118,6 +136,8 @@ beforeAll(async () => {
   await truncateSeatingDomainTables(prisma);
   await truncateReservationDomainTables(prisma);
   await seedFloor(process.env["TEST_DATABASE_URL"]!);
+  const anyTable = await prisma.table.findFirstOrThrow({ where: { status: "Active" } });
+  await createPublishedFloorplanFixture(prisma, { floorplanId: FLOORPLAN_FIXTURE_ID, tableIds: [anyTable.id] });
 });
 afterAll(async () => {
   await prisma.$disconnect();

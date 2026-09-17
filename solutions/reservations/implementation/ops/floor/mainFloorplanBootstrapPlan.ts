@@ -1,4 +1,5 @@
 import { ALL_TABLES, seatId } from "../../infrastructure/floor/floorSeedData.js";
+import { MAIN_FLOORPLAN_ID } from "../../domain/floor/Floorplan.js";
 
 /**
  * R1.5-P2B-B — Main Floor Bootstrap Tooling.
@@ -15,7 +16,8 @@ import { ALL_TABLES, seatId } from "../../infrastructure/floor/floorSeedData.js"
  * verdict — nothing decision-relevant lives there.
  */
 
-export const MAIN_FLOOR_ID = "main-floor";
+/** R1.5-P2C — re-exported under its existing name for this module's own callers/tests; the value now originates from the one canonical definition, domain/floor/Floorplan.ts's MAIN_FLOORPLAN_ID, never duplicated here. */
+export const MAIN_FLOOR_ID = MAIN_FLOORPLAN_ID;
 export const MAIN_FLOOR_NAME = "Main Floor";
 export const MAIN_FLOOR_VERSION_ID = "main-floor-v1";
 export const MAIN_FLOOR_REVISION = 1;

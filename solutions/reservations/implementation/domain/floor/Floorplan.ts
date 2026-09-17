@@ -9,6 +9,16 @@
  */
 export type FloorplanVersionStatus = "Draft" | "Published" | "Archived";
 
+/**
+ * R1.5-P2C — the one canonical Floorplan identity for this pilot (exactly
+ * one Floorplan exists — see R1.5-P2B-B's bootstrap tooling, which creates
+ * exactly this id). The single definition site: every module that needs
+ * to know "which Floorplan" (the bootstrap planner, ServiceSessionService's
+ * open-time snapshot) imports this constant rather than repeating the
+ * literal string.
+ */
+export const MAIN_FLOORPLAN_ID = "main-floor";
+
 export interface Floorplan {
   readonly id: string;
   readonly name: string;

@@ -27,6 +27,7 @@ interface ServiceSessionRow {
   serviceCode: string;
   serviceDate: Date;
   status: string;
+  floorplanVersionId: string | null;
   openedAt: Date | null;
   closedAt: Date | null;
   cancelledAt: Date | null;
@@ -41,6 +42,7 @@ function toDomain(row: ServiceSessionRow): ServiceSession {
     serviceCode: row.serviceCode as ServiceCode,
     serviceDate: fromDateOnly(row.serviceDate),
     status: row.status as ServiceSessionStatus,
+    floorplanVersionId: row.floorplanVersionId,
     openedAt: row.openedAt,
     closedAt: row.closedAt,
     cancelledAt: row.cancelledAt,
@@ -109,12 +111,14 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
     readonly expectedVersion: number;
     readonly newStatus: ServiceSessionStatus;
     readonly timestamp: Date;
+    readonly floorplanVersionId?: string;
     readonly tx: TransactionContext;
   }): Promise<{ readonly type: "UPDATED"; readonly session: ServiceSession } | { readonly type: "VERSION_CONFLICT" }> {
     const client = asPrismaTx(input.tx);
     const timestampField = TIMESTAMP_FIELD_BY_STATUS[input.newStatus];
     const data: Record<string, unknown> = { status: input.newStatus, version: { increment: 1 } };
     if (timestampField) data[timestampField] = input.timestamp;
+    if (input.floorplanVersionId !== undefined) data["floorplanVersionId"] = input.floorplanVersionId;
 
     const result = await client.serviceSession.updateMany({
       where: { id: input.id, version: input.expectedVersion },

@@ -16,8 +16,11 @@ import { PrismaContactRepository } from "../../infrastructure/persistence/Prisma
 import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { PrismaServiceSessionRepository } from "../../infrastructure/persistence/PrismaServiceSessionRepository.js";
+import { PrismaFloorplanRepository } from "../../infrastructure/persistence/PrismaFloorplanRepository.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
+import { seedFloor } from "../../ops/floor/seedFloor.js";
+import { createPublishedFloorplanFixture } from "../integration/support/floorplanFixture.js";
 
 /**
  * R1.6-P2C-1 — HTTP-level coverage for the five `/service-sessions*`
@@ -30,6 +33,8 @@ import { ActorRole } from "../../domain/value-objects/Actor.js";
 const RUN_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 const PASSWORD = "SuperSecret123!";
 const prisma = createTestPrismaClient();
+/** R1.5-P2C — an isolated Floorplan fixture, NOT "main-floor" (see floorplanFixture.ts's own doc comment) — supplied to AppDependencies.serviceSessions.floorplanId so open() tests never touch the literal "main-floor" row tests/ops/main-floorplan-bootstrap.test.ts owns exclusively. */
+const FLOORPLAN_FIXTURE_ID = `svs-api-floorplan-fixture-${RUN_ID}`;
 
 function buildApp(): Express {
   return createApp({
@@ -45,6 +50,8 @@ function buildApp(): Express {
     serviceSessions: {
       serviceSessionRepository: new PrismaServiceSessionRepository(prisma),
       transactionManager: new PrismaTransactionManager(prisma),
+      floorplanRepository: new PrismaFloorplanRepository(prisma),
+      floorplanId: FLOORPLAN_FIXTURE_ID,
     },
     auth: {
       staffUserRepository: new PrismaStaffUserRepository(prisma),
@@ -113,6 +120,14 @@ beforeAll(async () => {
   await prisma.serviceSession.deleteMany({
     where: { serviceDate: { gte: new Date("2028-01-01T00:00:00.000Z"), lt: new Date("2029-01-01T00:00:00.000Z") } },
   });
+  // R1.5-P2C — every open() call now needs an eligible Floorplan default.
+  // seedFloor is idempotent (safe regardless of whether an earlier file
+  // already seeded the floor); the fixture below is this file's own
+  // isolated Floorplan (AppDependencies.serviceSessions.floorplanId,
+  // set in buildApp() above) — never the literal "main-floor" row.
+  await seedFloor(process.env["TEST_DATABASE_URL"]!);
+  const anyTable = await prisma.table.findFirstOrThrow({ where: { status: "Active" } });
+  await createPublishedFloorplanFixture(prisma, { floorplanId: FLOORPLAN_FIXTURE_ID, tableIds: [anyTable.id] });
   staffUserRepository = new PrismaStaffUserRepository(prisma);
   const owner = await createStaffUser("owner", ActorRole.Owner);
   const manager = await createStaffUser("manager", ActorRole.Manager);
@@ -302,5 +317,43 @@ describe("POST /service-sessions/:id/open, /close, /cancel — Permission.Capaci
     expect(second.status).toBe(200);
     expect(second.body.session.openedAt).toBe(first.body.session.openedAt);
     expect(second.body.session.version).toBe(first.body.session.version);
+  });
+});
+
+describe("R1.5-P2C — Floorplan snapshot on open", () => {
+  it("GET response includes floorplanVersionId — null before open, a real version id after", async () => {
+    const date = nextServiceDate();
+    const created = await post(ownerAgent, "/service-sessions").send({ serviceCode: "lunch", serviceDate: date });
+    const id = created.body.session.id;
+
+    const beforeOpen = await receptionAgent.get(`/service-sessions?serviceDate=${date}`);
+    expect(beforeOpen.body.sessions[0].floorplanVersionId).toBeNull();
+
+    await post(ownerAgent, `/service-sessions/${id}/open`);
+    const afterOpen = await receptionAgent.get(`/service-sessions?serviceDate=${date}`);
+    expect(afterOpen.body.sessions[0].floorplanVersionId).toEqual(expect.any(String));
+  });
+
+  it("open() returns 409 NO_DEFAULT_FLOORPLAN_VERSION when the fixture Floorplan has no eligible default, and succeeds again once restored", async () => {
+    const created = await post(ownerAgent, "/service-sessions").send({ serviceCode: "dinner", serviceDate: nextServiceDate() });
+    const id = created.body.session.id;
+
+    const repo = new PrismaFloorplanRepository(prisma);
+    const tm = new PrismaTransactionManager(prisma);
+    const floorplan = await repo.findFloorplanById(FLOORPLAN_FIXTURE_ID);
+    const originalDefaultVersionId = floorplan?.defaultVersionId ?? null;
+    await tm.runInTransaction((tx) => repo.setDefaultVersion({ floorplanId: FLOORPLAN_FIXTURE_ID, versionId: null, tx }));
+
+    try {
+      const res = await post(ownerAgent, `/service-sessions/${id}/open`);
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ type: "NO_DEFAULT_FLOORPLAN_VERSION" });
+    } finally {
+      await tm.runInTransaction((tx) => repo.setDefaultVersion({ floorplanId: FLOORPLAN_FIXTURE_ID, versionId: originalDefaultVersionId, tx }));
+    }
+
+    const retryRes = await post(ownerAgent, `/service-sessions/${id}/open`);
+    expect(retryRes.status).toBe(200);
+    expect(retryRes.body.type).toBe("OPENED");
   });
 });

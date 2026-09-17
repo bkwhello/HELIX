@@ -20,6 +20,16 @@ export interface ServiceSession {
   /** Amsterdam-local calendar date, "YYYY-MM-DD" — matches ServiceTime.ts's toLocalServiceDate output exactly. */
   readonly serviceDate: string;
   readonly status: ServiceSessionStatus;
+  /**
+   * R1.5-P2C — the FloorplanVersion snapshotted at Open time (the
+   * Published default of MAIN_FLOORPLAN_ID at that instant). Null for
+   * Created and Cancelled-from-Created sessions; set exactly once, on the
+   * Created -> Opened transition, and never rewritten afterward — Closed
+   * preserves it, and a later default change or archive of that version
+   * never touches this session's own historical reference. Not yet
+   * enforced against seating membership (that remains a future stage).
+   */
+  readonly floorplanVersionId: string | null;
   readonly openedAt: Date | null;
   readonly closedAt: Date | null;
   readonly cancelledAt: Date | null;

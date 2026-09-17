@@ -41,11 +41,19 @@ export interface ServiceSessionRepository {
    * detection (calling this only for a REAL transition) and for
    * choosing which timestamp field `timestamp` stamps.
    */
+  /**
+   * R1.5-P2C — `floorplanVersionId` follows the same omitted-vs-explicit
+   * convention as `FloorplanRepository.updateVersionStatus`'s own
+   * `publishedAt`: omitted (undefined) leaves the column untouched
+   * (Closed/Cancelled never rewrite the Open-time snapshot); the
+   * Created -> Opened transition is the only caller that ever passes it.
+   */
   updateStatus(input: {
     readonly id: string;
     readonly expectedVersion: number;
     readonly newStatus: ServiceSessionStatus;
     readonly timestamp: Date;
+    readonly floorplanVersionId?: string;
     readonly tx: TransactionContext;
   }): Promise<{ readonly type: "UPDATED"; readonly session: ServiceSession } | { readonly type: "VERSION_CONFLICT" }>;
 
