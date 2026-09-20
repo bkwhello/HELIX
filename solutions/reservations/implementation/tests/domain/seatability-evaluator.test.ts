@@ -13,6 +13,7 @@ function candidate(overrides: Partial<SeatabilityCandidate> = {}): SeatabilityCa
     supportsRequestedClaimKind: true,
     blockedForInterval: false,
     overlappingActiveAssignment: false,
+    withinFloorplanMembership: true,
     ...overrides,
   };
 }
@@ -112,5 +113,41 @@ describe("SeatabilityEvaluator — failure classification", () => {
     });
     expect(result.type).toBe("RESOURCE_NOT_FOUND");
     if (result.type === "RESOURCE_NOT_FOUND") expect(result.resourceLabel).toBe("Table 1");
+  });
+
+  it("RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP — checked after block/overlap, before capacity", () => {
+    const result = evaluateSeatability({
+      requestedAreaId: "Sushi",
+      requestedPartySize: 2,
+      candidates: [candidate({ withinFloorplanMembership: false })],
+    });
+    expect(result.type).toBe("RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP");
+  });
+
+  it("a Seat candidate carries its OWN withinFloorplanMembership flag (the caller resolves it via the parent Table, not this function)", () => {
+    const result = evaluateSeatability({
+      requestedAreaId: "Teppanyaki",
+      requestedPartySize: 1,
+      candidates: [candidate({ resourceKind: "Seat", areaId: "Teppanyaki", capacity: 1, withinFloorplanMembership: false })],
+    });
+    expect(result.type).toBe("RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP");
+  });
+
+  it("mixed selection: one member, one non-member — fails atomically on the first non-member candidate encountered", () => {
+    const result = evaluateSeatability({
+      requestedAreaId: "Sushi",
+      requestedPartySize: 4,
+      candidates: [
+        candidate({ resourceId: "t1", withinFloorplanMembership: true }),
+        candidate({ resourceId: "t2", withinFloorplanMembership: false }),
+      ],
+    });
+    expect(result.type).toBe("RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP");
+    if (result.type === "RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP") expect(result.resourceLabel).toBe("Table 1");
+  });
+
+  it("withinFloorplanMembership: true for every candidate (membership not enforced) never triggers the new outcome", () => {
+    const result = evaluateSeatability({ requestedAreaId: "Sushi", requestedPartySize: 4, candidates: [candidate()] });
+    expect(result.type).toBe("SEATABLE");
   });
 });

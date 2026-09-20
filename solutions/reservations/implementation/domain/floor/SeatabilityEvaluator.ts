@@ -22,6 +22,10 @@ export type SeatabilityOutcome =
   | { readonly type: "RESOURCE_BLOCKED"; readonly resourceLabel: string }
   | { readonly type: "RESOURCE_OVERLAP"; readonly resourceLabel: string }
   | { readonly type: "RESOURCE_TYPE_MISMATCH"; readonly resourceLabel: string; readonly reason: string }
+  /** R1.5-P2D — no eligible FloorplanVersion could be resolved at all (neither a session snapshot nor an eligible Published default) — returned by the caller BEFORE any candidate is built, never by evaluateSeatability itself. */
+  | { readonly type: "NO_ELIGIBLE_FLOORPLAN_VERSION" }
+  /** R1.5-P2D — the candidate's parent Table (itself, for a Table selector; its parent, for a Seat selector) is not a member of the effective FloorplanVersion. */
+  | { readonly type: "RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP"; readonly resourceLabel: string }
   | { readonly type: "INSUFFICIENT_CAPACITY"; readonly requested: number; readonly selectedCapacity: number }
   | { readonly type: "INVALID_REQUEST"; readonly reason: string };
 
@@ -41,6 +45,16 @@ export interface SeatabilityCandidate {
   readonly supportsRequestedClaimKind: boolean;
   readonly blockedForInterval: boolean;
   readonly overlappingActiveAssignment: boolean;
+  /**
+   * R1.5-P2D — whether this candidate's parent Table is a member of the
+   * effective FloorplanVersion (the session's own immutable snapshot once
+   * Opened/Closed, or the current eligible Published default while
+   * absent/Created — see application/availability/FloorplanMembershipGate.ts).
+   * `true` when membership is not being enforced at all (no
+   * FloorplanRepository wired) — callers never fabricate a real answer
+   * when the feature is off; see buildCandidates's own doc comment.
+   */
+  readonly withinFloorplanMembership: boolean;
 }
 
 export function evaluateSeatability(input: {
@@ -82,6 +96,9 @@ export function evaluateSeatability(input: {
     }
     if (candidate.overlappingActiveAssignment) {
       return { type: "RESOURCE_OVERLAP", resourceLabel: candidate.resourceLabel };
+    }
+    if (!candidate.withinFloorplanMembership) {
+      return { type: "RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP", resourceLabel: candidate.resourceLabel };
     }
   }
 

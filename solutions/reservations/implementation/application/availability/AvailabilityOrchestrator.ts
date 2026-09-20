@@ -63,6 +63,14 @@ import { ServicePeriodEligibility } from "../../domain/availability/ServicePerio
 import { deriveServiceCode } from "../../domain/availability/Service.js";
 import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSessionSnapshotStatus, lockAndReadServiceSession, requiresOpenedSession } from "./ServiceSessionGate.js";
+import { FloorplanRepository } from "../../domain/repositories/FloorplanRepository.js";
+import { MAIN_FLOORPLAN_ID } from "../../domain/floor/Floorplan.js";
+import {
+  MembershipResolution,
+  acquireFloorplanLockAndResolveProvisionalDefault,
+  resolveEffectiveFloorplanVersionId,
+  resolveMembership,
+} from "./FloorplanMembershipGate.js";
 
 /** Thrown only inside a runInTransaction callback to force a rollback when a wrapped CAP-D01.01 handler rejects after a capacity write already happened in the same transaction. Never escapes this file. */
 class OrchestratedValidationFailure extends Error {
@@ -201,7 +209,19 @@ export class AvailabilityOrchestrator {
      * callers — an ordinary advance-booking create is never gated) and
      * by `modifyWithCapacity`'s seating-revalidation branch.
      */
-    private readonly serviceSessionRepository?: ServiceSessionRepository
+    private readonly serviceSessionRepository?: ServiceSessionRepository,
+    /**
+     * R1.5-P2D — optional and LAST, same "add capability, never break a
+     * caller" precedent as `serviceSessionRepository` above. Used only by
+     * `modifyWithCapacity`'s seating-revalidation branch, to resolve
+     * Floorplan (Tier 1.4) membership BEFORE the Tier 2 capacity lock(s)
+     * below — never by `revalidateOrReleaseForModify` itself, which now
+     * receives an already-resolved membership result instead of resolving
+     * one on its own. `api/server.ts` always supplies a real instance.
+     */
+    private readonly floorplanRepository?: FloorplanRepository,
+    /** Same override precedent as SeatingOrchestrator/ServiceSessionService — see either's own doc comment. Production never passes anything here. */
+    private readonly floorplanId: string = MAIN_FLOORPLAN_ID
   ) {}
 
   /**
@@ -614,13 +634,14 @@ export class AvailabilityOrchestrator {
           return { kind: "NO_ACTIVE_COMMITMENT" };
         }
 
-        // R1.6-P2C-1 — Tier 1.5, before the Tier 2 capacity lock(s) below
-        // (global order: reservation -> service session -> capacity/date
-        // -> seating resource). Chief Engineer decision #10: NOT status-
-        // gated (no rejection based on session state — nothing here ever
-        // returns SESSION_NOT_OPEN), acquired purely so this transaction
-        // serializes against a concurrent session Close via the SAME
-        // lock revalidateOrReleaseForModify's own eventual retain/release
+        // R1.6-P2C-1 / R1.5-P2D — Tier 1.4 then Tier 1.5, before the Tier 2
+        // capacity lock(s) below (global order: reservation -> floorplan
+        // -> service session -> capacity/date -> seating resource).
+        // Chief Engineer decision #10 (unchanged): NOT status-gated (no
+        // rejection based on session state — nothing here ever returns
+        // SESSION_NOT_OPEN), acquired purely so this transaction
+        // serializes against a concurrent session Close/Open via the SAME
+        // locks revalidateOrReleaseForModify's own eventual retain/release
         // decision depends on being race-free against. Only relevant when
         // seating integration exists at all — a deployment without
         // seatingOrchestrator has no active SeatingAssignment for this
@@ -629,12 +650,31 @@ export class AvailabilityOrchestrator {
         // capacity locks immediately below already lock both the old and
         // new (pool, date) via sortLockResources — the assignment being
         // revalidated conceptually spans both.
+        //
+        // R1.5-P2D critical correction: floorplan-membership resolution
+        // (Tier 1.4 lock + provisional default + the NEW session's own
+        // snapshot) happens HERE, strictly before Tier 2, and the result
+        // is threaded down to revalidateOrReleaseForModify as a plain
+        // value — that method acquires NEITHER Tier 1.4 NOR Tier 1.5
+        // itself (see its own doc comment), precisely so this ordering can
+        // never be violated regardless of how it is called.
+        let membership: MembershipResolution | null = null;
         if (this.seatingOrchestrator && this.serviceSessionRepository) {
+          const provisionalVersion = this.floorplanRepository
+            ? await acquireFloorplanLockAndResolveProvisionalDefault({ floorplanRepository: this.floorplanRepository, floorplanId: this.floorplanId, tx })
+            : null;
+
           const oldReservationDateTime = authoritative.getReservationDateTime();
           const newReservationDateTime = changes.reservationDate ?? oldReservationDateTime;
-          await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: oldReservationDateTime, tx });
-          if (newReservationDateTime.getTime() !== oldReservationDateTime.getTime()) {
-            await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: newReservationDateTime, tx });
+          const oldSnapshot = await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: oldReservationDateTime, tx });
+          const newSnapshot =
+            newReservationDateTime.getTime() !== oldReservationDateTime.getTime()
+              ? await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: newReservationDateTime, tx })
+              : oldSnapshot;
+
+          if (this.floorplanRepository) {
+            const effectiveVersionId = resolveEffectiveFloorplanVersionId(newSnapshot.floorplanVersionId, provisionalVersion);
+            membership = await resolveMembership({ floorplanRepository: this.floorplanRepository, floorplanVersionId: effectiveVersionId, tx });
           }
         }
 
@@ -729,6 +769,9 @@ export class AvailabilityOrchestrator {
             newPartySize,
             newStart,
             newEnd,
+            // R1.5-P2D — already resolved above, strictly before the Tier 2
+            // capacity locks — never resolved inside this method itself.
+            membership,
             tx,
           });
           seatingDisposition = seatingResult.type;

@@ -174,12 +174,26 @@ describe("api/server.ts — R1.5-P2B Floorplan production wiring", () => {
     );
   });
 
-  it("this increment is deliberately inert — floorplans is never passed into SeatingOrchestrator or AvailabilityOrchestrator (R1.5-P2A stages 3/4 remain unbuilt)", () => {
+  it("R1.5-P2D superseded this file's original 'deliberately inert' pinning — deps.floorplans.floorplanRepository IS now passed into both SeatingOrchestrator and AvailabilityOrchestrator, enabling real floorplan-membership enforcement in production", () => {
     const seatingCtor = appSource.match(/new SeatingOrchestrator\(([\s\S]*?)\n\s*\)/);
     const availabilityCtor = appSource.match(/new AvailabilityOrchestrator\(([\s\S]*?)\n\s*\)/);
     expect(seatingCtor).not.toBeNull();
     expect(availabilityCtor).not.toBeNull();
-    expect(seatingCtor![1]).not.toMatch(/deps\.floorplans/);
-    expect(availabilityCtor![1]).not.toMatch(/deps\.floorplans/);
+    expect(seatingCtor![1]).toMatch(/deps\.floorplans\?\.floorplanRepository/);
+    expect(availabilityCtor![1]).toMatch(/deps\.floorplans\?\.floorplanRepository/);
+  });
+});
+
+describe("api/server.ts — R1.5-P2D Floorplan-membership enforcement wiring", () => {
+  it("api/app.ts passes deps.floorplans?.floorplanRepository into SeatingAvailabilityService too", () => {
+    const match = appSource.match(/new SeatingAvailabilityService\(([\s\S]*?)\)/);
+    expect(match).not.toBeNull();
+    expect(match![1]).toMatch(/deps\.floorplans\?\.floorplanRepository/);
+    expect(match![1]).toMatch(/deps\.serviceSessions\?\.serviceSessionRepository/);
+  });
+
+  it("still constructs exactly one PrismaClient overall — no additional connection introduced by this wiring", () => {
+    const matches = source.match(/new PrismaClient\(\)/g) || [];
+    expect(matches).toHaveLength(1);
   });
 });

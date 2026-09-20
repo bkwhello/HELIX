@@ -30,6 +30,8 @@ export interface ServiceSessionSnapshot {
   readonly status: ServiceSessionSnapshotStatus;
   readonly serviceCode: string;
   readonly serviceDate: string;
+  /** R1.5-P2D — the session's own immutable floorplan snapshot, or null if none has been taken yet (absent/Created) or the session was Cancelled-from-Created. */
+  readonly floorplanVersionId: string | null;
 }
 
 export async function lockAndReadServiceSession(input: {
@@ -41,7 +43,7 @@ export async function lockAndReadServiceSession(input: {
   const serviceDate = toLocalServiceDate(input.reservationDateTime);
   await input.serviceSessionRepository.acquireSessionLock({ serviceCode, serviceDate, tx: input.tx });
   const session = await input.serviceSessionRepository.findByKey(serviceCode, serviceDate, input.tx);
-  return { status: session ? session.status : "NotFound", serviceCode, serviceDate };
+  return { status: session ? session.status : "NotFound", serviceCode, serviceDate, floorplanVersionId: session ? session.floorplanVersionId : null };
 }
 
 /** Immediate walk-in creation, immediate seating assignment, and mark-seated — Chief Engineer decision #7: require exactly `"Opened"`. */

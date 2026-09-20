@@ -357,3 +357,51 @@ describe("R1.5-P2C — Floorplan snapshot on open", () => {
     expect(retryRes.body.type).toBe("OPENED");
   });
 });
+
+describe("R1.5-P2D — ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN mapping, and no identifier ever leaks", () => {
+  it("open() returns 409 ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN with only a count, no assignment/table/seat/reservation id, when an active assignment outside the fixture default exists", async () => {
+    const date = nextServiceDate();
+    const created = await post(ownerAgent, "/service-sessions").send({ serviceCode: "dinner", serviceDate: date });
+    const id = created.body.session.id;
+
+    const repo = new PrismaFloorplanRepository(prisma);
+    const floorplan = await repo.findFloorplanById(FLOORPLAN_FIXTURE_ID);
+    const memberRow = await prisma.floorplanVersionResource.findFirstOrThrow({ where: { floorplanVersionId: floorplan!.defaultVersionId! } });
+    const nonMemberTable = await prisma.table.findFirstOrThrow({ where: { status: "Active", id: { not: memberRow.tableId } } });
+
+    const reservationId = `svs-p2d-leak-res-${RUN_ID}`;
+    await prisma.contact.upsert({
+      where: { id: `svs-p2d-leak-contact-${RUN_ID}` },
+      create: { id: `svs-p2d-leak-contact-${RUN_ID}`, displayName: "Leak Check Guest", phoneRaw: "0699999998", phoneNormalized: "+31699999998", createdBy: "staff-1", lastRelevantActivityAt: new Date() },
+      update: {},
+    });
+    const reservationDate = new Date(`${date}T19:00:00Z`);
+    await prisma.reservation.create({
+      data: {
+        id: reservationId, servicePeriodId: "dinner", contactId: `svs-p2d-leak-contact-${RUN_ID}`, contactName: "Leak Check Guest", status: "Confirmed",
+        reservationDate, partySize: 2, sourceCategory: "Telephone", preferredArea: "Sushi", createdBy: "staff-1", createdAt: reservationDate, updatedAt: reservationDate, version: 1,
+      },
+    });
+    await prisma.seatingAssignment.create({
+      data: {
+        id: `svs-p2d-leak-assignment-${RUN_ID}`, reservationId, status: "Assigned", startTime: reservationDate, endTime: new Date(reservationDate.getTime() + 90 * 60_000),
+        assignedBy: "staff-1", commandId: `svs-p2d-leak-cmd-${RUN_ID}`,
+        resources: { create: [{ id: `svs-p2d-leak-resource-${RUN_ID}`, tableId: nonMemberTable.id, status: "Assigned", startTime: reservationDate, endTime: new Date(reservationDate.getTime() + 90 * 60_000) }] },
+      },
+    });
+
+    const res = await post(ownerAgent, `/service-sessions/${id}/open`);
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ type: "ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN", activeAssignmentCount: 1 });
+    const bodyText = JSON.stringify(res.body);
+    expect(bodyText).not.toContain(reservationId);
+    expect(bodyText).not.toContain(nonMemberTable.id);
+    expect(bodyText).not.toContain(`svs-p2d-leak-assignment-${RUN_ID}`);
+    expect(bodyText).not.toContain(`svs-p2d-leak-resource-${RUN_ID}`);
+
+    // Zero mutation — the session remains Created.
+    const row = await prisma.serviceSession.findUniqueOrThrow({ where: { id } });
+    expect(row.status).toBe("Created");
+    expect(row.floorplanVersionId).toBeNull();
+  });
+});

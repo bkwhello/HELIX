@@ -337,7 +337,11 @@ export function createApp(deps: AppDependencies): Express {
           deps.capacity.transactionManager,
           deps.idGenerator,
           deps.clock,
-          deps.serviceSessions?.serviceSessionRepository
+          deps.serviceSessions?.serviceSessionRepository,
+          // R1.5-P2D — optional, same posture as serviceSessionRepository
+          // above: enables floorplan-membership enforcement on immediate
+          // assign/pre-assign/move when present.
+          deps.floorplans?.floorplanRepository
         )
       : undefined;
 
@@ -345,7 +349,12 @@ export function createApp(deps: AppDependencies): Express {
   // NOT gated on deps.capacity the way seatingOrchestrator above is (this
   // never writes, never opens a transaction, so there is no shared
   // transaction manager to reuse). See AppDependencies.floor doc comment.
-  const seatingAvailabilityService = deps.floor ? new SeatingAvailabilityService(deps.repository, deps.floor.floorRepository) : undefined;
+  // R1.5-P2D — serviceSessions/floorplans are both optional and additive:
+  // when either is absent, availableResources is unfiltered by floorplan
+  // membership, byte-identical to pre-P2D behavior.
+  const seatingAvailabilityService = deps.floor
+    ? new SeatingAvailabilityService(deps.repository, deps.floor.floorRepository, deps.serviceSessions?.serviceSessionRepository, deps.floorplans?.floorplanRepository)
+    : undefined;
 
   // P1-B8 — CAP-D02.03 Resource Block management. Gated exactly like
   // seatingOrchestrator above (needs deps.capacity.transactionManager,
@@ -376,7 +385,12 @@ export function createApp(deps: AppDependencies): Express {
         // completeWithCapacity below, releasing any active SeatingAssignment
         // atomically with completion, whenever capacity infra is present.
         completeHandler,
-        deps.serviceSessions?.serviceSessionRepository
+        deps.serviceSessions?.serviceSessionRepository,
+        // R1.5-P2D — optional, same posture as serviceSessionRepository
+        // above: used only by modifyWithCapacity's seating-revalidation
+        // branch, to resolve floorplan membership before the Tier 2
+        // capacity lock(s).
+        deps.floorplans?.floorplanRepository
       )
     : null;
 
@@ -1089,6 +1103,9 @@ export function createApp(deps: AppDependencies): Express {
           return;
         case "NO_DEFAULT_FLOORPLAN_VERSION":
           res.status(409).json({ type: "NO_DEFAULT_FLOORPLAN_VERSION" });
+          return;
+        case "ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN":
+          res.status(409).json({ type: "ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN", activeAssignmentCount: result.activeAssignmentCount });
           return;
         case "CONCURRENCY_CONFLICT":
           res.status(409).json({ type: "CONCURRENCY_CONFLICT" });

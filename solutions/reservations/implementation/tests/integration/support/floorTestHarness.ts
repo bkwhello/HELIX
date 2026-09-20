@@ -9,6 +9,7 @@ import { PrismaContactRepository } from "../../../infrastructure/persistence/Pri
 import { UnvalidatedServicePeriodReader } from "../../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { ServicePeriodReader } from "../../../application/ports/ServicePeriodReader.js";
 import { ServiceSessionRepository } from "../../../domain/repositories/ServiceSessionRepository.js";
+import { FloorplanRepository } from "../../../domain/repositories/FloorplanRepository.js";
 import { CreateReservationHandler } from "../../../application/command-handlers/CreateReservationHandler.js";
 import { CreateContactHandler } from "../../../application/command-handlers/CreateContactHandler.js";
 import { ConfirmReservationHandler } from "../../../application/command-handlers/ConfirmReservationHandler.js";
@@ -55,7 +56,17 @@ export function buildFloorHarness(
    * a real `ServiceSessionRepository` only from a test that specifically
    * exercises session enforcement.
    */
-  serviceSessionRepositoryOverride?: ServiceSessionRepository
+  serviceSessionRepositoryOverride?: ServiceSessionRepository,
+  /**
+   * R1.5-P2D — optional, defaulting to `undefined` (no floorplan-
+   * membership enforcement), so every existing caller of
+   * `buildFloorHarness` is completely unaffected. Pass a real
+   * `FloorplanRepository` only from a test that specifically exercises
+   * membership enforcement.
+   */
+  floorplanRepositoryOverride?: FloorplanRepository,
+  /** R1.5-P2D — isolated-fixture override (defaults to MAIN_FLOORPLAN_ID inside each orchestrator when omitted), threaded identically into BOTH orchestrators so a test exercising both create/modify and seating paths sees one consistent Floorplan. */
+  floorplanIdOverride?: string
 ) {
   const floorRepository = new PrismaFloorRepository(prisma);
   const transactionManager = new PrismaTransactionManager(prisma);
@@ -63,7 +74,18 @@ export function buildFloorHarness(
   const eventIdGenerator = new RandomEventIdGenerator();
   const clock = new FixedClock(now);
 
-  const seatingOrchestrator = new SeatingOrchestrator(floorRepository, transactionManager, idGenerator, clock, serviceSessionRepositoryOverride);
+  // `floorplanIdOverride` passed as `undefined` still triggers each
+  // constructor's own default parameter (MAIN_FLOORPLAN_ID) — no
+  // conditional call needed.
+  const seatingOrchestrator = new SeatingOrchestrator(
+    floorRepository,
+    transactionManager,
+    idGenerator,
+    clock,
+    serviceSessionRepositoryOverride,
+    floorplanRepositoryOverride,
+    floorplanIdOverride
+  );
 
   const reservationRepository = new PrismaReservationRepository(prisma);
   const capacityRepository = new PrismaCapacityRepository(prisma);
@@ -110,7 +132,9 @@ export function buildFloorHarness(
     // R1.5-P1A — lets completeWithCapacity be exercised end-to-end
     // against real PostgreSQL, mirroring cancel-with-seating-release above.
     completeHandler,
-    serviceSessionRepositoryOverride
+    serviceSessionRepositoryOverride,
+    floorplanRepositoryOverride,
+    floorplanIdOverride
   );
 
   return { floorRepository, seatingOrchestrator, availabilityOrchestrator, reservationRepository, capacityRepository, closingDayStore, idGenerator, transactionManager, completeHandler, confirmHandler };

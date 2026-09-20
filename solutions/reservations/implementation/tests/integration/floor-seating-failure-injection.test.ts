@@ -268,6 +268,7 @@ describe("Failure injection — R1.5-P1B Modify seating revalidation, forced fai
           reservationId, actor: staffActor, commandId: cmd(),
           oldAreaId: "Sushi", newAreaId: "Sushi", newPartySize: 2,
           newStart: new Date("2026-08-20T20:00:00Z"), newEnd: new Date("2026-08-20T21:30:00Z"),
+          membership: null,
           tx,
         });
         expect(seatingResult.type).toBe("RETAINED"); // the release-and-recreate DID run

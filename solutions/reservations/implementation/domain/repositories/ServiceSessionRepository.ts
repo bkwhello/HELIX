@@ -82,4 +82,32 @@ export interface ServiceSessionRepository {
    * day.
    */
   countActiveAssignmentsForServiceDate(input: { readonly serviceCode: string; readonly serviceDate: string; readonly tx: TransactionContext }): Promise<number>;
+
+  /**
+   * R1.5-P2D — Open-time floorplan-membership validation's own evidence
+   * query. Lives here (not on FloorRepository) for the same reason
+   * `countActiveAssignmentsForServiceDate` does: it is this repository's
+   * own service/date derivation (canonical Amsterdam-local
+   * serviceCode/serviceDate, never a stored servicePeriodId) that decides
+   * WHICH assignments belong to a session — the query is fundamentally a
+   * ServiceSession-scoped read, sharing that method's exact coarse-SQL-
+   * then-exact-filter pattern, not a general seating-resource query.
+   * Placing it on FloorRepository would force ServiceSessionService to
+   * either duplicate the date-derivation logic there or take on a whole
+   * second repository dependency for one query — this keeps the
+   * dependency surface narrow (ServiceSessionService already holds this
+   * repository) and the date logic defined in exactly one place.
+   *
+   * Returns one row per active (Assigned/Seated) SeatingAssignmentResource
+   * belonging to this (serviceCode, serviceDate), already resolved to its
+   * PARENT TABLE id (a direct tableId row, or a seatId row resolved via
+   * the seat's own stored table_id) — never a raw Seat id. The caller
+   * compares `tableId` against a FloorplanVersion's membership set; no
+   * Seat-level membership concept exists anywhere in this path.
+   */
+  listActiveAssignmentResourcesForServiceDate(input: {
+    readonly serviceCode: string;
+    readonly serviceDate: string;
+    readonly tx: TransactionContext;
+  }): Promise<readonly { readonly assignmentId: string; readonly tableId: string }[]>;
 }

@@ -32,6 +32,12 @@ import { FloorRepository } from "../../domain/repositories/FloorRepository.js";
 import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { CAPACITY_POOLS, CapacityPoolId, isCapacityPoolId } from "../../domain/availability/CapacityPool.js";
+import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
+import { FloorplanRepository } from "../../domain/repositories/FloorplanRepository.js";
+import { MAIN_FLOORPLAN_ID } from "../../domain/floor/Floorplan.js";
+import { deriveServiceCode } from "../../domain/availability/Service.js";
+import { toLocalServiceDate } from "../../domain/availability/ServiceTime.js";
+import { resolveEffectiveFloorplanVersionId, resolveProvisionalDefaultAdvisory } from "../availability/FloorplanMembershipGate.js";
 
 export interface AvailableResourceRow {
   readonly resourceId: string;
@@ -62,7 +68,20 @@ export type SeatingAvailabilityResult =
 export class SeatingAvailabilityService {
   constructor(
     private readonly reservationRepository: ReservationRepository,
-    private readonly floorRepository: FloorRepository
+    private readonly floorRepository: FloorRepository,
+    /**
+     * R1.5-P2D — optional, same "not available in this deployment"
+     * posture as every other optional dependency in this codebase: when
+     * either is omitted, `availableResources` is returned completely
+     * unfiltered by floorplan membership, byte-identical to pre-P2D
+     * behavior. This service remains advisory-only and lock-free even
+     * with both supplied — no transaction is opened here, matching its
+     * own established "never a lock of any kind" posture.
+     */
+    private readonly serviceSessionRepository?: ServiceSessionRepository,
+    private readonly floorplanRepository?: FloorplanRepository,
+    /** Same override precedent as SeatingOrchestrator/AvailabilityOrchestrator/ServiceSessionService — see any of their own doc comments. Production never passes anything here. */
+    private readonly floorplanId: string = MAIN_FLOORPLAN_ID
   ) {}
 
   async getAvailableResourcesForReservation(reservationId: ReservationId): Promise<SeatingAvailabilityResult> {
@@ -143,16 +162,52 @@ export class SeatingAvailabilityService {
       rangeEnd: intervalEnd,
     });
 
-    const availableResources: AvailableResourceRow[] = candidates
-      .filter((c) => !blockedTableIds.has(c.blockCheckTableId))
-      .filter((c) => (c.kind === "Table" ? !overlapping.tableIds.has(c.resourceId) : !overlapping.seatIds.has(c.resourceId)))
-      .map((c) => ({
-        resourceId: c.resourceId,
-        kind: c.kind,
-        operationalLabel: c.operationalLabel,
-        capacity: c.capacity,
-        ...(c.parentTable ? { parentTable: c.parentTable } : {}),
-      }));
+    // R1.5-P2D — advisory-only, lock-free (no transaction here — matches
+    // this service's own established posture): resolve the effective
+    // FloorplanVersion for this reservation's own derived (serviceCode,
+    // serviceDate). A Cancelled session, or the total absence of any
+    // eligible version to check against, must never surface an
+    // apparently-usable unfiltered list — both collapse to an empty
+    // `availableResources`, reusing the existing FOUND shape rather than
+    // adding a new result variant (Chief Engineer directive: prefer the
+    // existing response contract). `c.blockCheckTableId` is already each
+    // candidate's PARENT Table id for both Table and Seat rows — no
+    // separate Seat resolution is needed here.
+    let membershipTableIds: ReadonlySet<string> | null = null;
+    let noUsableInventory = false;
+    if (this.serviceSessionRepository && this.floorplanRepository) {
+      const serviceCode = deriveServiceCode(intervalStart);
+      const serviceDate = toLocalServiceDate(intervalStart);
+      const session = await this.serviceSessionRepository.findByKey(serviceCode, serviceDate);
+      if (session?.status === "Cancelled") {
+        noUsableInventory = true;
+      } else {
+        const provisionalVersion = session?.floorplanVersionId
+          ? null
+          : await resolveProvisionalDefaultAdvisory({ floorplanRepository: this.floorplanRepository, floorplanId: this.floorplanId });
+        const effectiveVersionId = resolveEffectiveFloorplanVersionId(session?.floorplanVersionId ?? null, provisionalVersion);
+        if (!effectiveVersionId) {
+          noUsableInventory = true;
+        } else {
+          const members = await this.floorplanRepository.listMembers(effectiveVersionId);
+          membershipTableIds = new Set(members.map((m) => m.tableId));
+        }
+      }
+    }
+
+    const availableResources: AvailableResourceRow[] = noUsableInventory
+      ? []
+      : candidates
+          .filter((c) => !blockedTableIds.has(c.blockCheckTableId))
+          .filter((c) => (c.kind === "Table" ? !overlapping.tableIds.has(c.resourceId) : !overlapping.seatIds.has(c.resourceId)))
+          .filter((c) => membershipTableIds === null || membershipTableIds.has(c.blockCheckTableId))
+          .map((c) => ({
+            resourceId: c.resourceId,
+            kind: c.kind,
+            operationalLabel: c.operationalLabel,
+            capacity: c.capacity,
+            ...(c.parentTable ? { parentTable: c.parentTable } : {}),
+          }));
 
     return {
       type: "FOUND",

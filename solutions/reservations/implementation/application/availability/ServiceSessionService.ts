@@ -28,6 +28,17 @@ export type ServiceSessionTransitionOutcome =
    * runs after both locks are held but before any write).
    */
   | { readonly type: "NO_DEFAULT_FLOORPLAN_VERSION" }
+  /**
+   * R1.5-P2D — open() only. At least one currently-active (Assigned/Seated)
+   * SeatingAssignment for this (serviceCode, serviceDate) claims a Table
+   * outside the version about to be snapshotted. Zero mutation (session
+   * remains Created — no status change, no floorplanVersionId, no
+   * timestamp, no version bump). `activeAssignmentCount` counts DISTINCT
+   * violating assignments, never resource rows (a two-table combined
+   * claim with both tables outside membership still counts once) — no
+   * assignment/Table/Seat/reservation id is ever included.
+   */
+  | { readonly type: "ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN"; readonly activeAssignmentCount: number }
   /** Defensive-only — structurally unreachable while the session lock is held for the full transition; see handle()'s own comment. */
   | { readonly type: "CONCURRENCY_CONFLICT" };
 
@@ -147,6 +158,27 @@ export class ServiceSessionService {
       const defaultVersion = floorplan?.defaultVersionId ? await this.floorplanRepository.findVersionById(floorplan.defaultVersionId, tx) : null;
       const eligible = floorplan !== null && defaultVersion !== null && defaultVersion.floorplanId === floorplan.id && defaultVersion.status === "Published";
       if (!eligible) return { type: "NO_DEFAULT_FLOORPLAN_VERSION" };
+
+      // R1.5-P2D — before writing Created -> Opened, every currently-active
+      // assignment for this exact (serviceCode, serviceDate) must already
+      // be within the version about to be snapshotted. No new resource
+      // lock is needed: every path capable of CREATING a new active claim
+      // for this session key already acquires this SAME session lock
+      // before doing so (assignSeating/moveSeating/modifyWithCapacity's
+      // seating revalidation), so none can interleave with this
+      // transaction's own hold of it — see R1.5-P2D-A's serialization
+      // proof. Release-only operations need no such lock: they can only
+      // shrink the active set being checked here, never grow it.
+      const activeResourceRows = await this.repository.listActiveAssignmentResourcesForServiceDate({
+        serviceCode: current.serviceCode,
+        serviceDate: current.serviceDate,
+        tx,
+      });
+      const members = new Set((await this.floorplanRepository.listMembers(defaultVersion.id, tx)).map((m) => m.tableId));
+      const violatingAssignmentIds = new Set(activeResourceRows.filter((r) => !members.has(r.tableId)).map((r) => r.assignmentId));
+      if (violatingAssignmentIds.size > 0) {
+        return { type: "ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN", activeAssignmentCount: violatingAssignmentIds.size };
+      }
 
       const result = await this.repository.updateStatus({
         id: current.id,

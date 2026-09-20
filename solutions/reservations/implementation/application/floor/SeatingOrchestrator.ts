@@ -32,6 +32,14 @@ import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { Actor } from "../../domain/value-objects/Actor.js";
 import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSessionSnapshotStatus, lockAndReadServiceSession, requiresOpenedSession, rejectsPreAssignment } from "../availability/ServiceSessionGate.js";
+import { FloorplanRepository } from "../../domain/repositories/FloorplanRepository.js";
+import { MAIN_FLOORPLAN_ID } from "../../domain/floor/Floorplan.js";
+import {
+  MembershipResolution,
+  acquireFloorplanLockAndResolveProvisionalDefault,
+  resolveEffectiveFloorplanVersionId,
+  resolveMembership,
+} from "../availability/FloorplanMembershipGate.js";
 
 export interface ResourceSelector {
   readonly tableId?: string;
@@ -110,7 +118,26 @@ export class SeatingOrchestrator {
      * supplies a real ServiceSessionRepository so the gate is genuinely
      * live in production.
      */
-    private readonly serviceSessionRepository?: ServiceSessionRepository
+    private readonly serviceSessionRepository?: ServiceSessionRepository,
+    /**
+     * R1.5-P2D — optional and LAST, same "add capability, never break a
+     * caller" precedent as `serviceSessionRepository` above: every
+     * existing test/caller that constructs this class without it stays
+     * completely unaffected — no floorplan-membership enforcement,
+     * exactly today's behavior. `api/server.ts` always supplies a real
+     * instance so the gate is genuinely live in production.
+     */
+    private readonly floorplanRepository?: FloorplanRepository,
+    /**
+     * Defaults to the one real production identity — see
+     * domain/floor/Floorplan.ts's own doc comment and
+     * ServiceSessionService's identical precedent. Overridable only so
+     * test files needing an isolated Floorplan fixture (never colliding
+     * with tests that exercise the literal "main-floor" bootstrap
+     * identity directly) can supply their own; production wiring never
+     * passes anything here.
+     */
+    private readonly floorplanId: string = MAIN_FLOORPLAN_ID
   ) {}
 
   /**
@@ -149,11 +176,22 @@ export class SeatingOrchestrator {
     return sortSeatingResourceIds(tableIds);
   }
 
+  /**
+   * R1.5-P2D — `membershipTableIds`: `null` means floorplan-membership
+   * enforcement is not active at all (no FloorplanRepository wired, or
+   * this deployment predates the feature) — every candidate is then
+   * `withinFloorplanMembership: true`, byte-identical to pre-P2D
+   * behavior. A real `ReadonlySet` means enforcement IS active; a Table
+   * selector's own id, or a Seat selector's PARENT Table id (never the
+   * raw Seat id — mirrors resolveLockTableIds's own canonical
+   * resolution), is checked against it.
+   */
   private async buildCandidates(
     resources: readonly ResourceSelector[],
     startTime: Date,
     endTime: Date,
-    tx: TransactionContext
+    tx: TransactionContext,
+    membershipTableIds: ReadonlySet<string> | null = null
   ): Promise<readonly SeatabilityCandidate[]> {
     const tableIds = resources.filter((r) => r.tableId).map((r) => r.tableId!);
     const seatIds = resources.filter((r) => r.seatId).map((r) => r.seatId!);
@@ -175,6 +213,7 @@ export class SeatingOrchestrator {
           supportsRequestedClaimKind: table ? !table.supportsSharedSeating : false,
           blockedForInterval: blocks.length > 0,
           overlappingActiveAssignment: overlapping.tableIds.has(selector.tableId),
+          withinFloorplanMembership: membershipTableIds === null || (!!table && membershipTableIds.has(table.id)),
         });
       } else if (selector.seatId) {
         const seat = await this.floorRepository.findSeatById(selector.seatId, tx);
@@ -191,6 +230,8 @@ export class SeatingOrchestrator {
           supportsRequestedClaimKind: table ? table.supportsSharedSeating : false,
           blockedForInterval: blocks.length > 0,
           overlappingActiveAssignment: overlapping.seatIds.has(selector.seatId),
+          // Parent-Table membership — a Seat's own id is never checked or stored anywhere for membership.
+          withinFloorplanMembership: membershipTableIds === null || (!!table && membershipTableIds.has(table.id)),
         });
       }
     }
@@ -211,6 +252,22 @@ export class SeatingOrchestrator {
       const activeExisting = await this.floorRepository.findActiveAssignmentByReservationId(request.reservationId, tx);
       if (activeExisting) return { type: "ALREADY_ASSIGNED_ELSEWHERE" };
 
+      // R1.5-P2D — Tier 1.4, ALWAYS acquired first when floorplanRepository
+      // is wired, before any Tier 1.5 work — even though an immediate
+      // assignment (which requires Opened, and therefore already has a
+      // real, immutable snapshot) will never actually need the provisional
+      // default it reads here. Unconditional by Chief Engineer directive:
+      // the alternative (skip this lock when the session might already be
+      // Opened) would require peeking at session status before deciding
+      // whether to take the lock — impossible without breaking the fixed
+      // Reservation -> Floorplan -> ServiceSession order this lock exists
+      // to preserve, or reading twice. See FloorplanMembershipGate.ts's
+      // own header comment.
+      let provisionalVersion = null as Awaited<ReturnType<typeof acquireFloorplanLockAndResolveProvisionalDefault>>;
+      if (this.floorplanRepository) {
+        provisionalVersion = await acquireFloorplanLockAndResolveProvisionalDefault({ floorplanRepository: this.floorplanRepository, floorplanId: this.floorplanId, tx });
+      }
+
       // R1.6-P2C-1 — Tier 1.5, before any Tier 3 seating-resource lock.
       // Immediate assignment (seatImmediately: true — walk-in or ordinary
       // immediate assign) requires an Opened session; pre-assignment
@@ -218,6 +275,7 @@ export class SeatingOrchestrator {
       // from request.startTime — the same instant the created
       // SeatingAssignment itself is stamped with — never a stored
       // servicePeriodId.
+      let membershipTableIds: ReadonlySet<string> | null = null;
       if (this.serviceSessionRepository) {
         const sessionSnapshot = await lockAndReadServiceSession({
           serviceSessionRepository: this.serviceSessionRepository,
@@ -226,6 +284,18 @@ export class SeatingOrchestrator {
         });
         const rejected = request.seatImmediately ? requiresOpenedSession(sessionSnapshot) : rejectsPreAssignment(sessionSnapshot);
         if (rejected) return { type: "SESSION_NOT_OPEN", sessionStatus: sessionSnapshot.status };
+
+        // R1.5-P2D — never falls back from a non-null session snapshot to
+        // the mutable default; the provisional default (read above) is
+        // only ever consulted when the session has no snapshot yet.
+        if (this.floorplanRepository) {
+          const effectiveVersionId = resolveEffectiveFloorplanVersionId(sessionSnapshot.floorplanVersionId, provisionalVersion);
+          const membership = await resolveMembership({ floorplanRepository: this.floorplanRepository, floorplanVersionId: effectiveVersionId, tx });
+          if (membership.type === "NO_ELIGIBLE_FLOORPLAN_VERSION") {
+            return { type: "NOT_SEATABLE", seatability: { type: "NO_ELIGIBLE_FLOORPLAN_VERSION" } };
+          }
+          membershipTableIds = membership.memberTableIds;
+        }
       }
 
       // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0),
@@ -235,7 +305,7 @@ export class SeatingOrchestrator {
         await this.floorRepository.acquireSeatingResourceLock({ resourceId, tx });
       }
 
-      const candidates = await this.buildCandidates(request.resources, request.startTime, request.endTime, tx);
+      const candidates = await this.buildCandidates(request.resources, request.startTime, request.endTime, tx, membershipTableIds);
       const seatability = evaluateSeatability({ requestedAreaId: request.requestedAreaId, requestedPartySize: request.requestedPartySize, candidates });
       if (seatability.type !== "SEATABLE") {
         return { type: "NOT_SEATABLE", seatability };
@@ -279,14 +349,34 @@ export class SeatingOrchestrator {
       const current = await this.floorRepository.findActiveAssignmentByReservationId(request.reservationId, tx);
       if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
 
+      // R1.5-P2D — Tier 1.4, unconditionally, before Tier 1.5 — same
+      // posture as assignSeating's own identical block.
+      let provisionalVersion = null as Awaited<ReturnType<typeof acquireFloorplanLockAndResolveProvisionalDefault>>;
+      if (this.floorplanRepository) {
+        provisionalVersion = await acquireFloorplanLockAndResolveProvisionalDefault({ floorplanRepository: this.floorplanRepository, floorplanId: this.floorplanId, tx });
+      }
+
       // R1.6-P2C-1 — Chief Engineer decision #9: Move is NOT status-gated
       // (no rejection based on session status), but MUST participate in
       // the session lock so it serializes with a concurrent Close — the
-      // returned snapshot is deliberately ignored. Derived from the
-      // EXISTING assignment's own startTime (the interval Move preserves
-      // unchanged — see the createAssignment call below).
+      // returned STATUS is deliberately ignored (the floorplanVersionId is
+      // now used, for membership only). Derived from the EXISTING
+      // assignment's own startTime (the interval Move preserves unchanged
+      // — see the createAssignment call below). R1.5-P2D — decision #4:
+      // only the DESTINATION is checked; the abandoned current resource is
+      // never re-validated, since it is unconditionally released, never
+      // retained.
+      let membershipTableIds: ReadonlySet<string> | null = null;
       if (this.serviceSessionRepository) {
-        await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: current.startTime, tx });
+        const sessionSnapshot = await lockAndReadServiceSession({ serviceSessionRepository: this.serviceSessionRepository, reservationDateTime: current.startTime, tx });
+        if (this.floorplanRepository) {
+          const effectiveVersionId = resolveEffectiveFloorplanVersionId(sessionSnapshot.floorplanVersionId, provisionalVersion);
+          const membership = await resolveMembership({ floorplanRepository: this.floorplanRepository, floorplanVersionId: effectiveVersionId, tx });
+          if (membership.type === "NO_ELIGIBLE_FLOORPLAN_VERSION") {
+            return { type: "NOT_SEATABLE", seatability: { type: "NO_ELIGIBLE_FLOORPLAN_VERSION" } };
+          }
+          membershipTableIds = membership.memberTableIds;
+        }
       }
 
       // Tier 3 — canonical parent-Table lock-key derivation (R1.5-P1B0).
@@ -295,7 +385,7 @@ export class SeatingOrchestrator {
         await this.floorRepository.acquireSeatingResourceLock({ resourceId, tx });
       }
 
-      const candidates = await this.buildCandidates(request.resources, current.startTime, current.endTime, tx);
+      const candidates = await this.buildCandidates(request.resources, current.startTime, current.endTime, tx, membershipTableIds);
       const seatability = evaluateSeatability({ requestedAreaId: request.requestedAreaId, requestedPartySize: request.requestedPartySize, candidates });
       if (seatability.type !== "SEATABLE") {
         return { type: "NOT_SEATABLE", seatability };
@@ -424,6 +514,15 @@ export class SeatingOrchestrator {
    * convention assignSeating/moveSeating now use, so this method's races
    * against a concurrent assignSeating/moveSeating/blockTable/unblock on
    * the SAME grill all correctly serialize.
+   *
+   * R1.5-P2D — `membership` is a PRE-RESOLVED result, not something this
+   * method resolves itself: the Chief Engineer's own critical correction
+   * requires Floorplan (Tier 1.4) and ServiceSession (Tier 1.5) resolution
+   * to happen BEFORE the Tier 2 capacity lock(s) `modifyWithCapacity`
+   * already acquires ahead of calling this method — this method now runs
+   * strictly AFTER Tier 2, so it must never acquire either of those locks
+   * itself. `null` means enforcement is not active at all (no
+   * FloorplanRepository wired) — identical to pre-P2D behavior.
    */
   async revalidateOrReleaseForModify(input: {
     readonly reservationId: string;
@@ -434,9 +533,10 @@ export class SeatingOrchestrator {
     readonly newPartySize: number;
     readonly newStart: Date;
     readonly newEnd: Date;
+    readonly membership: MembershipResolution | null;
     readonly tx: TransactionContext;
   }): Promise<ModifySeatingRevalidationResult> {
-    const { reservationId, actor, commandId, oldAreaId, newAreaId, newPartySize, newStart, newEnd, tx } = input;
+    const { reservationId, actor, commandId, oldAreaId, newAreaId, newPartySize, newStart, newEnd, membership, tx } = input;
 
     const current = await this.floorRepository.findActiveAssignmentByReservationId(reservationId, tx);
     if (!current) return { type: "NO_ACTIVE_ASSIGNMENT" };
@@ -482,7 +582,16 @@ export class SeatingOrchestrator {
     // comment for why (self-overlap false positive otherwise).
     await this.floorRepository.updateAssignmentStatus({ assignmentId: current.id, status: "Released", releaseReason: "StaffReassigned", actorId: actor.id, tx });
 
-    const candidates = await this.buildCandidates(selectors, newStart, newEnd, tx);
+    // R1.5-P2D — no eligible FloorplanVersion at all: nothing can be
+    // retained/recreated, but (matching every other seatability failure
+    // here) this degrades to RELEASED — it never hard-fails the Modify
+    // itself, which has already been accepted by this point.
+    if (membership && membership.type === "NO_ELIGIBLE_FLOORPLAN_VERSION") {
+      return { type: "RELEASED", seatability: { type: "NO_ELIGIBLE_FLOORPLAN_VERSION" } };
+    }
+    const membershipTableIds = membership && membership.type === "RESOLVED" ? membership.memberTableIds : null;
+
+    const candidates = await this.buildCandidates(selectors, newStart, newEnd, tx, membershipTableIds);
     const seatability = evaluateSeatability({ requestedAreaId: newAreaId, requestedPartySize: newPartySize, candidates });
     if (seatability.type !== "SEATABLE") {
       return { type: "RELEASED", seatability };

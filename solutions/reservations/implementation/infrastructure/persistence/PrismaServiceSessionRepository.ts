@@ -159,4 +159,29 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
       (row) => toLocalServiceDate(row.reservationDate) === input.serviceDate && deriveServiceCode(row.reservationDate) === input.serviceCode
     ).length;
   }
+
+  /** See this port's own doc comment for why this lives here rather than on FloorRepository. Same coarse-SQL-then-exact-filter pattern as countActiveAssignmentsForServiceDate, extended with one join so the Seat->parent-Table resolution happens in SQL (COALESCE), never requiring a second repository. */
+  async listActiveAssignmentResourcesForServiceDate(input: {
+    readonly serviceCode: string;
+    readonly serviceDate: string;
+    readonly tx: TransactionContext;
+  }): Promise<readonly { readonly assignmentId: string; readonly tableId: string }[]> {
+    const client = asPrismaTx(input.tx);
+    const { rangeStart, rangeEnd } = localDateToPaddedUtcRange(input.serviceDate);
+    const rows = await client.$queryRaw<{ assignmentId: string; tableId: string; reservationDate: Date }[]>`
+      SELECT sa.id AS "assignmentId",
+             COALESCE(sar.table_id, s.table_id) AS "tableId",
+             r."reservationDate" AS "reservationDate"
+      FROM seating_assignments sa
+      JOIN reservations r ON r.id = sa.reservation_id
+      JOIN seating_assignment_resources sar ON sar.assignment_id = sa.id
+      LEFT JOIN seats s ON s.id = sar.seat_id
+      WHERE sa.status IN ('Assigned', 'Seated')
+        AND r."reservationDate" >= ${rangeStart}
+        AND r."reservationDate" < ${rangeEnd}
+    `;
+    return rows
+      .filter((row) => toLocalServiceDate(row.reservationDate) === input.serviceDate && deriveServiceCode(row.reservationDate) === input.serviceCode)
+      .map((row) => ({ assignmentId: row.assignmentId, tableId: row.tableId }));
+  }
 }
