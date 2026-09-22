@@ -106,6 +106,47 @@ action), and `tests/pilot/service-session-ui.test.ts` (68 source-text
 and live-executed tests). See
 `R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md` for the full design.
 
+## Floorplan and membership status (R1.5-P2D)
+
+**There is no Floorplan administration panel in the pilot.** Staff cannot
+author, publish, replace membership on, or set the default version of a
+Floorplan through `public/pilot.html` — every one of `CAP-D03.02`'s nine
+management endpoints is API-only, reachable only via direct HTTP calls,
+not through any page. Do not expect this to appear in the pilot; it is
+not part of this pilot's scope.
+
+What **does** now silently govern the existing Servicesessies panel and
+every Floor & Seating action:
+
+- The canonical Main Floor (`main-floor`) revision 1 is present in
+  `helix_reservations_dev`: Published, the Floorplan's default, 23 Table
+  memberships. It was bootstrapped by tooling, not by any staff member
+  through a UI.
+- **No development ServiceSession exists** — `ServiceSessions = 0`.
+  Opening a session for the first time will immutably snapshot whichever
+  FloorplanVersion is the Floorplan's default at that moment (today,
+  Main Floor revision 1) and validate every currently-active seating
+  assignment for that service/date against it first, atomically — a
+  violation is rejected (`ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN`, HTTP
+  409) rather than silently snapshotting an inconsistent state.
+- Once a session is Opened, immediate assign, pre-assign, Move
+  destination, modify-time revalidation, and walk-in-through-immediate-
+  assign are all checked against that snapshot's membership — a Table or
+  Teppanyaki Seat (checked through its parent Table) outside membership
+  is rejected. Mark Seated and every release-only action (no-show,
+  cancel-release, completion-release) are unaffected by this check.
+- **No authenticated human workflow has been completed** against any of
+  this — no staff member has logged in and authored/published a
+  Floorplan version, opened a session and observed the resulting
+  snapshot, or triggered a membership rejection through the UI.
+- **Membership enforcement is automated-test verified only** — domain,
+  application, API, and real-PostgreSQL concurrency/lock-order tests (see
+  `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`), the
+  same automated-only posture already documented above for Floor &
+  Seating, Security Events, and Service Session.
+- **P1-B11 remains incomplete** and untouched by this milestone, per
+  standing instruction.
+
 ## Before starting
 
 1. `npm install && npx prisma migrate deploy && npm run typecheck && npm test` — all green.
@@ -155,6 +196,15 @@ permission) — there is no self-service sign-up.
   read time), active-floorplan selection, and CAP-D02.01's own persisted
   Service definition. CAP-D02.02 (and CAP-D02.01) remain `Designed`. See
   `R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md`.
+- **Reconciled (R1-DOC-6).** "Active-floorplan selection" is now only
+  half missing — see "Floorplan and membership status" above.
+  `ServiceSession.open()` snapshots a specific Published FloorplanVersion,
+  and that snapshot (or, provisionally, the current default) now governs
+  every live resource-selection write. Still missing: a Floorplan
+  administration pilot panel, any human workflow, deployment, and
+  `CAP-D02.01`'s own persisted Service definition. `CAP-D02.01`,
+  `CAP-D02.02`, and `CAP-D03.02` all remain `Designed`. See
+  `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

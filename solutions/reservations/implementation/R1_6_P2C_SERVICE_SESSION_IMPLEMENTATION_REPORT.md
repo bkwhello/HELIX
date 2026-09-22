@@ -258,3 +258,47 @@ applied):**
   status" section's automated-only, no-human-smoke-test posture.
 - This report itself — the fourth of the four files authorized for
   R1-DOC-5.
+
+## R1-DOC-6 reconciliation (2026-09-22) — floorplan snapshot and membership enforcement
+
+Everything above this section describes this report's own subject exactly
+as it was true at the time R1.6-P2C shipped (2026-09-12/13) and is
+preserved unchanged. Two later, separate milestones have since closed
+part of what this report listed as missing, and this section records that
+without rewriting the history above:
+
+- **"No active-floorplan selection exists"** (stated in "Four distinct
+  concerns" item 4 and "Accepted limitations" above) is now only
+  partially true. Commit `24aaef7d8086ab75bb86abb7994cd09e53fe7c9b`
+  (2026-09-17, "feat(service): snapshot floorplan on session open") gave
+  `ServiceSessionService.open()` an immutable snapshot of a specific
+  Published `FloorplanVersion` id, taken once and never re-read
+  afterward — a repeated Open stays idempotent and never re-stamps it.
+  Commit `fe7372732ded1439eccc57adbdef200cc9f9267a` (2026-09-20,
+  "feat(seating): enforce session floorplan membership", R1.5-P2D) then
+  made that snapshot (or, for a session still absent/`Created`, the
+  Floorplan's current eligible Published default, provisionally) govern
+  Table/Seat resource selection across immediate assign, pre-assign, Move
+  destination, modify-time revalidation, and walk-in-through-immediate-
+  assign, and made Open itself validate every currently-active assignment
+  against the version about to be snapshotted before writing it.
+- **`CAP-D03.02` (Floorplan Management)**, cited above only as "itself
+  still `Designed`," was not otherwise elaborated by this report. Commits
+  `d7f57ad2fff110e35a51ca2d68edf93bf26d21eb` (2026-09-14) and
+  `2647c700dcd0218afab07f29029c80200268d78f` (2026-09-15) delivered its
+  persisted Floorplan/version/Table-membership foundation, its
+  Draft→Published→Archived lifecycle, nine management endpoints, and the
+  canonical Main Floor bootstrap in `helix_reservations_dev` (revision 1,
+  Published, default, 23 Table memberships).
+
+**Still not delivered, exactly as this report already said:** no
+persisted reservation-to-session relationship (still derivation-only, at
+read time), no persisted `Service` definition (`CAP-D02.01`), no
+Floorplan administration pilot UI, no human/browser smoke test of any of
+this, and nothing deployed anywhere. `helix_reservations_dev` still holds
+zero `ServiceSession` rows. `CAP-D02.01`, `CAP-D02.02`, and `CAP-D03.02`
+all remain `Designed`; no `delivery_status` changed as a result of this
+reconciliation.
+
+See `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md` for the
+full design, evidence, and explicit boundary of this later work.

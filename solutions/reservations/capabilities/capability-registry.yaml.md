@@ -434,6 +434,26 @@ capabilities:
     # delivery_status intentionally unchanged — see
     # R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md for the full
     # evidence and the explicit boundary of what remains undelivered.
+    #
+    # R1-DOC-6 — two further commits strengthened this capability's own
+    # owned rules without completing it: 24aaef7d8086ab75bb86abb7994cd09e53fe7c9b
+    # (2026-09-17, "feat(service): snapshot floorplan on session open")
+    # gave ServiceSession.open() an immutable FloorplanVersion snapshot
+    # (the specific Published version, never re-read after Open — a
+    # repeated Open stays idempotent and never re-stamps it); commit
+    # fe7372732ded1439eccc57adbdef200cc9f9267a (2026-09-20, "feat(seating):
+    # enforce session floorplan membership") made Open itself validate
+    # every currently-active seating assignment for the service/date
+    # against the version about to be snapshotted, atomically rejecting
+    # (typed `ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN`, HTTP 409, a distinct-
+    # assignment count only — no internal identifiers) rather than
+    # snapshotting an inconsistent state. `helix_reservations_dev` still
+    # holds zero ServiceSession rows; no human workflow has exercised
+    # Open. Still missing for the complete capability: CAP-D02.01's own
+    # persisted Service definition, and a persisted reservation-to-session
+    # relationship (still derivation-only, at read time).
+    # delivery_status intentionally unchanged — see
+    # R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true
@@ -615,6 +635,37 @@ capabilities:
     slug: floorplan-management
     domain: CAP-D03
     type: Core
+    # R1-DOC-6 — commits d7f57ad2fff110e35a51ca2d68edf93bf26d21eb
+    # (2026-09-14, "feat(floor): add versioned floorplan foundation") and
+    # 2647c700dcd0218afab07f29029c80200268d78f (2026-09-15, "chore(floor):
+    # add main floorplan bootstrap") delivered a real, substantial
+    # foundation slice of this capability: a persisted Floorplan /
+    # FloorplanVersion / Table-membership model (domain/floor/Floorplan.ts,
+    # prisma schema, migrations `20260914073245_add_floorplan_versioning`
+    # applied to helix_reservations_dev), an enforced Draft -> Published ->
+    # Archived lifecycle (no reverse, no re-Draft — a correction is always
+    # a new version), atomic membership replacement for Draft versions only
+    # (`PUT /floorplan-versions/:id/resources`), default-version selection
+    # with same-Floorplan database enforcement
+    # (`VERSION_BELONGS_TO_DIFFERENT_FLOORPLAN`, api/app.ts), and nine
+    # authenticated management endpoints (`requireStaffSession` for reads,
+    # `Permission.CapacitySettingsManage` for every mutation — see
+    # api/app.ts's numbered `/floorplans*`/`/floorplan-versions*` routes).
+    # The canonical Main Floor (`main-floor`, `MAIN_FLOORPLAN_ID`) revision
+    # 1 is bootstrapped in `helix_reservations_dev`: Published, the
+    # Floorplan's default, 23 Table memberships. Commit
+    # 24aaef7d8086ab75bb86abb7994cd09e53fe7c9b (2026-09-17, "feat(service):
+    # snapshot floorplan on session open") added one further fact this
+    # capability now also provides: a ServiceSession immutably snapshots a
+    # specific Published FloorplanVersion id at Open time.
+    #
+    # Still missing for the complete registered capability: a pilot UI for
+    # Floorplan/version administration (public/pilot.html has no such
+    # panel — see PILOT.md), human workflow verification (no staff member
+    # has authored, published, or activated a version through any UI), and
+    # deployment. delivery_status intentionally unchanged — see
+    # `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md` for the
+    # full evidence and explicit boundary.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true
@@ -658,6 +709,27 @@ capabilities:
     slug: table-seat-management
     domain: CAP-D03
     type: Core
+    # R1-DOC-6 — commit fe7372732ded1439eccc57adbdef200cc9f9267a
+    # (2026-09-20, "feat(seating): enforce session floorplan membership")
+    # strengthened this capability's existing resource-activation evidence:
+    # Table/Seat assignment (immediate assign, pre-assign, Move
+    # destination, modify-time revalidation, walk-in through immediate
+    # assign) now also respects the ServiceSession's immutable
+    # FloorplanVersion membership, not just each resource's own
+    # active/blocked/overlap state. A Teppanyaki Seat's membership is
+    # always derived through its parent Table (SeatabilityEvaluator's
+    # `withinFloorplanMembership`; a Seat's own id is never checked or
+    # stored for membership). Pre-Open provisional assignments (made
+    # against the current default while the session is absent/Created)
+    # are revalidated atomically when the session opens
+    # (ServiceSessionService.open(), typed
+    # `ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN` on conflict). Release-only
+    # operations (no-show, cancel-release, completion-release, and mark-
+    # seated's own idempotent no-op) remain available and unrevalidated,
+    # unchanged. No delivery_status change — this capability was already
+    # `Pilot`; this note only records that its resource-activation rule
+    # gained a further, automated-tested enforcement layer. See
+    # `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`.
     delivery_status: Pilot
     operational_maturity: M1
     mvp: true

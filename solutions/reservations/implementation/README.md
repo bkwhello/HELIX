@@ -129,6 +129,68 @@ three further gaps in the Floor & Seating sequence above:
 Same automated-verification-only posture as the rest of Floor & Seating
 above — no human smoke test, not deployed anywhere.
 
+**Floorplan versioning, ServiceSession snapshotting, and floorplan-membership
+enforcement** (commits `d7f57ad`/`2647c70`/`24aaef7`/`fe73727`, most
+recently R1.5-P2D) added a fourth layer of resource-activation checking on
+top of the three above:
+
+- **Floorplan versioning foundation** (CAP-D03.02, `d7f57ad`): a persisted
+  `Floorplan`/`FloorplanVersion`/Table-membership model with an enforced
+  `Draft` → `Published` → `Archived` lifecycle, atomic membership replace
+  for Draft versions, and default-version selection with same-Floorplan
+  database enforcement — nine authenticated HTTP endpoints
+  (`requireStaffSession` reads, `Permission.CapacitySettingsManage`
+  mutations), no new pilot UI.
+- **Main Floor bootstrap** (`2647c70`): the canonical Floorplan
+  (`main-floor`) revision 1 is bootstrapped in `helix_reservations_dev` —
+  Published, the Floorplan's default, 23 Table memberships.
+- **ServiceSession floorplan snapshot** (CAP-D02.02, `24aaef7`):
+  `ServiceSessionService.open()` immutably snapshots the specific
+  Published `FloorplanVersion` id in effect at Open time — never re-read
+  afterward; a repeated Open stays idempotent and never re-stamps it.
+- **Floorplan-membership enforcement** (CAP-D03.03/CAP-D02.02, `fe73727`,
+  R1.5-P2D): the session's snapshot (once taken) always overrides the
+  Floorplan's current, mutable default; absent/`Created` sessions use the
+  current eligible Published default provisionally. Table selectors and
+  Teppanyaki Seat selectors (checked through their parent Table — a Seat's
+  own id is never checked or stored for membership) are now validated
+  against the effective version for immediate assign, pre-assign, Move
+  destination, modify-time revalidation, and walk-in-through-immediate-
+  assign; a mixed member/non-member multi-resource selection fails
+  atomically (`SeatabilityEvaluator`'s per-candidate loop, no partial
+  writes). Mark Seated and every release-only operation (no-show,
+  cancel-release, completion-release) remain free of membership
+  revalidation. `SeatabilityOutcome` gained
+  `NO_ELIGIBLE_FLOORPLAN_VERSION` and
+  `RESOURCE_OUTSIDE_FLOORPLAN_MEMBERSHIP`. Opening a ServiceSession now
+  validates every currently-active assignment against the version about
+  to be snapshotted, atomically, in the same transaction — a violation
+  returns typed `ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN` with an
+  `activeAssignmentCount` (distinct assignments, never resource rows) and
+  no internal identifiers, HTTP 409. B4-A availability filtering
+  (`SeatingAvailabilityService`) also filters through snapshot/default
+  membership, preserving its existing response contract (an unfiltered
+  list never collapses to an error; it collapses to an empty
+  `availableResources`). Global lock order:
+  Reservation → Floorplan → ServiceSession → Capacity/date → Seating
+  parent-Table.
+
+**Distinguishing what is and isn't true yet, precisely:**
+- **Automated verification**: exhaustive — domain, application, API, and
+  real-PostgreSQL concurrency/lock-order tests. See
+  `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md` for full
+  totals.
+- **Development schema/data activation**: all four migrations are applied
+  in `helix_reservations_dev`; the canonical Main Floor revision 1 exists,
+  Published and default, with 23 Table memberships. `ServiceSessions = 0`
+  — no session has been created or opened there.
+- **Human smoke testing**: none. No staff member has authored, published,
+  or activated a Floorplan version through any UI, nor exercised
+  membership enforcement through the pilot.
+- **Deployment**: none. Nothing here has been deployed anywhere.
+- **Floorplan management has no pilot UI.** `public/pilot.html` has no
+  Floorplan/version administration panel — see `PILOT.md`.
+
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
 - **Corrected (R1-DOC-2).** This bullet used to say `ContactReader` and
@@ -175,6 +237,21 @@ above — no human smoke test, not deployed anywhere.
     `CAP-D02.02` remain `Designed` in the capability registry — see
     `R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md` for the full
     design, evidence, and explicit boundary of what remains undelivered.
+    **Reconciled (R1-DOC-6).** "Active-floorplan selection does not
+    exist" is now only half true: `CAP-D03.02`'s own foundation (Floorplan/
+    version/Table-membership, Draft→Published→Archived, nine management
+    endpoints) and the canonical Main Floor bootstrap were delivered by
+    `d7f57ad`/`2647c70`; `24aaef7` then gave `ServiceSession.open()` an
+    immutable snapshot of a specific Published version, and `fe73727`
+    (R1.5-P2D) enforced that snapshot's (or, provisionally, the current
+    default's) membership across every live resource-selection write. See
+    "Floorplan versioning, ServiceSession snapshotting, and
+    floorplan-membership enforcement" above and
+    `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`. This is
+    still not the complete `CAP-D03.02`/`CAP-D02.02` capabilities — no
+    Floorplan pilot UI, no human workflow, no deployment, and
+    `CAP-D02.01`'s own persisted Service definition still does not exist.
+    `CAP-D02.01`, `CAP-D02.02`, and `CAP-D03.02` all remain `Designed`.
   - The real, separate `domain/availability/ServicePeriod.ts` +
     `application/availability/ServicePeriodService.ts` "booking-window
     eligibility" behavior (R1.6-A/R1.6-C0) is genuinely implemented and
