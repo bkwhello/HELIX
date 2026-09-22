@@ -181,6 +181,28 @@ Bij falen van één scenario: **STOP** — geen tweede correctieve productiewijz
 
 ---
 
+## HV-INT-008 — Sitemap index submitted to Google Search Console
+
+| Veld | Waarde |
+|---|---|
+| Datum goedgekeurd | 22 september 2026 (Kelvin) |
+| Datum geïmplementeerd | **Live sinds 22 september 2026** — submissie uitgevoerd door Kelvin |
+| Gerelateerd defect | observations/O-005.md (22 sep 2026 update): `/omakase-utrecht/` bleek bij URL-inspectie **niet geïndexeerd / onbekend bij Google**, zonder referring sitemap. GSC Sitemaps toonde vóór deze actie **0 ingediende sitemaps** in deze property, ondanks dat de publieke Rank Math-sitemap (`sitemap_index.xml`) al sinds 22 juli 2026 bestaat en `/omakase-utrecht/` bevat |
+| Scope | **Sitewide discovery/indexatie-infrastructuur** — niet Omakase-specifiek; betreft de gehele site's crawl-ontdekking via Google |
+| Ingediende URL | `https://konnichiwa.nl/sitemap_index.xml` |
+| Publieke sitemap-status | `sitemap_index.xml` en `page-sitemap.xml` laden beide correct in de browser; `page-sitemap.xml` bevat 22 URL's, inclusief `/omakase-utrecht/` (weergegeven last-modified 2026-07-22 21:16 +00:00 — **discrepantie t.o.v. bekend september-productiewerk, gevlagd, niet gediagnosticeerd**, zie observations/O-005.md) |
+| Initiële GSC-verwerkingsstatus (22 sep 2026) | Type: Unknown; Status: **Kan niet ophalen / sitemap kon niet worden gelezen**; Ontdekte pagina's: 0; Ontdekte video's: 0; Laatst gelezen: 22 sep 2026 |
+| Aanvullend bewijs | Kelvin opende de sitemap vanuit het GSC-sitemapdetailscherm zelf ("sitemap openen") — dit resolveerde correct naar de publiek werkende Rank Math-sitemap met de vier child-sitemaps. De oorzaak van het GSC-ophaalverschil (publiek bereikbaar, maar GSC meldt "kan niet ophalen") is **ONBEKEND** — niet gediagnosticeerd in dit item |
+| Eigenaar | Kelvin |
+| Implementatiebewijs | GSC Sitemaps-rapport, 22 sep 2026 (owner-observed, screenshot-based); observations/O-005.md (22 sep 2026 update) |
+| Externe invloeden | Geen bekende |
+| Resultaat | **Niet vastgesteld of de sitemap succesvol wordt verwerkt.** De sitemap wordt **niet** als technisch defect geclassificeerd (publiek toegankelijk, correct gestructureerd) en de verwerking wordt **niet** als geslaagd geclassificeerd (GSC's eigen ophaalpoging faalde, geen ontdekte pagina's). Geen indexatie- of rangschikkingseffect wordt hier geclaimd — dit item registreert alleen de indiening en haar initiële, onopgeloste verwerkingsstatus |
+| Verdict | **SUBMITTED — GSC PROCESSING/FETCH VERIFICATION PENDING.** Niet Live/Bevestigd, niet Blocked, niet gefaald — een aparte, tussenliggende status die het huidige bewijs exact weerspiegelt |
+
+**Candidate D v2-relevantie:** deze indiening is een **INDIRECT, sitewide discovery-laag interventie** — geen content- of query-specifieke wijziging, maar een actie die in principe de crawl-ontdekbaarheid van de hele site kan raken, inclusief de pagina's van alle vier de vastgelegde Candidate D-thema's. Toegevoegd aan de bestaande interventie-tijdlijn ter informatie; **geen rangschikkings- of zichtbaarheidseffect wordt geclaimd**, Candidate D zelf wordt door dit item niet gewijzigd, uitgevoerd of opnieuw geautoriseerd.
+
+---
+
 ## Wat hierna gebeurt
 
 Dezelfde evidence/HV-IV-003.md-zoekopdrachten en evidence/HV-IV-004.md-AI-vragen herhalen op dag 7, 28, 56, 90, resultaat + confidence + verdict invullen (Earned/Provisionally Earned/Inconclusive/Not Earned/Harmful, measurement/HV-MP-001.md §13). Geen verdict vóór livegang (HV-MP-001 §13, No False Attribution).
