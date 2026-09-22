@@ -255,6 +255,17 @@ export interface AppDependencies {
  */
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 
+/**
+ * R1.5-P2E-1 correction — GET /floorplan-resources/tables's operationalLabel
+ * ordering must be locale-stable (never dependent on the host OS/runtime's
+ * current default locale, the way `String.prototype.localeCompare(x)` with
+ * no explicit locale argument is). An explicit `Intl.Collator("en", ...)`
+ * pins the exact comparison behavior regardless of deployment environment.
+ * Constructed once, at module load, and reused for every request/sort —
+ * never rebuilt per comparison or per request.
+ */
+const OPERATIONAL_LABEL_COLLATOR = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
 export function createApp(deps: AppDependencies): Express {
   const app = express();
   // R1.2 final P1 closure — login abuse protection, source dimension.
@@ -1354,6 +1365,72 @@ export function createApp(deps: AppDependencies): Express {
         }
       }
     );
+  }
+
+  // R1.5-P2E-1 — CAP-D03.02 Floorplan Management, read-only Table
+  // inventory for the future membership editor. Gated on deps.floor
+  // alone (not deps.floorplans) — this is a Floor/Table concern, not a
+  // Floorplan-lifecycle one, and stays available whenever a Floor
+  // dependency exists regardless of whether the /floorplans* routes are
+  // also mounted. requireStaffSession only, no permission check — matches
+  // the existing authenticated-read posture of GET /floorplans,
+  // GET /floorplans/:id/versions, and GET /floorplan-versions/:id above,
+  // never the Permission.CapacitySettingsManage gate their mutations use.
+  if (deps.floor) {
+    const floorRepositoryForInventory = deps.floor.floorRepository;
+    app.get("/floorplan-resources/tables", requireStaffSession, async (_req: Request, res: Response) => {
+      // The two closed, existing CapacityPoolId values (domain/availability/CapacityPool.ts)
+      // — every physical Table belongs to exactly one. No new query or
+      // repository method: FloorRepository.findTablesByArea already
+      // exists and already returns the full Table shape this route
+      // needs; no reservation, date, ServiceSession, or FloorplanVersion
+      // is read or required.
+      const [sushiTables, teppanyakiTables] = await Promise.all([
+        floorRepositoryForInventory.findTablesByArea("Sushi"),
+        floorRepositoryForInventory.findTablesByArea("Teppanyaki"),
+      ]);
+
+      // Defensive de-duplication by id — never expected from a real
+      // repository (Table.id is a primary key) but this route makes no
+      // assumption about the repository implementation it is handed.
+      const byId = new Map<string, (typeof sushiTables)[number]>();
+      for (const table of [...sushiTables, ...teppanyakiTables]) {
+        if (!byId.has(table.id)) byId.set(table.id, table);
+      }
+
+      // Deterministic order, never database row order and never dependent
+      // on the host's current locale: Sushi before Teppanyaki, then
+      // operationalLabel ascending via the module-level, explicitly-"en"
+      // OPERATIONAL_LABEL_COLLATOR (numeric-aware, so "Table 2" sorts
+      // before "Table 10" rather than lexicographically after it; two
+      // labels the collator treats as equivalent — e.g. a case or accent
+      // difference — fall through to the tie-breaker below rather than
+      // landing in an arbitrary relative order), then id ascending as the
+      // final tie-breaker.
+      const AREA_ORDER: Readonly<Record<string, number>> = { Sushi: 0, Teppanyaki: 1 };
+      const orderedTables = [...byId.values()].sort((a, b) => {
+        const areaDelta = (AREA_ORDER[a.areaId] ?? 2) - (AREA_ORDER[b.areaId] ?? 2);
+        if (areaDelta !== 0) return areaDelta;
+        const labelDelta = OPERATIONAL_LABEL_COLLATOR.compare(a.operationalLabel, b.operationalLabel);
+        if (labelDelta !== 0) return labelDelta;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+
+      // Exactly six allowlisted fields per row, by explicit object
+      // literal — never a spread of the domain Table shape, so no future
+      // Table field (createdAt included) leaks here without a deliberate
+      // change to this list.
+      res.status(200).json({
+        tables: orderedTables.map((t) => ({
+          id: t.id,
+          areaId: t.areaId,
+          operationalLabel: t.operationalLabel,
+          nominalCapacity: t.nominalCapacity,
+          supportsSharedSeating: t.supportsSharedSeating,
+          status: t.status,
+        })),
+      });
+    });
   }
 
   app.get("/reservations/:id", requireStaffSession, requirePermission(Permission.ReservationView), async (req: Request, res: Response) => {
