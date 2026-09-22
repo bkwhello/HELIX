@@ -344,3 +344,147 @@ unrevalidated.
 
 No `delivery_status` value is changed by this report or by any file it is
 part of (R1-DOC-6).
+
+## R1-DOC-7 reconciliation and completion (2026-09-22) — `CAP-D03.02` promoted `Designed` → `Pilot`
+
+Everything above this section describes this report's own subject exactly
+as it was true at the time it was written (R1-DOC-6) and is preserved
+unchanged. This section records two later, separate commits that closed
+the remaining gap that report explicitly identified, and the resulting
+capability-status decision.
+
+### What shipped since R1-DOC-6
+
+- **`72ab91d122f3fef72dabc4a9fde4ec9f273642df`** (2026-09-22, "feat(floor):
+  expose table inventory", R1.5-P2E-1) — a tenth, read-only HTTP route,
+  `GET /floorplan-resources/tables` (`requireStaffSession` only, no new
+  permission, no query parameters). Reuses the existing
+  `FloorRepository.findTablesByArea` for both closed area values; no new
+  repository method, no hardcoded Table id. Returns exactly six
+  allowlisted fields per row (`id`, `areaId`, `operationalLabel`,
+  `nominalCapacity`, `supportsSharedSeating`, `status`) — never a Seat,
+  never `createdAt`, never membership/assignment/block/availability
+  data. Deterministic order: Sushi before Teppanyaki, then
+  `operationalLabel` ascending via an explicitly-`"en"` `Intl.Collator`
+  (module-scope singleton, numeric-aware), then `id` as the final
+  tie-breaker — never database row order, never dependent on the host's
+  default locale.
+- **`ffbb68b10f2a49462d3726acc70a0a193e70ef4e`** (2026-09-22, "feat(floor):
+  expose floorplan administration in pilot", R1.5-P2E-2) — a
+  "Floorplannen" panel in `public/pilot.html`, placed near Servicesessies,
+  date-independent (never coupled to the Dagoverzicht date). Composes
+  exactly the nine existing management routes plus the new inventory
+  route above — no backend change accompanied this commit.
+
+### Exact pilot lifecycle action matrix (as shipped)
+
+| Version state | Visible actions | Confirmation |
+|---|---|---|
+| Draft | Edit membership, Publish | Publish only |
+| Published, non-default | Set as default, Archive | Both |
+| Published, default | none | — |
+| Archived | none | — |
+
+Create Floorplan, Create Draft version, and Save membership never prompt
+for confirmation. Publish/Set-default/Archive each call `confirm()`
+*before* the shared mutation-in-flight guard is engaged and before the
+POST is issued. The current default never exposes Archive (excluded
+structurally, not by a runtime check that could be bypassed). The
+membership editor is Draft-only, sends the complete `{ tableIds }` set
+(never a delta), groups Sushi-then-Teppanyaki preserving the server's own
+order, keeps inactive Tables selectable and visibly muted, and preserves
+unknown historical member ids as a safe "Onbekende tafel" row unless a
+staff member explicitly unchecks them.
+
+### Automated test evidence
+
+- `tests/api/floorplan-table-inventory.test.ts` — **24/24 passed**
+  (401/every-role-200/no-`CapacitySettingsManage`-required, empty/real
+  inventory, both areas, no Seat exposure, exact six-key shape, numeric-
+  aware and locale-pinned ordering, defensive dedup, no hardcoded ids,
+  existing nine routes unaffected).
+- `tests/pilot/floorplan-admin-ui.test.ts` — **86/86 passed** (wiring,
+  request-token staleness protection at three load levels, deliberate
+  empty states, `textContent`-only rendering, inventory grouping/
+  ordering, inactive-Table and unknown-id handling, native
+  fieldset/legend/checkbox controls, complete-set membership body, per-
+  area select-all/clear with no global one, dirty-state tracking and
+  discard-confirmation, double-submit prevention, exact endpoints/
+  bodies, exact action matrix, confirmation ordering, typed-outcome
+  messages, 401/403 handling, separate success/refresh-warning message
+  elements, post-mutation authoritative reloads).
+- All pilot UI tests (12 files): **302/302 passed** — no regression in
+  any other panel.
+- Floorplan API/integration set (9 files): **200/200 passed**.
+- Full isolated suite at promotion time: **93 files / 1622 passed / 0
+  failed / 0 skipped**. Typecheck: clean.
+
+### `CAP-D03.02` promotion rationale
+
+Every owned rule this capability registers — **floorplan versioning**
+(persisted model, ordered revisions, enforced lifecycle, atomic
+complete-set Draft membership), **floorplan activation** (publish and
+default-version selection, same-Floorplan-enforced at both the
+application layer and a real database composite FK), and **layout
+integrity** (referential consistency: no duplicate or dangling
+membership rows, enforced by real unique/FK constraints) — is now
+implemented, HTTP-exposed (all ten routes), pilot-UI-exposed, and
+automated-tested (domain, integration with genuine PostgreSQL-
+concurrency proofs, API, and pilot layers). The one previously-open gap
+this report's own R1-DOC-6 section identified — "a pilot UI for
+Floorplan/version administration... `public/pilot.html` has no such
+panel" — is closed by `ffbb68b`.
+
+This registry has an established, on-point precedent for what `Pilot`
+requires: `CAP-D04.05`'s own evidence note states its promotion rested on
+being "implemented and automated-tested, the same bar
+`CAP-D04.01`/`CAP-D02.03`/`CAP-D01.03` were already held to," explicitly
+alongside "no human smoke test has been performed." `CAP-D03.02` now
+meets that identical bar. `delivery_status` is changed to `Pilot` in
+`capability-registry.yaml.md` as part of this same R1-DOC-7 milestone.
+
+### Accepted limitations (preserved, not resolved by this promotion)
+
+- **No geometric/adjacency floorplan editor or metadata exists.** No
+  coordinates, no drawing canvas, no `preferredPairId`/adjacency field on
+  `Table`. `R1_5_FLOOR_SEATING_FINAL_ARCHITECTURE.md`'s own "Where does
+  this belong?" discussion treats any such elaboration of "layout
+  integrity" as non-authoritative, descriptive metadata — never an
+  enforced rule — and it was never operationalized into an acceptance
+  criterion or test requirement. The registered purpose text's "versioned
+  visual representations" is read as aspirational prose, not an owned
+  rule requiring a graphical editor.
+- **Draft membership editing is last-write-wins**, serialized only by the
+  per-Floorplan advisory lock — there is no per-row optimistic `version`
+  column, ETag, or precondition mechanism, and the pilot UI makes no
+  claim to detect a conflict the API cannot itself report. This is a
+  documented design choice (`FloorplanRepository.ts`'s own header
+  comment: "exactly one Floorplan in the pilot, cheap to hold"), not an
+  oversight, and is classified as an acceptable pilot limitation, not a
+  capability blocker.
+- **`CAP-D02.01`'s persisted Service definition and `CAP-D02.02`'s
+  persisted reservation-to-session relationship remain undelivered** —
+  both capabilities' own gaps, unaffected by this promotion; both stay
+  `Designed`.
+- **`CAP-D03.03`'s own status is unaffected** — already `Pilot`; nothing
+  in `72ab91d`/`ffbb68b` is a `CAP-D03.03`-owned fact.
+
+### Automated-versus-human/deployed, explicit
+
+| | Status |
+|---|---|
+| Code shipped and pushed | Yes — all six commits, on `origin/feat/ec-002-visibility-baseline` |
+| Migrations applied in `helix_reservations_dev` | Yes — 11/11 |
+| Main Floor bootstrapped in development | Yes — `main-floor-v1`, Published, default, 23 memberships |
+| Backend HTTP contract (10 routes) | Live in production wiring (`api/server.ts`) |
+| Pilot UI implemented and automated-verified | Yes |
+| Development `ServiceSession` created/opened | No — `ServiceSessions = 0` |
+| Authenticated human browser workflow completed | No |
+| Deployed | No — nowhere |
+
+Consistent with §"Automated versus human-tested — explicit distinction"
+earlier in this same report and with the `CAP-D04.05` precedent above:
+automated-green and pilot-UI-exposed are necessary and, per this
+registry's own established usage, **sufficient** for `Pilot`. They are
+explicitly **not** claimed as sufficient for `Active` — human workflow
+and deployment remain that later transition's own gate, not this one's.

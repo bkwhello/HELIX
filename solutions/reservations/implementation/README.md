@@ -174,6 +174,26 @@ top of the three above:
   `availableResources`). Global lock order:
   Reservation → Floorplan → ServiceSession → Capacity/date → Seating
   parent-Table.
+- **Table-inventory read API and Floorplan administration pilot UI**
+  (`72ab91d`, `ffbb68b`, R1.5-P2E-1/P2E-2): a tenth, read-only
+  `GET /floorplan-resources/tables` route (no hardcoded Table ids;
+  Sushi-then-Teppanyaki, server-ordered) plus a "Floorplannen" panel in
+  `public/pilot.html` compose the existing nine management routes into a
+  real staff-facing Floorplan/version/membership administration surface
+  — list/create Floorplans, create Draft versions, a complete-set
+  membership editor (Draft-only, inactive Tables shown muted and
+  selectable, unknown historical ids preserved unless unchecked),
+  publish/set-default/archive with confirmation before each irreversible
+  action, and the same double-submit/stale-response/dirty-state/safe-
+  rendering discipline every other pilot panel already follows. **As a
+  result, `CAP-D03.02` (Floorplan Management) was promoted
+  `Designed` → `Pilot`** — see the capability registry's own R1-DOC-7
+  note for the full rationale, and the "Distinguishing what is and isn't
+  true yet" list immediately below for what that promotion does and does
+  not claim. No graphical/geometric floor-layout designer exists or is
+  required by the registered capability — see
+  `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`'s R1-DOC-7
+  addendum.
 
 **Distinguishing what is and isn't true yet, precisely:**
 - **Automated verification**: exhaustive — domain, application, API, and
@@ -186,10 +206,17 @@ top of the three above:
   — no session has been created or opened there.
 - **Human smoke testing**: none. No staff member has authored, published,
   or activated a Floorplan version through any UI, nor exercised
-  membership enforcement through the pilot.
-- **Deployment**: none. Nothing here has been deployed anywhere.
-- **Floorplan management has no pilot UI.** `public/pilot.html` has no
-  Floorplan/version administration panel — see `PILOT.md`.
+  membership enforcement through the pilot. This remains outstanding —
+  it is an accepted `Pilot → Active` concern (see the capability
+  registry's `CAP-D04.05` precedent for this registry's own established
+  distinction), not something `CAP-D03.02`'s `Pilot` status claims has
+  already happened.
+- **Deployment**: none. Nothing here has been deployed anywhere. Also
+  outstanding, also a `Pilot → Active` concern.
+- **Corrected (R1-DOC-7).** This bullet used to say "Floorplan management
+  has no pilot UI" — that is no longer true. A "Floorplannen"
+  administration panel exists in `public/pilot.html` — see `PILOT.md`'s
+  "Floorplan Management status" section for the full scope.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -252,6 +279,15 @@ top of the three above:
     Floorplan pilot UI, no human workflow, no deployment, and
     `CAP-D02.01`'s own persisted Service definition still does not exist.
     `CAP-D02.01`, `CAP-D02.02`, and `CAP-D03.02` all remain `Designed`.
+    **Reconciled (R1-DOC-7).** The "no Floorplan pilot UI" clause above is
+    no longer accurate: `72ab91d` (Table-inventory read API) and
+    `ffbb68b` (Floorplan administration pilot UI) closed that gap, and
+    `CAP-D03.02` was promoted `Designed` → `Pilot` on that basis — see
+    the capability registry's own R1-DOC-7 note. Still missing,
+    unaffected by this promotion: any human workflow, deployment,
+    `CAP-D02.01`'s persisted Service definition, and `CAP-D02.02`'s
+    persisted reservation-to-session relationship. `CAP-D02.01` and
+    `CAP-D02.02` both remain `Designed`.
   - The real, separate `domain/availability/ServicePeriod.ts` +
     `application/availability/ServicePeriodService.ts` "booking-window
     eligibility" behavior (R1.6-A/R1.6-C0) is genuinely implemented and
@@ -438,8 +474,10 @@ is a staff-facing page covering Create Reservation, the daily list, and
 Floor & Seating (assign/pre-assign/move/mark-seated/no-show, floor and
 late-arrival view, Resource Blocking, walk-in) — the operations covered
 by the pilot-readiness work above — plus a read-only Security Events
-view (R1.7-P1, Owner/Manager only) and a "Servicesessies" panel (R1.6-P2C,
+view (R1.7-P1, Owner/Manager only), a "Servicesessies" panel (R1.6-P2C,
 `Permission.CapacitySettingsManage` for mutations) exposing the
 per-date `lunch`/`dinner` operational session lifecycle, with a matching
-status column on the daily list. See `PILOT.md` for scope, known
+status column on the daily list, and a "Floorplannen" panel (R1.5-P2E-2,
+same permission for mutations) exposing Floorplan/version administration
+and Draft Table-membership editing. See `PILOT.md` for scope, known
 limitations, and success criteria before using it with real bookings.

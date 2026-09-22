@@ -666,7 +666,99 @@ capabilities:
     # deployment. delivery_status intentionally unchanged — see
     # `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md` for the
     # full evidence and explicit boundary.
-    delivery_status: Designed
+    #
+    # R1-DOC-7 (2026-09-22) — promoted Designed -> Pilot. Commits
+    # d7f57ad2fff110e35a51ca2d68edf93bf26d21eb (2026-09-14),
+    # 2647c700dcd0218afab07f29029c80200268d78f (2026-09-15),
+    # 24aaef7d8086ab75bb86abb7994cd09e53fe7c9b (2026-09-17),
+    # fe7372732ded1439eccc57adbdef200cc9f9267a (2026-09-20),
+    # 72ab91d122f3fef72dabc4a9fde4ec9f273642df (2026-09-22, "feat(floor):
+    # expose table inventory"), and ffbb68b10f2a49462d3726acc70a0a193e70ef4e
+    # (2026-09-22, "feat(floor): expose floorplan administration in
+    # pilot") together deliver, and automated-test, the complete set of
+    # this capability's owned rules:
+    #  - floorplan versioning: persisted Floorplan/FloorplanVersion,
+    #    ordered revisions, enforced Draft -> Published -> Archived
+    #    lifecycle, atomic complete-set Table membership replacement for
+    #    Draft versions only (VERSION_NOT_DRAFT otherwise), historical
+    #    versions never deleted or rewritten.
+    #  - floorplan activation: publish (rejects an empty-membership
+    #    Draft, NO_MEMBERS) and default-version selection, both
+    #    same-Floorplan-enforced at the application layer AND by a real
+    #    database composite FK (floorplans_id_default_version_id_fkey);
+    #    a default version can never be archived
+    #    (CANNOT_ARCHIVE_DEFAULT_VERSION).
+    #  - layout integrity: referential consistency enforced by real
+    #    unique/FK constraints (no duplicate or dangling membership
+    #    rows) — see "Accepted limitations" below for what this does
+    #    NOT include.
+    # Database integrity: composite default-version FK, membership
+    # unique+FK constraints, and (via the ServiceSession snapshot column)
+    # a CHECK constraint that an Opened/Closed session always carries a
+    # non-null floorplan_version_id
+    # (service_sessions_floorplan_version_required_when_active_check).
+    # ServiceSession integration: Open immutably snapshots one specific
+    # Published FloorplanVersion id (never re-read after Open); seating/
+    # availability enforcement (SeatabilityEvaluator, SeatingAvailabilityService)
+    # honors that snapshot, or the current eligible Published default when
+    # absent/Created, for every resource-selection write — this
+    # enforcement layer is owned by CAP-D02.02/CAP-D03.03, not restated
+    # as CAP-D03.02's own rule here, but it is what makes "floorplan
+    # activation" operationally meaningful. Table-inventory read API
+    # (GET /floorplan-resources/tables, 72ab91d) and the "Floorplannen"
+    # pilot administration panel (ffbb68b) closed this capability's last
+    # two gaps: a full Floorplan/version/membership CRUD surface is now
+    # both HTTP- and pilot-UI-exposed (nine management routes + the
+    # inventory read), with the exact lifecycle action matrix, complete-
+    # set membership editor, non-hardcoded inventory, confirmation/
+    # double-submit/stale-response/dirty-state protections, and safe
+    # rendering, all covered by tests/pilot/floorplan-admin-ui.test.ts
+    # (86 tests) and tests/api/floorplan-table-inventory.test.ts (24
+    # tests). Automated evidence overall: domain (tests/domain/floorplan.test.ts),
+    # integration/concurrency (tests/integration/floorplan-lifecycle.test.ts,
+    # tests/integration/floor-seating-floorplan-membership.test.ts — genuine
+    # PostgreSQL-concurrency proofs for revision allocation, replace-vs-
+    # publish, default-vs-archive, Open-vs-default-change, pre-assign-vs-
+    # Open, and atomic rollback), API (tests/api/floorplans.test.ts,
+    # tests/api/floorplan-table-inventory.test.ts), and pilot (tests/pilot/floorplan-admin-ui.test.ts)
+    # — full isolated suite at promotion time: 93 files / 1622 passed / 0
+    # failed / 0 skipped.
+    #
+    # No literal FloorplanCreated/FloorplanVersionCreated/FloorplanActivated/
+    # FloorplanArchived domain-event objects are emitted anywhere — Floorplan
+    # remains a plain persisted data shape, the same posture CAP-D03.03's
+    # own listed events already have without blocking that capability's own
+    # Pilot status. The underlying business facts are fully reconstructable
+    # from persisted state (status, createdAt, publishedAt) instead.
+    #
+    # Consistent with this registry's own established meaning of `Pilot`
+    # (see CAP-D04.05's evidence note: "implemented and automated-tested,
+    # the same bar CAP-D04.01/CAP-D02.03/CAP-D01.03 were already held to...
+    # No human smoke test has been performed"): no authenticated human
+    # browser workflow has exercised any Floorplan/version/membership
+    # action through the pilot, and nothing here has been deployed
+    # anywhere. These are accepted Pilot -> Active concerns, not blockers
+    # to reaching Pilot itself.
+    #
+    # Accepted limitations, preserved (not resolved) by this promotion:
+    #  - No geometric/adjacency floorplan editor or metadata exists (no
+    #    coordinates, no drawing canvas, no preferredPairId/adjacency
+    #    field on Table) — "layout integrity" is satisfied at the
+    #    referential-consistency level only; see
+    #    R1_5_FLOOR_SEATING_FINAL_ARCHITECTURE.md §"Where does this
+    #    belong?" for why this stays non-authoritative, descriptive
+    #    metadata rather than an enforced rule.
+    #  - Draft membership editing is last-write-wins under the Floorplan
+    #    advisory lock — there is no per-row optimistic `version` column,
+    #    ETag, or precondition mechanism, and none is claimed. This is a
+    #    documented design choice (FloorplanRepository.ts's own header
+    #    comment), not an oversight.
+    #  - CAP-D02.01's persisted Service definition and CAP-D02.02's
+    #    persisted reservation-to-session relationship remain undelivered
+    #    — both are those capabilities' own gaps, not CAP-D03.02's.
+    # See R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md's
+    # own R1-DOC-7 addendum for the full promotion rationale.
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical
