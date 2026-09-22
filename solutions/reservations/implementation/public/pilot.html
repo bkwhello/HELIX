@@ -254,6 +254,20 @@
   .session-status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
   .service-session-row { gap: 0.75rem; }
   .service-session-label { display: flex; align-items: center; gap: 0.5rem; }
+  /* R1.5-P2E-2 — Floorplannen panel. */
+  .floorplan-id-hint { color: var(--muted); font-size: 0.78rem; margin-left: 0.4rem; }
+  .floorplan-version-timestamp { color: var(--muted); font-size: 0.78rem; }
+  .floorplan-default-badge { background: var(--ok-bg); color: var(--ok-text); }
+  .floorplan-version-status-Draft { background: var(--status-grey-bg); color: var(--status-grey-text); }
+  .floorplan-version-status-Published { background: var(--ok-bg); color: var(--ok-text); }
+  .floorplan-version-status-Archived { background: var(--status-purple-bg); color: var(--status-purple-text); }
+  .floorplan-area-fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; margin: 0 0 0.75rem; }
+  .floorplan-area-fieldset legend { padding: 0 0.4rem; font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+  .floorplan-table-row { gap: 0.6rem; justify-content: flex-start; }
+  .floorplan-table-row input[type="checkbox"] { width: auto; min-height: auto; flex: none; }
+  .floorplan-table-row label { display: inline; margin: 0; color: var(--text); font-size: 0.88rem; }
+  .floorplan-table-inactive { opacity: 0.55; }
+  .floorplan-inactive-badge { background: var(--status-grey-bg); color: var(--status-grey-text); }
   .time-cell { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
   @media (max-width: 639px) {
     .time-cell { font-size: 16px; }
@@ -378,6 +392,41 @@
     <h2>Servicesessies</h2>
     <div id="service-session-message"></div>
     <div id="service-session-list" class="service-session-list"></div>
+  </section>
+
+  <!-- R1.5-P2E-2 — CAP-D03.02 Floorplan Management pilot administration.
+       Composes the existing, already-authorized nine /floorplans*
+       /floorplan-versions* routes (R1.5-P2B) and the read-only
+       GET /floorplan-resources/tables inventory route (R1.5-P2E-1) — no
+       new backend surface, no schema/permission change. Date-independent
+       by design (a Floorplan/version has no date dimension) — deliberately
+       NOT wired to listDateInput, unlike Servicesessies above. Every
+       mutation here is re-validated authoritatively server-side regardless
+       of what this panel predicts; this panel never invents a conflict
+       the API cannot itself report. -->
+  <section class="full-width">
+    <h2>Floorplannen</h2>
+    <div id="floorplan-message"></div>
+    <div id="floorplan-refresh-message"></div>
+    <form id="floorplan-create-form" class="compact-form">
+      <label for="floorplan-name-input">Naam</label>
+      <input id="floorplan-name-input" type="text" required placeholder="bijv. Hoofdvloer" />
+      <button type="submit">Floorplan aanmaken</button>
+    </form>
+    <div id="floorplan-list" style="margin-top: 1rem;"></div>
+    <div id="floorplan-empty" class="empty" style="display:none;">Nog geen floorplannen.</div>
+
+    <div id="floorplan-version-section" style="display:none; margin-top: 1.25rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+      <h3 id="floorplan-version-heading" style="margin: 0 0 0.5rem; font-size: 16px;"></h3>
+      <button type="button" id="floorplan-create-draft-button" class="secondary">Nieuwe conceptversie</button>
+      <div id="floorplan-version-list" style="margin-top: 0.75rem;"></div>
+      <div id="floorplan-version-empty" class="empty" style="display:none;">Nog geen versies voor dit floorplan.</div>
+
+      <div id="floorplan-membership-editor" style="display:none; margin-top: 1rem;">
+        <div id="floorplan-membership-areas"></div>
+        <button type="button" id="floorplan-membership-save-button">Tafeltoewijzing opslaan</button>
+      </div>
+    </div>
   </section>
 
   <!-- P1-B4-C — the ONE authoritative seating panel, shared by BOTH entry
@@ -625,6 +674,7 @@
   function initApp() {
     loadList();
     loadServiceSessions();
+    loadFloorplanPanel();
     loadClosingDays();
     loadResourceBlocks();
     loadOccupancy();
@@ -2271,6 +2321,659 @@
         showMessage(serviceSessionMessage, "Netwerkfout: kon de server niet bereiken.", "error");
       }
     });
+  }
+
+  // --- Floorplannen (R1.5-P2E-2) ------------------------------------
+  // Composes the existing nine /floorplans*//floorplan-versions* routes
+  // (R1.5-P2B) plus the read-only GET /floorplan-resources/tables
+  // inventory route (R1.5-P2E-1) — no new backend surface. Date-
+  // independent (unlike Servicesessies above): never wired to
+  // listDateInput. Every mutation is re-validated authoritatively
+  // server-side regardless of what this panel predicts; this panel never
+  // fabricates a conflict the API cannot itself report — the backend
+  // remains last-write-wins under its own Floorplan advisory lock.
+  const FLOORPLAN_VERSION_STATUS_LABELS = { Draft: "Concept", Published: "Gepubliceerd", Archived: "Gearchiveerd" };
+  const FLOORPLAN_AREAS = ["Sushi", "Teppanyaki"];
+
+  const floorplanMessage = document.getElementById("floorplan-message");
+  // R1.5-P2E-2 — a SEPARATE element from floorplanMessage above, used only
+  // by the three load functions for their own read/refresh outcome. A
+  // mutation's own success/failure (shown on floorplanMessage) is never
+  // overwritten by a subsequent post-mutation reload that happens to fail
+  // — the reload failure surfaces here instead, as its own distinct
+  // warning, exactly as required: preserve the success acknowledgement,
+  // still show that the list itself could not be refreshed.
+  const floorplanRefreshMessage = document.getElementById("floorplan-refresh-message");
+  const floorplanCreateForm = document.getElementById("floorplan-create-form");
+  const floorplanNameInput = document.getElementById("floorplan-name-input");
+  const floorplanList = document.getElementById("floorplan-list");
+  const floorplanEmpty = document.getElementById("floorplan-empty");
+  const floorplanVersionSection = document.getElementById("floorplan-version-section");
+  const floorplanVersionHeading = document.getElementById("floorplan-version-heading");
+  const floorplanCreateDraftButton = document.getElementById("floorplan-create-draft-button");
+  const floorplanVersionList = document.getElementById("floorplan-version-list");
+  const floorplanVersionEmpty = document.getElementById("floorplan-version-empty");
+  const floorplanMembershipEditor = document.getElementById("floorplan-membership-editor");
+  const floorplanMembershipAreas = document.getElementById("floorplan-membership-areas");
+  const floorplanMembershipSaveButton = document.getElementById("floorplan-membership-save-button");
+
+  // Reloaded once per panel refresh (loadFloorplanPanel) — never per
+  // version/selection change.
+  let floorplans = [];
+  let tableInventory = [];
+  let selectedFloorplanId = null;
+  let versionsForSelectedFloorplan = [];
+  let selectedVersionId = null;
+  let selectedVersionDetail = null; // { version, tableIds } from GET /floorplan-versions/:id
+  // The last AUTHORITATIVE (server-confirmed) membership set for
+  // selectedVersionId, and the staff member's current, possibly-unsaved
+  // edit of it. Equal immediately after every load; diverge only through
+  // checkbox/select-all/clear interaction on a Draft.
+  let authoritativeMembershipTableIds = new Set();
+  let pendingMembershipTableIds = new Set();
+  // One panel-wide mutation guard — Create Floorplan, Create Draft, Save
+  // membership, Publish, Set default, and Archive all share it, mirroring
+  // the Servicesessies panel's own single-flag convention above.
+  let floorplanActionInFlight = false;
+
+  // Independent monotonic tokens for the three load levels (panel,
+  // versions-for-a-floorplan, one version's own detail) — a slower,
+  // superseded response at any level is discarded rather than overwriting
+  // a newer selection's state.
+  let floorplanPanelRequestToken = 0;
+  let floorplanVersionsRequestToken = 0;
+  let floorplanVersionDetailRequestToken = 0;
+
+  function isMembershipDirty() {
+    if (!selectedVersionDetail || selectedVersionDetail.version.status !== "Draft") return false;
+    if (pendingMembershipTableIds.size !== authoritativeMembershipTableIds.size) return true;
+    for (const id of pendingMembershipTableIds) {
+      if (!authoritativeMembershipTableIds.has(id)) return true;
+    }
+    return false;
+  }
+
+  // Native confirmation dialog — Cancel keeps the editor and its changes
+  // intact (returns false, caller does nothing further); Confirm discards
+  // the local edit and lets the caller proceed to the new selection.
+  function confirmDiscardDirtyMembership() {
+    if (!isMembershipDirty()) return true;
+    return confirm("Niet-opgeslagen wijzigingen in de tafeltoewijzing gaan verloren. Doorgaan?");
+  }
+
+  async function loadFloorplanPanel() {
+    const requestToken = ++floorplanPanelRequestToken;
+    floorplans = [];
+    tableInventory = [];
+    clearMessage(floorplanRefreshMessage);
+    renderFloorplanPanel();
+    try {
+      const [floorplansRes, tablesRes] = await Promise.all([fetch("/floorplans"), fetch("/floorplan-resources/tables")]);
+      if (requestToken !== floorplanPanelRequestToken) return;
+      if (floorplansRes.status === 401 || floorplansRes.status === 403 || tablesRes.status === 401 || tablesRes.status === 403) {
+        showMessage(floorplanRefreshMessage, "Je hebt geen rechten om floorplannen te bekijken.", "error");
+        renderFloorplanPanel();
+        return;
+      }
+      if (!floorplansRes.ok || !tablesRes.ok) {
+        showMessage(floorplanRefreshMessage, "Kon floorplannen niet laden.", "error");
+        renderFloorplanPanel();
+        return;
+      }
+      const floorplansData = await floorplansRes.json();
+      const tablesData = await tablesRes.json();
+      if (requestToken !== floorplanPanelRequestToken) return;
+      floorplans = floorplansData.floorplans || [];
+      tableInventory = tablesData.tables || [];
+      if (selectedFloorplanId && !floorplans.some((f) => f.id === selectedFloorplanId)) {
+        selectedFloorplanId = null;
+        versionsForSelectedFloorplan = [];
+        selectedVersionId = null;
+        selectedVersionDetail = null;
+        authoritativeMembershipTableIds = new Set();
+        pendingMembershipTableIds = new Set();
+      }
+      clearMessage(floorplanRefreshMessage);
+      renderFloorplanPanel();
+      if (selectedFloorplanId) await loadFloorplanVersions();
+    } catch (err) {
+      if (requestToken !== floorplanPanelRequestToken) return;
+      floorplans = [];
+      tableInventory = [];
+      showMessage(floorplanRefreshMessage, "Netwerkfout: kon floorplannen niet laden.", "error");
+      renderFloorplanPanel();
+    }
+  }
+
+  async function loadFloorplanVersions() {
+    const requestToken = ++floorplanVersionsRequestToken;
+    versionsForSelectedFloorplan = [];
+    renderFloorplanPanel();
+    try {
+      const res = await fetch(`/floorplans/${encodeURIComponent(selectedFloorplanId)}/versions`);
+      if (requestToken !== floorplanVersionsRequestToken) return;
+      if (res.status === 401 || res.status === 403) {
+        showMessage(floorplanRefreshMessage, "Je hebt geen rechten om versies te bekijken.", "error");
+        renderFloorplanPanel();
+        return;
+      }
+      if (!res.ok) {
+        showMessage(floorplanRefreshMessage, "Kon versies niet laden.", "error");
+        renderFloorplanPanel();
+        return;
+      }
+      const data = await res.json();
+      if (requestToken !== floorplanVersionsRequestToken) return;
+      versionsForSelectedFloorplan = data.versions || [];
+      if (selectedVersionId && !versionsForSelectedFloorplan.some((v) => v.id === selectedVersionId)) {
+        selectedVersionId = null;
+        selectedVersionDetail = null;
+        authoritativeMembershipTableIds = new Set();
+        pendingMembershipTableIds = new Set();
+      }
+      clearMessage(floorplanRefreshMessage);
+      renderFloorplanPanel();
+      if (selectedVersionId) await loadSelectedVersionDetail();
+    } catch (err) {
+      if (requestToken !== floorplanVersionsRequestToken) return;
+      versionsForSelectedFloorplan = [];
+      showMessage(floorplanRefreshMessage, "Netwerkfout: kon versies niet laden.", "error");
+      renderFloorplanPanel();
+    }
+  }
+
+  async function loadSelectedVersionDetail() {
+    const requestToken = ++floorplanVersionDetailRequestToken;
+    selectedVersionDetail = null;
+    authoritativeMembershipTableIds = new Set();
+    pendingMembershipTableIds = new Set();
+    renderFloorplanPanel();
+    try {
+      const res = await fetch(`/floorplan-versions/${encodeURIComponent(selectedVersionId)}`);
+      if (requestToken !== floorplanVersionDetailRequestToken) return;
+      if (res.status === 401 || res.status === 403) {
+        showMessage(floorplanRefreshMessage, "Je hebt geen rechten om deze versie te bekijken.", "error");
+        renderFloorplanPanel();
+        return;
+      }
+      if (!res.ok) {
+        showMessage(floorplanRefreshMessage, "Kon versiedetails niet laden.", "error");
+        renderFloorplanPanel();
+        return;
+      }
+      const data = await res.json();
+      if (requestToken !== floorplanVersionDetailRequestToken) return;
+      selectedVersionDetail = data;
+      authoritativeMembershipTableIds = new Set(data.tableIds || []);
+      pendingMembershipTableIds = new Set(authoritativeMembershipTableIds);
+      clearMessage(floorplanRefreshMessage);
+      renderFloorplanPanel();
+    } catch (err) {
+      if (requestToken !== floorplanVersionDetailRequestToken) return;
+      selectedVersionDetail = null;
+      authoritativeMembershipTableIds = new Set();
+      pendingMembershipTableIds = new Set();
+      showMessage(floorplanRefreshMessage, "Netwerkfout: kon versiedetails niet laden.", "error");
+      renderFloorplanPanel();
+    }
+  }
+
+  async function selectFloorplan(floorplanId) {
+    if (selectedFloorplanId === floorplanId) return;
+    if (!confirmDiscardDirtyMembership()) return;
+    selectedFloorplanId = floorplanId;
+    selectedVersionId = null;
+    versionsForSelectedFloorplan = [];
+    selectedVersionDetail = null;
+    authoritativeMembershipTableIds = new Set();
+    pendingMembershipTableIds = new Set();
+    clearMessage(floorplanMessage);
+    renderFloorplanPanel();
+    await loadFloorplanVersions();
+  }
+
+  async function selectVersionForMembershipEditing(versionId) {
+    if (selectedVersionId === versionId) return;
+    if (!confirmDiscardDirtyMembership()) return;
+    selectedVersionId = versionId;
+    selectedVersionDetail = null;
+    authoritativeMembershipTableIds = new Set();
+    pendingMembershipTableIds = new Set();
+    renderFloorplanPanel();
+    await loadSelectedVersionDetail();
+  }
+
+  function floorplanMutationErrorMessage(data, res) {
+    if (res.status === 401 || res.status === 403) return "Je hebt geen rechten om deze actie uit te voeren.";
+    switch (data.type) {
+      case "FLOORPLAN_NOT_FOUND":
+        return "Floorplan niet gevonden — ververs de pagina.";
+      case "VERSION_NOT_FOUND":
+        return "Versie niet gevonden — ververs de pagina.";
+      case "VERSION_NOT_DRAFT":
+        return "Deze versie is geen concept meer en kan niet bewerkt worden.";
+      case "UNKNOWN_TABLE_IDS":
+        return "Eén of meer geselecteerde tafels bestaan niet meer — ververs de pagina en probeer opnieuw.";
+      case "INVALID_TRANSITION":
+        return "Deze actie is niet meer mogelijk — de status is inmiddels gewijzigd.";
+      case "NO_MEMBERS":
+        return "Voeg eerst minstens één tafel toe voordat je publiceert.";
+      case "VERSION_NOT_PUBLISHED":
+        return "Alleen gepubliceerde versies kunnen als standaard worden ingesteld.";
+      case "VERSION_BELONGS_TO_DIFFERENT_FLOORPLAN":
+        return "Deze versie hoort niet bij dit floorplan.";
+      case "CANNOT_ARCHIVE_DEFAULT_VERSION":
+        return "De standaardversie kan niet gearchiveerd worden — stel eerst een andere versie in als standaard.";
+      default:
+        return "Onbekende fout.";
+    }
+  }
+
+  // Shared mutation guard — Create Floorplan/Draft, Save membership,
+  // Publish, Set default, and Archive all route through this. A second
+  // click while an action is already in flight is a no-op; the flag is
+  // always cleared, and the panel always re-rendered, in `finally`.
+  async function runFloorplanAction(action) {
+    if (floorplanActionInFlight) return;
+    floorplanActionInFlight = true;
+    renderFloorplanPanel();
+    try {
+      await action();
+    } finally {
+      floorplanActionInFlight = false;
+      renderFloorplanPanel();
+    }
+  }
+
+  floorplanCreateForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = floorplanNameInput.value.trim();
+    if (!name) {
+      showMessage(floorplanMessage, "Naam is verplicht.", "error");
+      return;
+    }
+    // Create never prompts — only Publish/Set default/Archive do.
+    await runFloorplanAction(async () => {
+      try {
+        const res = await fetch("/floorplans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(floorplanMessage, floorplanMutationErrorMessage(data, res), "error");
+          return;
+        }
+        floorplanNameInput.value = "";
+        showMessage(floorplanMessage, "Floorplan aangemaakt.", "ok");
+        selectedFloorplanId = data.floorplan.id;
+        await loadFloorplanPanel();
+      } catch (err) {
+        showMessage(floorplanMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  });
+
+  floorplanCreateDraftButton.addEventListener("click", async () => {
+    // Create never prompts — only Publish/Set default/Archive do.
+    await runFloorplanAction(async () => {
+      try {
+        const res = await fetch(`/floorplans/${encodeURIComponent(selectedFloorplanId)}/versions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(floorplanMessage, floorplanMutationErrorMessage(data, res), "error");
+          return;
+        }
+        showMessage(floorplanMessage, `Conceptversie aangemaakt (revisie ${data.version.revision}).`, "ok");
+        selectedVersionId = data.version.id;
+        await loadFloorplanVersions();
+      } catch (err) {
+        showMessage(floorplanMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  });
+
+  floorplanMembershipSaveButton.addEventListener("click", async () => {
+    // Save never prompts — the complete-set PUT is not destructive to
+    // anything outside this one Draft version, unlike Publish/Default/Archive.
+    await runFloorplanAction(async () => {
+      try {
+        const tableIds = [...pendingMembershipTableIds];
+        const res = await fetch(`/floorplan-versions/${encodeURIComponent(selectedVersionId)}/resources`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({ tableIds }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(floorplanMessage, floorplanMutationErrorMessage(data, res), "error");
+          return;
+        }
+        showMessage(floorplanMessage, `Tafeltoewijzing opgeslagen (${(data.tableIds || []).length} tafels).`, "ok");
+        await loadFloorplanVersions();
+      } catch (err) {
+        showMessage(floorplanMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  });
+
+  async function publishVersion(version) {
+    if (!confirm(`Conceptversie (revisie ${version.revision}) publiceren? Dit kan niet ongedaan worden gemaakt.`)) return;
+    await runFloorplanAction(async () => {
+      try {
+        const res = await fetch(`/floorplan-versions/${encodeURIComponent(version.id)}/publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(floorplanMessage, floorplanMutationErrorMessage(data, res), "error");
+          return;
+        }
+        showMessage(floorplanMessage, "Versie gepubliceerd.", "ok");
+        await loadFloorplanVersions();
+      } catch (err) {
+        showMessage(floorplanMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  async function setVersionAsDefault(version) {
+    if (
+      !confirm(
+        `Versie (revisie ${version.revision}) als standaard floorplan instellen? Dit heeft direct effect op de tafeltoewijzing voor nog niet geopende diensten.`
+      )
+    )
+      return;
+    await runFloorplanAction(async () => {
+      try {
+        const res = await fetch(`/floorplans/${encodeURIComponent(selectedFloorplanId)}/default-version`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({ versionId: version.id }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(floorplanMessage, floorplanMutationErrorMessage(data, res), "error");
+          return;
+        }
+        showMessage(floorplanMessage, "Ingesteld als standaard floorplan.", "ok");
+        await loadFloorplanPanel();
+      } catch (err) {
+        showMessage(floorplanMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  async function archiveVersion(version) {
+    if (!confirm(`Versie (revisie ${version.revision}) archiveren? Dit kan niet ongedaan worden gemaakt.`)) return;
+    await runFloorplanAction(async () => {
+      try {
+        const res = await fetch(`/floorplan-versions/${encodeURIComponent(version.id)}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(floorplanMessage, floorplanMutationErrorMessage(data, res), "error");
+          return;
+        }
+        showMessage(floorplanMessage, "Versie gearchiveerd.", "ok");
+        await loadFloorplanVersions();
+      } catch (err) {
+        showMessage(floorplanMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  function renderFloorplanList() {
+    floorplanList.innerHTML = "";
+    floorplanEmpty.style.display = floorplans.length === 0 ? "block" : "none";
+    for (const f of floorplans) {
+      const row = document.createElement("div");
+      row.className = "list-item";
+
+      const label = document.createElement("span");
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = f.name;
+      label.appendChild(nameSpan);
+      const idSpan = document.createElement("span");
+      idSpan.className = "floorplan-id-hint";
+      idSpan.textContent = f.id;
+      label.appendChild(idSpan);
+      row.appendChild(label);
+
+      const actions = document.createElement("div");
+      actions.className = "action-cell";
+      const isSelected = selectedFloorplanId === f.id;
+      const selectButton = document.createElement("button");
+      selectButton.type = "button";
+      selectButton.className = isSelected ? "confirm-button" : "edit-button";
+      selectButton.textContent = isSelected ? "Geselecteerd" : "Selecteren";
+      selectButton.disabled = floorplanActionInFlight || isSelected;
+      selectButton.addEventListener("click", () => selectFloorplan(f.id));
+      actions.appendChild(selectButton);
+      row.appendChild(actions);
+
+      floorplanList.appendChild(row);
+    }
+  }
+
+  function renderVersionList() {
+    floorplanVersionList.innerHTML = "";
+    floorplanVersionEmpty.style.display = versionsForSelectedFloorplan.length === 0 ? "block" : "none";
+    const selectedFloorplan = floorplans.find((f) => f.id === selectedFloorplanId);
+
+    for (const v of versionsForSelectedFloorplan) {
+      const isDefault = !!selectedFloorplan && selectedFloorplan.defaultVersionId === v.id;
+
+      const row = document.createElement("div");
+      row.className = "list-item";
+
+      const label = document.createElement("span");
+      const revisionSpan = document.createElement("span");
+      revisionSpan.textContent = `Revisie ${v.revision}`;
+      label.appendChild(revisionSpan);
+      label.appendChild(document.createTextNode(" "));
+      const statusBadge = document.createElement("span");
+      statusBadge.className = "status floorplan-version-status-" + v.status;
+      statusBadge.textContent = FLOORPLAN_VERSION_STATUS_LABELS[v.status] || v.status;
+      label.appendChild(statusBadge);
+      if (isDefault) {
+        label.appendChild(document.createTextNode(" "));
+        const defaultBadge = document.createElement("span");
+        defaultBadge.className = "status floorplan-default-badge";
+        defaultBadge.textContent = "Standaard";
+        label.appendChild(defaultBadge);
+      }
+      label.appendChild(document.createElement("br"));
+      const createdSpan = document.createElement("span");
+      createdSpan.className = "floorplan-version-timestamp";
+      createdSpan.textContent = "Aangemaakt: " + formatDateTimeNL(v.createdAt);
+      label.appendChild(createdSpan);
+      if (v.publishedAt) {
+        label.appendChild(document.createElement("br"));
+        const publishedSpan = document.createElement("span");
+        publishedSpan.className = "floorplan-version-timestamp";
+        publishedSpan.textContent = "Gepubliceerd: " + formatDateTimeNL(v.publishedAt);
+        label.appendChild(publishedSpan);
+      }
+      if (selectedVersionId === v.id && selectedVersionDetail) {
+        label.appendChild(document.createElement("br"));
+        const countSpan = document.createElement("span");
+        countSpan.className = "floorplan-version-timestamp";
+        countSpan.textContent = `Aantal tafels: ${selectedVersionDetail.tableIds.length}`;
+        label.appendChild(countSpan);
+      }
+      row.appendChild(label);
+
+      const actions = document.createElement("div");
+      actions.className = "action-cell";
+      if (v.status === "Draft") {
+        const editButton = document.createElement("button");
+        editButton.type = "button";
+        editButton.className = "edit-button";
+        editButton.textContent = selectedVersionId === v.id ? "Ledenlijst geopend" : "Leden bewerken";
+        editButton.disabled = floorplanActionInFlight || selectedVersionId === v.id;
+        editButton.addEventListener("click", () => selectVersionForMembershipEditing(v.id));
+        actions.appendChild(editButton);
+
+        const publishButton = document.createElement("button");
+        publishButton.type = "button";
+        publishButton.className = "confirm-button";
+        publishButton.textContent = "Publiceren";
+        publishButton.disabled = floorplanActionInFlight;
+        publishButton.addEventListener("click", () => publishVersion(v));
+        actions.appendChild(publishButton);
+      } else if (v.status === "Published" && !isDefault) {
+        const defaultButton = document.createElement("button");
+        defaultButton.type = "button";
+        defaultButton.className = "confirm-button";
+        defaultButton.textContent = "Als standaard instellen";
+        defaultButton.disabled = floorplanActionInFlight;
+        defaultButton.addEventListener("click", () => setVersionAsDefault(v));
+        actions.appendChild(defaultButton);
+
+        const archiveButton = document.createElement("button");
+        archiveButton.type = "button";
+        archiveButton.className = "cancel-button";
+        archiveButton.textContent = "Archiveren";
+        archiveButton.disabled = floorplanActionInFlight;
+        archiveButton.addEventListener("click", () => archiveVersion(v));
+        actions.appendChild(archiveButton);
+      }
+      // Published+default and Archived: no mutation action at all — the
+      // current default never exposes Archive, and a terminal Archived
+      // version never exposes anything.
+      row.appendChild(actions);
+
+      floorplanVersionList.appendChild(row);
+    }
+  }
+
+  function buildTableCheckboxRow(tableId, table) {
+    const row = document.createElement("div");
+    row.className = "list-item floorplan-table-row" + (table && table.status === "Inactive" ? " floorplan-table-inactive" : "");
+
+    const checkboxId = "floorplan-table-checkbox-" + tableId;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = checkboxId;
+    checkbox.checked = pendingMembershipTableIds.has(tableId);
+    checkbox.disabled = floorplanActionInFlight;
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) pendingMembershipTableIds.add(tableId);
+      else pendingMembershipTableIds.delete(tableId);
+      renderFloorplanPanel();
+    });
+
+    const label = document.createElement("label");
+    label.setAttribute("for", checkboxId);
+    if (table) {
+      label.textContent = `${table.operationalLabel} — ${table.nominalCapacity}p${table.supportsSharedSeating ? " — grill" : ""}`;
+      if (table.status === "Inactive") {
+        label.appendChild(document.createTextNode(" "));
+        const inactiveBadge = document.createElement("span");
+        inactiveBadge.className = "status floorplan-inactive-badge";
+        inactiveBadge.textContent = "Inactief";
+        label.appendChild(inactiveBadge);
+      }
+    } else {
+      // Unknown historical member id — never fabricate area/label/capacity/status.
+      label.textContent = "Onbekende tafel (" + tableId + ")";
+    }
+
+    row.appendChild(checkbox);
+    row.appendChild(label);
+    return row;
+  }
+
+  function renderMembershipEditor() {
+    const isDraftSelected = !!selectedVersionDetail && selectedVersionDetail.version.status === "Draft";
+    floorplanMembershipEditor.style.display = isDraftSelected ? "" : "none";
+    floorplanMembershipAreas.innerHTML = "";
+    if (!isDraftSelected) return;
+
+    const inventoryById = new Map(tableInventory.map((t) => [t.id, t]));
+    for (const areaId of FLOORPLAN_AREAS) {
+      // tableInventory is already ordered by the server (GET
+      // /floorplan-resources/tables) — filtering by area preserves that
+      // order, never re-sorted here.
+      const areaTables = tableInventory.filter((t) => t.areaId === areaId);
+
+      const fieldset = document.createElement("fieldset");
+      fieldset.className = "floorplan-area-fieldset";
+      const legend = document.createElement("legend");
+      legend.textContent = areaId;
+      fieldset.appendChild(legend);
+
+      const controls = document.createElement("div");
+      controls.className = "action-cell";
+      const selectAllButton = document.createElement("button");
+      selectAllButton.type = "button";
+      selectAllButton.className = "edit-button";
+      selectAllButton.textContent = "Alles selecteren";
+      selectAllButton.disabled = floorplanActionInFlight;
+      selectAllButton.addEventListener("click", () => {
+        for (const t of areaTables) pendingMembershipTableIds.add(t.id);
+        renderFloorplanPanel();
+      });
+      const clearAreaButton = document.createElement("button");
+      clearAreaButton.type = "button";
+      clearAreaButton.className = "edit-button";
+      clearAreaButton.textContent = "Wissen";
+      clearAreaButton.disabled = floorplanActionInFlight;
+      clearAreaButton.addEventListener("click", () => {
+        for (const t of areaTables) pendingMembershipTableIds.delete(t.id);
+        renderFloorplanPanel();
+      });
+      controls.appendChild(selectAllButton);
+      controls.appendChild(clearAreaButton);
+      fieldset.appendChild(controls);
+
+      for (const table of areaTables) {
+        fieldset.appendChild(buildTableCheckboxRow(table.id, table));
+      }
+
+      floorplanMembershipAreas.appendChild(fieldset);
+    }
+
+    // Unknown historical member ids — present in the pending set but
+    // absent from the known inventory. Preserved in the complete-set
+    // payload unless the staff member explicitly unchecks them here.
+    const unknownIds = [...pendingMembershipTableIds].filter((id) => !inventoryById.has(id)).sort();
+    if (unknownIds.length > 0) {
+      const fieldset = document.createElement("fieldset");
+      fieldset.className = "floorplan-area-fieldset";
+      const legend = document.createElement("legend");
+      legend.textContent = "Onbekend";
+      fieldset.appendChild(legend);
+      for (const id of unknownIds) {
+        fieldset.appendChild(buildTableCheckboxRow(id, null));
+      }
+      floorplanMembershipAreas.appendChild(fieldset);
+    }
+
+    floorplanMembershipSaveButton.disabled = floorplanActionInFlight || !isMembershipDirty();
+  }
+
+  function renderFloorplanPanel() {
+    renderFloorplanList();
+    const hasSelectedFloorplan = !!selectedFloorplanId;
+    floorplanVersionSection.style.display = hasSelectedFloorplan ? "" : "none";
+    if (!hasSelectedFloorplan) return;
+    const selectedFloorplan = floorplans.find((f) => f.id === selectedFloorplanId);
+    floorplanVersionHeading.textContent = selectedFloorplan ? selectedFloorplan.name : "";
+    floorplanCreateDraftButton.disabled = floorplanActionInFlight;
+    renderVersionList();
+    renderMembershipEditor();
   }
 
   // --- Sluitingsdagen -------------------------------------------------
