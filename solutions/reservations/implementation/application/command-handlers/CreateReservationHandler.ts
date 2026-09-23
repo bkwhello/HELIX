@@ -186,7 +186,10 @@ export class CreateReservationHandler {
     });
     if (!servicePeriod.isValid) {
       return fail([
-        violation("CAP-D01.01-R06", servicePeriod.reason ?? "The Service Period is not valid for this reservation date, time, and party size."),
+        violation(
+          servicePeriod.ruleId ?? "CAP-D01.01-R06",
+          servicePeriod.reason ?? "The Service Period is not valid for this reservation date, time, and party size."
+        ),
       ]);
     }
 

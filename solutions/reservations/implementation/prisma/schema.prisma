@@ -219,9 +219,49 @@ model ServiceSession {
   version     Int       @default(1)
 
   floorplanVersion FloorplanVersion? @relation(fields: [floorplanVersionId], references: [id], onDelete: Restrict)
+  // R1.6-P3A — integrity backstop only, not a behavior change: serviceCode
+  // is still always DERIVED from the session's own (serviceCode,
+  // serviceDate) identity (deriveServiceCode + toLocalServiceDate), never
+  // read from this relation or from the referenced Service row — see
+  // domain/repositories/ServiceSessionRepository.ts's own "never a stored
+  // servicePeriodId" doc comment, which this FK does not change. onDelete:
+  // Restrict — the two seeded rows (lunch, dinner) are never deleted by
+  // anything in this codebase, so this can never actually fire in
+  // practice — it exists purely so an impossible serviceCode value can
+  // never be written at all. onUpdate: Restrict — "lunch"/"dinner" are
+  // the immutable natural key every ServiceSession's serviceCode derives
+  // its identity from; no application code ever renames a Service's
+  // `code` (no such update path exists), and this FK ensures the
+  // database itself would refuse it too, rather than silently cascading
+  // a rename into every referencing ServiceSession row.
+  service Service @relation(fields: [serviceCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([serviceCode, serviceDate])
   @@map("service_sessions")
+}
+
+// R1.6-P3A — CAP-D02.01 Service Management, persisted-catalog foundation
+// only (see domain/availability/ServiceDefinition.ts's own header for the
+// full boundary against Service.ts/ServicePeriod.ts/ServiceSession.ts).
+// Exactly two rows exist, seeded by this table's own migration — code is
+// the immutable natural key (never "lunch"/"dinner" renamed, matching
+// every other place in this codebase that already hardcodes those exact
+// two strings). No create/delete/update path exists in this increment
+// (Chief Engineer decision: no Create/Delete Service operation) — Prisma
+// generates the usual client methods regardless, but nothing in the
+// application layer calls them yet. No version column: a small,
+// slowly-changing reference record, same posture as ClosingDay/
+// ServicePeriodOverride, not a versioned lifecycle object.
+model Service {
+  code        String   @id
+  displayName String   @map("display_name")
+  enabled     Boolean
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  serviceSessions ServiceSession[]
+
+  @@map("services")
 }
 
 // R1.5-P2B — CAP-D03.02 Floorplan Management, authoring/default-version

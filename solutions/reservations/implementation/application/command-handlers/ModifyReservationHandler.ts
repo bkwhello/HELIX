@@ -100,11 +100,32 @@ export class ModifyReservationHandler {
       });
       if (!validation.isValid) {
         return fail([
-          violation("CAP-D01.01-R06", validation.reason ?? "The Service Period is not valid for this reservation date, time, and party size."),
+          violation(
+            validation.ruleId ?? "CAP-D01.01-R06",
+            validation.reason ?? "The Service Period is not valid for this reservation date, time, and party size."
+          ),
         ]);
       }
     } else if (dateChanging) {
-      changes = { ...request.changes, servicePeriodId: deriveServiceCode(effectiveDate) };
+      // R1.6-P3A — the derived code can never itself MISMATCH (it is
+      // derived from the very date being set), but the persisted Service
+      // it now names may still be disabled or absent — this call exists
+      // to reach that new check, not to re-prove the mismatch case.
+      const derivedServicePeriodId = deriveServiceCode(effectiveDate);
+      const validation = await this.servicePeriodReader.validateReservation({
+        servicePeriodId: derivedServicePeriodId,
+        reservationDate: effectiveDate,
+        partySize: request.changes.partySize ?? aggregate.getPartySize(),
+      });
+      if (!validation.isValid) {
+        return fail([
+          violation(
+            validation.ruleId ?? "CAP-D01.01-R06",
+            validation.reason ?? "The Service Period is not valid for this reservation date, time, and party size."
+          ),
+        ]);
+      }
+      changes = { ...request.changes, servicePeriodId: derivedServicePeriodId };
     }
 
     const result = aggregate.modify(

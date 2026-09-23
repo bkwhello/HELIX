@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createTestPrismaClient, truncateReservationDomainTables, truncateSeatingDomainTables } from "./support/testDatabaseSafety.js";
 import { buildFloorHarness } from "./support/floorTestHarness.js";
 import { CanonicalServicePeriodReader } from "../../infrastructure/CanonicalServicePeriodReader.js";
+import { PrismaServiceDefinitionRepository } from "../../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { seedFloor } from "../../ops/floor/seedFloor.js";
 import { Actor, ActorKind, ActorRole } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceCategory } from "../../domain/value-objects/ReservationSource.js";
@@ -295,7 +296,7 @@ describe("Failure injection — R1.5-P1B Modify seating revalidation, forced fai
     // servicePeriodId, no isServicePeriodStillValid confirmation" trigger
     // no longer rejects, since the server now derives the correct code
     // automatically in that case.
-    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW, new CanonicalServicePeriodReader());
+    const { availabilityOrchestrator, seatingOrchestrator } = buildFloorHarness(prisma, NOW, new CanonicalServicePeriodReader(new PrismaServiceDefinitionRepository(prisma)));
     const table14 = await prisma.table.findFirstOrThrow({ where: { operationalLabel: "Table 15" } });
 
     const created = await availabilityOrchestrator.createWithCapacity({

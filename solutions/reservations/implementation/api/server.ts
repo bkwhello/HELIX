@@ -12,6 +12,7 @@ import { ScryptPasswordHasher } from "../infrastructure/ScryptPasswordHasher.js"
 import { RandomSessionTokenGenerator } from "../infrastructure/RandomSessionTokenGenerator.js";
 import { PrismaContactRepository } from "../infrastructure/persistence/PrismaContactRepository.js";
 import { CanonicalServicePeriodReader } from "../infrastructure/CanonicalServicePeriodReader.js";
+import { PrismaServiceDefinitionRepository } from "../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { SystemClock } from "../infrastructure/SystemClock.js";
 import { RandomIdGenerator } from "../infrastructure/RandomIdGenerator.js";
 import { RandomEventIdGenerator } from "../infrastructure/RandomEventIdGenerator.js";
@@ -44,7 +45,19 @@ const app = createApp({
   // placeholder. See domain/availability/Service.ts — this is a minimum,
   // code-level-only slice of CAP-D02.01, not the full live per-date
   // Service Period lifecycle (CAP-D02.02, still Designed/unimplemented).
-  servicePeriodReader: new CanonicalServicePeriodReader(),
+  //
+  // R1.6-P3A — also now consults the persisted Service catalog
+  // (CAP-D02.01's own foundation) via the SAME shared `prisma` client as
+  // every other adapter here — no second connection. MIGRATION
+  // PREREQUISITE: this deployment requires migration
+  // `20260922145528_add_service_catalog` to be applied
+  // (`prisma migrate deploy`) before this process starts — it seeds the
+  // two canonical rows (`lunch`, `dinner`, both enabled) this reader
+  // looks up on every reservation create/modify/walk-in. Without it,
+  // every Service-code validation fails closed (CAP-D02.01-R01), not
+  // silently passes — see CanonicalServicePeriodReader.ts's own doc
+  // comment.
+  servicePeriodReader: new CanonicalServicePeriodReader(new PrismaServiceDefinitionRepository(prisma)),
   closingDayStore: new PrismaClosingDayStore(prisma),
   idGenerator: new RandomIdGenerator(),
   eventIdGenerator: new RandomEventIdGenerator(),

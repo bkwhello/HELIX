@@ -5,6 +5,9 @@ import { ContactRepository, ContactRecord, CreateContactRecordInput, PossibleMat
 import { ContactStatus } from "../../domain/value-objects/ContactStatus.js";
 import { TransactionManager } from "../../application/ports/TransactionManager.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
+import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDefinitionRepository.js";
+import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
+import { ServiceCode } from "../../domain/availability/Service.js";
 
 /** No real database in unit-level tests — the "transaction" is just the callback invoked with no tx, consistent with how InMemoryReservationRepository ignores `tx` entirely. */
 export class FakeTransactionManager implements TransactionManager {
@@ -82,6 +85,40 @@ export class FakeServicePeriodReader implements ServicePeriodReader {
   result: ServicePeriodValidation = { isValid: true };
   async validateReservation(): Promise<ServicePeriodValidation> {
     return this.result;
+  }
+}
+
+/**
+ * R1.6-P3A — in-memory ServiceDefinitionRepository fake, seeded with both
+ * canonical rows enabled by default (matching the real migration seed),
+ * so any test that doesn't care about this dimension gets the same
+ * "everything works" behavior as the real repository without touching
+ * Postgres. Tests that DO care call `setEnabled`/`remove` on a specific
+ * code — never mutates the real, shared seeded `services` table any
+ * integration test's own database connection might see.
+ */
+export class FakeServiceDefinitionRepository implements ServiceDefinitionRepository {
+  private readonly rows = new Map<ServiceCode, ServiceDefinition>([
+    ["lunch", { code: "lunch", displayName: "Lunch", enabled: true, createdAt: new Date(0), updatedAt: new Date(0) }],
+    ["dinner", { code: "dinner", displayName: "Dinner", enabled: true, createdAt: new Date(0), updatedAt: new Date(0) }],
+  ]);
+
+  setEnabled(code: ServiceCode, enabled: boolean): void {
+    const existing = this.rows.get(code);
+    if (existing) this.rows.set(code, { ...existing, enabled });
+  }
+
+  /** Simulates a missing/never-seeded row — the fail-closed branch, distinct from an explicitly disabled one. */
+  remove(code: ServiceCode): void {
+    this.rows.delete(code);
+  }
+
+  async findByCode(code: ServiceCode): Promise<ServiceDefinition | null> {
+    return this.rows.get(code) ?? null;
+  }
+
+  async list(): Promise<readonly ServiceDefinition[]> {
+    return [...this.rows.values()].sort((a, b) => a.code.localeCompare(b.code));
   }
 }
 

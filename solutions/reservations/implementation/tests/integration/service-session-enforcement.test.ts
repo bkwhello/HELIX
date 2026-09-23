@@ -3,6 +3,7 @@ import { createTestPrismaClient, truncateSeatingDomainTables, truncateReservatio
 import { buildFloorHarness } from "./support/floorTestHarness.js";
 import { seedFloor } from "../../ops/floor/seedFloor.js";
 import { CanonicalServicePeriodReader } from "../../infrastructure/CanonicalServicePeriodReader.js";
+import { PrismaServiceDefinitionRepository } from "../../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { PrismaServiceSessionRepository } from "../../infrastructure/persistence/PrismaServiceSessionRepository.js";
 import { ServiceSessionService } from "../../application/availability/ServiceSessionService.js";
 import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
@@ -68,7 +69,7 @@ const FLOORPLAN_FIXTURE_ID = `svs-enforcement-floorplan-fixture-${ENF_RUN_ID}`;
  */
 function harness(now: Date = DINNER_INSTANT) {
   const serviceSessionRepository = new PrismaServiceSessionRepository(prisma);
-  const built = buildFloorHarness(prisma, now, new CanonicalServicePeriodReader(), serviceSessionRepository);
+  const built = buildFloorHarness(prisma, now, new CanonicalServicePeriodReader(new PrismaServiceDefinitionRepository(prisma)), serviceSessionRepository);
   const sessionService = new ServiceSessionService(
     serviceSessionRepository,
     new PrismaTransactionManager(prisma),
