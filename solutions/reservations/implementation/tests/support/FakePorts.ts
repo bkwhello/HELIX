@@ -120,6 +120,20 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
   async list(): Promise<readonly ServiceDefinition[]> {
     return [...this.rows.values()].sort((a, b) => a.code.localeCompare(b.code));
   }
+
+  /** R1.6-P3B — mirrors PrismaServiceDefinitionRepository.update()'s own contract: partial patch, `updatedAt` bumped only on an actual call, `null` for an unknown code. */
+  async update(code: ServiceCode, patch: { readonly displayName?: string; readonly enabled?: boolean }): Promise<ServiceDefinition | null> {
+    const existing = this.rows.get(code);
+    if (!existing) return null;
+    const updated: ServiceDefinition = {
+      ...existing,
+      ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      updatedAt: new Date(),
+    };
+    this.rows.set(code, updated);
+    return updated;
+  }
 }
 
 export class FakeDuplicateReservationChecker implements DuplicateReservationChecker {

@@ -57,6 +57,9 @@ import { ServiceSessionService } from "../application/availability/ServiceSessio
 import { isServiceCode } from "../domain/availability/Service.js";
 import { FloorplanRepository } from "../domain/repositories/FloorplanRepository.js";
 import { FloorplanService } from "../application/floor/FloorplanService.js";
+import { ServiceDefinitionRepository } from "../domain/repositories/ServiceDefinitionRepository.js";
+import { ServiceCatalogManagementService } from "../application/availability/ServiceCatalogManagementService.js";
+import { RuleViolation, violation } from "../domain/shared/Result.js";
 import {
   SESSION_COOKIE_NAME,
   createRequireStaffSession,
@@ -191,6 +194,22 @@ export interface AppDependencies {
   floorplans?: {
     readonly floorplanRepository: FloorplanRepository;
     readonly transactionManager: TransactionManager;
+  };
+  /**
+   * R1.6-P3B — CAP-D02.01 Service catalog management. Optional, same "not
+   * available in this deployment" posture as `serviceSessions`/`floorplans`
+   * above: when omitted, GET /services and PATCH /services/:code are not
+   * mounted. Deliberately a single field, not a richer block: the same
+   * `ServiceDefinitionRepository` instance a real deployment already
+   * builds for `servicePeriodReader` (CanonicalServicePeriodReader) is
+   * reused here — see api/server.ts — never a second instance, and never
+   * a second PrismaClient. No transactionManager/idGenerator/clock is
+   * needed: ServiceCatalogManagementService performs a single-row,
+   * last-write-wins update with no lock tier (P3B product decision — no
+   * ETag/version precondition in this increment).
+   */
+  serviceCatalog?: {
+    readonly repository: ServiceDefinitionRepository;
   };
   /**
    * R1.6-B — optional, same "not available in this deployment" posture as
@@ -1146,6 +1165,85 @@ export function createApp(deps: AppDependencies): Express {
       requirePermission(Permission.CapacitySettingsManage),
       async (req: Request, res: Response) => {
         mapTransitionOutcome(res, await serviceSessionService.cancel(paramId(req)));
+      }
+    );
+  }
+
+  // R1.6-P3B — CAP-D02.01 Service catalog management. requireStaffSession
+  // only for the read (any authenticated staff member may see the fixed
+  // catalog), Permission.CapacitySettingsManage for the one mutation —
+  // same split as every other operational-configuration surface in this
+  // deployment (/service-sessions, /floorplans, /closing-days). No
+  // Create/Delete route: the catalog is fixed by migration seed data.
+  if (deps.serviceCatalog) {
+    const serviceCatalogService = new ServiceCatalogManagementService(deps.serviceCatalog.repository);
+
+    function serializeServiceDefinition(service: Awaited<ReturnType<typeof serviceCatalogService.list>>[number]) {
+      return {
+        code: service.code,
+        displayName: service.displayName,
+        enabled: service.enabled,
+        createdAt: service.createdAt.toISOString(),
+        updatedAt: service.updatedAt.toISOString(),
+      };
+    }
+
+    app.get("/services", requireStaffSession, async (_req: Request, res: Response) => {
+      const services = await serviceCatalogService.list();
+      res.status(200).json({ services: services.map(serializeServiceDefinition) });
+    });
+
+    app.patch(
+      "/services/:code",
+      requireStaffSession,
+      requirePermission(Permission.CapacitySettingsManage),
+      async (req: Request, res: Response) => {
+        const body: unknown = req.body;
+        const violations: RuleViolation[] = [];
+        const isPlainObject = typeof body === "object" && body !== null && !Array.isArray(body);
+        const record: Record<string, unknown> = isPlainObject ? (body as Record<string, unknown>) : {};
+
+        if (!isPlainObject) {
+          violations.push(violation("CAP-D02.01-R02", "The request body must be a JSON object containing at least one of displayName or enabled."));
+        } else {
+          for (const key of Object.keys(record)) {
+            if (key === "code") {
+              violations.push(violation("CAP-D02.01-R04", "code is immutable and must not be included in the request body."));
+            } else if (key !== "displayName" && key !== "enabled") {
+              violations.push(violation("CAP-D02.01-R03", `Unknown field "${key}" is not permitted in the request body.`));
+            }
+          }
+          const hasDisplayName = Object.prototype.hasOwnProperty.call(record, "displayName");
+          const hasEnabled = Object.prototype.hasOwnProperty.call(record, "enabled");
+          if (!hasDisplayName && !hasEnabled) {
+            violations.push(violation("CAP-D02.01-R02", "The request body must contain at least one of displayName or enabled."));
+          }
+          if (hasDisplayName && (typeof record["displayName"] !== "string" || (record["displayName"] as string).trim().length === 0)) {
+            violations.push(violation("CAP-D02.01-R05", "displayName must be a non-empty string."));
+          }
+          if (hasEnabled && typeof record["enabled"] !== "boolean") {
+            violations.push(violation("CAP-D02.01-R06", "enabled must be a boolean."));
+          }
+        }
+
+        if (violations.length > 0) {
+          res.status(422).json({ violations });
+          return;
+        }
+
+        const patch: { displayName?: string; enabled?: boolean } = {};
+        if (Object.prototype.hasOwnProperty.call(record, "displayName")) patch.displayName = (record["displayName"] as string).trim();
+        if (Object.prototype.hasOwnProperty.call(record, "enabled")) patch.enabled = record["enabled"] as boolean;
+
+        const result = await serviceCatalogService.update(routeParam(req, "code"), patch);
+        switch (result.type) {
+          case "UPDATED":
+            res.status(200).json({ type: "UPDATED", service: serializeServiceDefinition(result.service) });
+            return;
+          case "SERVICE_NOT_FOUND":
+            res.status(404).json({ type: "SERVICE_NOT_FOUND" });
+            return;
+        }
       }
     );
   }

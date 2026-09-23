@@ -429,6 +429,24 @@
     </div>
   </section>
 
+  <!-- R1.6-P3B — CAP-D02.01 Service catalog management pilot
+       administration. Composes GET /services and PATCH /services/:code —
+       no new backend surface beyond those two routes. Date-independent by
+       design (the Service catalog has no date dimension) — deliberately
+       NOT wired to listDateInput, same posture as Floorplannen above. Only
+       displayName/enabled are editable for the two fixed codes
+       lunch/dinner — no schedule, duration, capacity, area, or Floorplan
+       control lives here, and no Create/Delete action exists. Every
+       mutation is re-validated authoritatively server-side regardless of
+       what this panel predicts. -->
+  <section class="full-width">
+    <h2>Diensten</h2>
+    <div id="service-catalog-message"></div>
+    <div id="service-catalog-refresh-message"></div>
+    <div id="service-catalog-list"></div>
+    <div id="service-catalog-empty" class="empty" style="display:none;">Geen diensten gevonden.</div>
+  </section>
+
   <!-- P1-B4-C — the ONE authoritative seating panel, shared by BOTH entry
        points: the daily list's "Plaatsen" action (A) and the Walk-in
        CREATED_UNSEATED follow-up (B) — same two approved endpoints
@@ -675,6 +693,7 @@
     loadList();
     loadServiceSessions();
     loadFloorplanPanel();
+    loadServiceCatalog();
     loadClosingDays();
     loadResourceBlocks();
     loadOccupancy();
@@ -2974,6 +2993,224 @@
     floorplanCreateDraftButton.disabled = floorplanActionInFlight;
     renderVersionList();
     renderMembershipEditor();
+  }
+
+  // --- Diensten (R1.6-P3B) ---------------------------------------------
+  // Composes GET /services and PATCH /services/:code — no new backend
+  // surface beyond those two routes. Date-independent (unlike
+  // Servicesessies above): never wired to listDateInput. No client-side
+  // role/permission branching — a 401/403 from PATCH is handled generically,
+  // exactly like every other panel in this file.
+  const serviceCatalogMessage = document.getElementById("service-catalog-message");
+  // A SEPARATE element from serviceCatalogMessage, same posture as
+  // floorplanRefreshMessage above: a mutation's own success/failure is
+  // never overwritten by a subsequent reload's own outcome.
+  const serviceCatalogRefreshMessage = document.getElementById("service-catalog-refresh-message");
+  const serviceCatalogList = document.getElementById("service-catalog-list");
+  const serviceCatalogEmpty = document.getElementById("service-catalog-empty");
+
+  // The last AUTHORITATIVE (server-returned) rows, and this staff
+  // member's current, possibly-unsaved edit of each row's displayName/
+  // enabled — same authoritative-vs-pending split as the Floorplannen
+  // membership editor above. Reset to match the server on every load.
+  let serviceCatalogRows = [];
+  let serviceCatalogPendingEdits = new Map(); // code -> { displayName, enabled }
+  // One panel-wide mutation guard, same single-flag convention as
+  // floorplanActionInFlight above.
+  let serviceCatalogActionInFlight = false;
+  let serviceCatalogRequestToken = 0;
+
+  function serviceCatalogNameInputId(code) {
+    return `service-catalog-name-${code}`;
+  }
+  function serviceCatalogEnabledInputId(code) {
+    return `service-catalog-enabled-${code}`;
+  }
+  function serviceCatalogSaveButtonId(code) {
+    return `service-catalog-save-${code}`;
+  }
+
+  function isServiceCatalogRowDirty(code) {
+    const original = serviceCatalogRows.find((s) => s.code === code);
+    const pending = serviceCatalogPendingEdits.get(code);
+    if (!original || !pending) return false;
+    return pending.displayName !== original.displayName || pending.enabled !== original.enabled;
+  }
+
+  // Lightweight refresh — toggles just this row's Save button, without
+  // rebuilding the row's DOM (a full renderServiceCatalog() on every
+  // keystroke would destroy and recreate the text input, losing focus
+  // and cursor position while typing).
+  function refreshServiceCatalogSaveButton(code) {
+    const button = document.getElementById(serviceCatalogSaveButtonId(code));
+    if (button) button.disabled = serviceCatalogActionInFlight || !isServiceCatalogRowDirty(code);
+  }
+
+  async function loadServiceCatalog() {
+    const requestToken = ++serviceCatalogRequestToken;
+    serviceCatalogRows = [];
+    clearMessage(serviceCatalogRefreshMessage);
+    renderServiceCatalog();
+    try {
+      const res = await fetch("/services");
+      if (requestToken !== serviceCatalogRequestToken) return;
+      if (res.status === 401 || res.status === 403) {
+        showMessage(serviceCatalogRefreshMessage, "Je hebt geen rechten om diensten te bekijken.", "error");
+        renderServiceCatalog();
+        return;
+      }
+      if (!res.ok) {
+        showMessage(serviceCatalogRefreshMessage, "Kon diensten niet laden.", "error");
+        renderServiceCatalog();
+        return;
+      }
+      const data = await res.json();
+      if (requestToken !== serviceCatalogRequestToken) return;
+      serviceCatalogRows = data.services || [];
+      // Authoritative reload discards any unsaved local edit — every call
+      // site (initApp, and after a successful save below) is a point
+      // where starting fresh from the server is correct.
+      serviceCatalogPendingEdits = new Map(serviceCatalogRows.map((s) => [s.code, { displayName: s.displayName, enabled: s.enabled }]));
+      clearMessage(serviceCatalogRefreshMessage);
+      renderServiceCatalog();
+    } catch (err) {
+      if (requestToken !== serviceCatalogRequestToken) return;
+      serviceCatalogRows = [];
+      showMessage(serviceCatalogRefreshMessage, "Netwerkfout: kon diensten niet laden.", "error");
+      renderServiceCatalog();
+    }
+  }
+
+  function serviceCatalogMutationErrorMessage(data, res) {
+    if (res.status === 401 || res.status === 403) return "Je hebt geen rechten om deze actie uit te voeren.";
+    if (data && data.type === "SERVICE_NOT_FOUND") return "Dienst niet gevonden — ververs de pagina.";
+    if (res.status === 422) return "Ongeldige invoer.";
+    return "Onbekende fout.";
+  }
+
+  // Shared mutation guard — the one Save action for any row routes
+  // through this, same single-flag/finally convention as
+  // runFloorplanAction above.
+  async function runServiceCatalogAction(action) {
+    if (serviceCatalogActionInFlight) return;
+    serviceCatalogActionInFlight = true;
+    renderServiceCatalog();
+    try {
+      await action();
+    } finally {
+      serviceCatalogActionInFlight = false;
+      renderServiceCatalog();
+    }
+  }
+
+  async function saveServiceCatalogRow(code) {
+    const original = serviceCatalogRows.find((s) => s.code === code);
+    const pending = serviceCatalogPendingEdits.get(code);
+    if (!original || !pending) return;
+
+    // Save only the fields that actually changed — never re-send a field
+    // just to "confirm" its current value.
+    const body = {};
+    if (pending.displayName.trim() !== original.displayName) body.displayName = pending.displayName.trim();
+    if (pending.enabled !== original.enabled) body.enabled = pending.enabled;
+    if (Object.keys(body).length === 0) return;
+
+    // Confirmation must occur before the in-flight guard is set and
+    // before any request — Cancel issues no request at all. Rename-only
+    // and enable never confirm; only a transition to disabled does,
+    // because it immediately blocks future canonical Reservation/Walk-in
+    // creation for this Service. Existing reservations and ServiceSessions
+    // are explicitly NOT touched — this text never claims a schedule or
+    // session-closure effect.
+    if (body.enabled === false) {
+      const confirmed = confirm(
+        `Dienst "${original.displayName}" uitschakelen? Nieuwe reserveringen voor deze dienst worden vanaf nu geblokkeerd. ` +
+          "Bestaande reserveringen en servicesessies worden hierdoor niet gewijzigd."
+      );
+      if (!confirmed) return;
+    }
+
+    await runServiceCatalogAction(async () => {
+      try {
+        const res = await fetch(`/services/${encodeURIComponent(code)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...actorHeaders() },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(serviceCatalogMessage, serviceCatalogMutationErrorMessage(data, res), "error");
+          return;
+        }
+        showMessage(serviceCatalogMessage, "Dienst opgeslagen.", "ok");
+        await loadServiceCatalog();
+      } catch (err) {
+        showMessage(serviceCatalogMessage, "Netwerkfout: kon de server niet bereiken.", "error");
+      }
+    });
+  }
+
+  function renderServiceCatalog() {
+    serviceCatalogList.innerHTML = "";
+    serviceCatalogEmpty.style.display = serviceCatalogRows.length === 0 ? "block" : "none";
+
+    for (const row of serviceCatalogRows) {
+      const pending = serviceCatalogPendingEdits.get(row.code) || { displayName: row.displayName, enabled: row.enabled };
+
+      const item = document.createElement("div");
+      item.className = "list-item";
+
+      const label = document.createElement("span");
+      const codeSpan = document.createElement("span");
+      codeSpan.className = "floorplan-id-hint";
+      codeSpan.textContent = row.code;
+      label.appendChild(codeSpan);
+      label.appendChild(document.createElement("br"));
+
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.id = serviceCatalogNameInputId(row.code);
+      nameInput.value = pending.displayName;
+      nameInput.disabled = serviceCatalogActionInFlight;
+      nameInput.addEventListener("input", () => {
+        const current = serviceCatalogPendingEdits.get(row.code) || { displayName: row.displayName, enabled: row.enabled };
+        serviceCatalogPendingEdits.set(row.code, { ...current, displayName: nameInput.value });
+        refreshServiceCatalogSaveButton(row.code);
+      });
+      label.appendChild(nameInput);
+      label.appendChild(document.createElement("br"));
+
+      const enabledLabel = document.createElement("label");
+      const enabledInput = document.createElement("input");
+      enabledInput.type = "checkbox";
+      enabledInput.id = serviceCatalogEnabledInputId(row.code);
+      enabledInput.checked = pending.enabled;
+      enabledInput.disabled = serviceCatalogActionInFlight;
+      enabledInput.addEventListener("change", () => {
+        const current = serviceCatalogPendingEdits.get(row.code) || { displayName: row.displayName, enabled: row.enabled };
+        serviceCatalogPendingEdits.set(row.code, { ...current, enabled: enabledInput.checked });
+        refreshServiceCatalogSaveButton(row.code);
+      });
+      enabledLabel.appendChild(enabledInput);
+      enabledLabel.appendChild(document.createTextNode(" Ingeschakeld"));
+      label.appendChild(enabledLabel);
+
+      item.appendChild(label);
+
+      const actions = document.createElement("div");
+      actions.className = "action-cell";
+      const saveButton = document.createElement("button");
+      saveButton.type = "button";
+      saveButton.id = serviceCatalogSaveButtonId(row.code);
+      saveButton.className = "edit-button";
+      saveButton.textContent = "Opslaan";
+      saveButton.disabled = serviceCatalogActionInFlight || !isServiceCatalogRowDirty(row.code);
+      saveButton.addEventListener("click", () => saveServiceCatalogRow(row.code));
+      actions.appendChild(saveButton);
+      item.appendChild(actions);
+
+      serviceCatalogList.appendChild(item);
+    }
   }
 
   // --- Sluitingsdagen -------------------------------------------------

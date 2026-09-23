@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDefinitionRepository.js";
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode, isServiceCode } from "../../domain/availability/Service.js";
@@ -32,5 +32,23 @@ export class PrismaServiceDefinitionRepository implements ServiceDefinitionRepos
     const client = tx ? asPrismaTx(tx) : this.prisma;
     const rows = await client.service.findMany({ orderBy: { code: "asc" } });
     return rows.map(toDomainServiceDefinition).filter((s): s is ServiceDefinition => s !== null);
+  }
+
+  async update(
+    code: ServiceCode,
+    patch: { readonly displayName?: string; readonly enabled?: boolean },
+    tx?: TransactionContext
+  ): Promise<ServiceDefinition | null> {
+    const client = tx ? asPrismaTx(tx) : this.prisma;
+    try {
+      const row = await client.service.update({ where: { code }, data: patch });
+      return toDomainServiceDefinition(row);
+    } catch (err) {
+      // P2025 — no row for this code. Never thrown as a not-found error;
+      // every real caller already validated `code` is canonical and
+      // looked the row up first, so this is a defensive case only.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return null;
+      throw err;
+    }
   }
 }

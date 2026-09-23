@@ -34,6 +34,11 @@ const prisma = new PrismaClient();
 // to also enable the CSRF guard's Origin check; unset (null) in local
 // dev, where only the custom-header check applies.
 const appOrigin = process.env["APP_ORIGIN"] ?? null;
+// R1.6-P3B — the ONE ServiceDefinitionRepository instance this deployment
+// ever constructs, shared between CanonicalServicePeriodReader (below) and
+// the serviceCatalog management block — never a second instance, and
+// (like every other adapter here) never a second PrismaClient.
+const serviceDefinitionRepository = new PrismaServiceDefinitionRepository(prisma);
 const app = createApp({
   repository: new PrismaReservationRepository(prisma),
   duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
@@ -57,7 +62,7 @@ const app = createApp({
   // every Service-code validation fails closed (CAP-D02.01-R01), not
   // silently passes — see CanonicalServicePeriodReader.ts's own doc
   // comment.
-  servicePeriodReader: new CanonicalServicePeriodReader(new PrismaServiceDefinitionRepository(prisma)),
+  servicePeriodReader: new CanonicalServicePeriodReader(serviceDefinitionRepository),
   closingDayStore: new PrismaClosingDayStore(prisma),
   idGenerator: new RandomIdGenerator(),
   eventIdGenerator: new RandomEventIdGenerator(),
@@ -143,6 +148,12 @@ const app = createApp({
   floorplans: {
     floorplanRepository: new PrismaFloorplanRepository(prisma),
     transactionManager: new PrismaTransactionManager(prisma),
+  },
+  // R1.6-P3B — mounts GET /services and PATCH /services/:code. Reuses the
+  // SAME serviceDefinitionRepository instance servicePeriodReader above
+  // already holds — never a second instance, never a second connection.
+  serviceCatalog: {
+    repository: serviceDefinitionRepository,
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
   // route. Real EmailDeliveryPort/provider selection remains a separate,
