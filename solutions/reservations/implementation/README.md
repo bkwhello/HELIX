@@ -217,6 +217,44 @@ top of the three above:
   has no pilot UI" — that is no longer true. A "Floorplannen"
   administration panel exists in `public/pilot.html` — see `PILOT.md`'s
   "Floorplan Management status" section for the full scope.
+- **Persisted Service catalog and management API/UI** (`5020a98`,
+  `a9899ed`, R1.6-P3A/P3B — `CAP-D02.01`, remains `Designed`): the
+  code-level-only `lunch`/`dinner` classification R1.6-P2B shipped
+  (bullet below) is now backed by a real, persisted `services` table —
+  exactly the two canonical rows, `code` an immutable natural key, a
+  `service_sessions.service_code` foreign key to it with both
+  `ON DELETE RESTRICT` and `ON UPDATE RESTRICT`. `CanonicalServicePeriodReader`
+  now also consults this catalog: a missing or disabled row fails
+  canonical Reservation/Walk-in creation and date-changing modification
+  closed (`CAP-D02.01-R01`), indistinguishably. An authenticated
+  management surface — `GET /services` (any staff session) and
+  `PATCH /services/:code` (`Permission.CapacitySettingsManage`, no new
+  permission) editing only `displayName`/`enabled`, same-value requests a
+  no-op that preserves `updatedAt` — and a "Diensten" pilot panel expose
+  it; no Create/Delete route or UI exists, and `code` is never editable
+  anywhere. See "Controlled pilot" below and
+  `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` for the full design,
+  evidence, and the explicit boundary of what remains undelivered
+  (schedule, default operating time, default reservation duration — none
+  of it exists).
+  - **Automated verification is complete** — application, real-PostgreSQL
+    integration (including a rollback-contained proof that the committed
+    migration guard and the FK's `RESTRICT` actions are enforced by the
+    database itself), API, and pilot source-text tests all pass; see the
+    implementation report for full totals.
+  - **Development activation**: the migration is applied in
+    `helix_reservations_dev`; `services` holds exactly the two canonical,
+    enabled rows; `ServiceSessions = 0`.
+  - **No authenticated human browser workflow has been completed** — no
+    staff member has logged in and read or edited a Service through the
+    pilot, and no development Service row has been changed through the
+    API or UI.
+  - **Nothing has been deployed anywhere.**
+  - `CAP-D02.01`'s capability status remains `Designed`, not `Pilot` —
+    unlike `CAP-D03.02`'s R1-DOC-7 promotion above, this slice does not
+    cover enough of the capability's own registered `owns.rules` (service
+    naming is only partial; default operating times and default
+    reservation duration are entirely absent) to warrant one.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -325,6 +363,17 @@ top of the three above:
     deliberate test double, not a forgotten production leftover. See
     `R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md` for the
     full design and evidence.
+    **Corrected (R1-DOC-8).** Every "`CAP-D02.01`'s own persisted Service
+    definition still does not exist" clause above (this bullet and the
+    R1-DOC-5/R1-DOC-6/R1-DOC-7 bullets earlier in this list) is no longer
+    accurate as of R1.6-P3A/P3B (`5020a98`, `a9899ed`): a real, persisted
+    `services` table now exists — see the new Status-section bullet above
+    and `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` for the full
+    design. What remains genuinely undelivered, precisely: any Create or
+    Delete Service operation; `code` renaming (immutable everywhere by
+    design); and this capability's own registered schedule/default-
+    operating-time/default-reservation-duration rules, which do not exist
+    in any form. `CAP-D02.01` remains `Designed`.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side
@@ -477,7 +526,11 @@ by the pilot-readiness work above — plus a read-only Security Events
 view (R1.7-P1, Owner/Manager only), a "Servicesessies" panel (R1.6-P2C,
 `Permission.CapacitySettingsManage` for mutations) exposing the
 per-date `lunch`/`dinner` operational session lifecycle, with a matching
-status column on the daily list, and a "Floorplannen" panel (R1.5-P2E-2,
+status column on the daily list, a "Floorplannen" panel (R1.5-P2E-2,
 same permission for mutations) exposing Floorplan/version administration
-and Draft Table-membership editing. See `PILOT.md` for scope, known
-limitations, and success criteria before using it with real bookings.
+and Draft Table-membership editing, and a "Diensten" panel (R1.6-P3B,
+same permission for mutations) exposing read/edit access to the two
+persisted, canonical `lunch`/`dinner` Service rows — `displayName` and
+`enabled` only, no create/delete, `code` never editable. See `PILOT.md`
+for scope, known limitations, and success criteria before using it with
+real bookings.

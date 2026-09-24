@@ -358,6 +358,54 @@ capabilities:
     # ServiceCreated/Modified/Deactivated event, no administration UI.
     # delivery_status intentionally unchanged — see
     # R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md.
+    #
+    # R1-DOC-8 — R1.6-P3A (commit 5020a9843d1282c68be047a09c92fbe45cbf04c9,
+    # 2026-09-23, "feat(service): persist canonical service catalog") and
+    # R1.6-P3B (commit a9899edad6f6cdbc4493a9c518e019c2a83c1e96,
+    # 2026-09-23, "feat(service): expose catalog management") together
+    # delivered a real, bounded slice of this capability's own owned
+    # concept (`Service`), still not its full owned rule set:
+    #   - A persisted `services` table (`code` primary key, `display_name`,
+    #     `enabled`, `created_at`, `updated_at`), seeded with exactly the
+    #     two canonical rows `lunch`/`Lunch`/enabled and
+    #     `dinner`/`Dinner`/enabled by the migration itself — `code` is an
+    #     immutable natural key; no application path anywhere renames it.
+    #   - `service_sessions.service_code` now carries a real foreign key
+    #     to `services.code`, both `ON DELETE RESTRICT` and
+    #     `ON UPDATE RESTRICT` — the database itself refuses to delete or
+    #     rename a referenced code, not just application code.
+    #   - `CanonicalServicePeriodReader` (R1.6-P2B's own classification
+    #     validator) now also consults this persisted catalog: a missing
+    #     or disabled row fails canonical Reservation/Walk-in creation and
+    #     date-changing modification closed, under the new rule id
+    #     `CAP-D02.01-R01`, indistinguishably from each other at that
+    #     external boundary.
+    #   - An authenticated management surface —
+    #     `GET /services` (`requireStaffSession` only) and
+    #     `PATCH /services/:code` (`Permission.CapacitySettingsManage`,
+    #     the pre-existing permission, no new one) — lets staff edit only
+    #     `displayName` and `enabled`; a same-value request performs no
+    #     write and preserves `updatedAt`. A "Diensten" pilot panel
+    #     exposes exactly this: no create, no delete, `code` never
+    #     editable.
+    # `helix_reservations_dev` has the migration applied and holds exactly
+    # the two canonical, enabled rows; `ServiceSessions = 0`; no
+    # development Service row has been changed through the API or UI, and
+    # no authenticated human browser workflow has exercised the panel —
+    # automated tests are the only evidence to date (see
+    # `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md`).
+    # `delivery_status` intentionally remains unchanged at `Designed`:
+    # this capability's own registered `owns.rules` — service naming
+    # (partially: only `displayName`, not the full naming/identity
+    # authority a Create/Delete/rename-code surface would imply),
+    # **default operating times**, and **default reservation
+    # duration** — are still entirely absent, as are two of this
+    # capability's three registered `owns.events`
+    # (`ServiceCreated`/`ServiceDeactivated`; the catalog is fixed by
+    # migration seed data, not created or deactivated through any code
+    # path). No schedule, operating-time, or duration persistence exists
+    # anywhere in this slice — do not read this note as claiming
+    # otherwise.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true

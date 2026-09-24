@@ -195,6 +195,78 @@ release) are unaffected by this check.
 - **P1-B11 remains incomplete** and untouched by this milestone, per
   standing instruction.
 
+## Service Catalog status (R1.6-P3A/P3B — `CAP-D02.01`, remains `Designed`)
+
+A "Diensten" panel exists in `public/pilot.html`, placed near
+Servicesessies and Floorplannen, date-independent (it never depends on
+the Dagoverzicht date). It composes exactly two routes: `GET /services`
+and `PATCH /services/:code` — no new backend surface beyond those.
+
+**What the panel provides:**
+
+- **Read** — the fixed, deterministically ordered (`lunch` then `dinner`)
+  catalog, rendered from the server's own response only; nothing is
+  hardcoded client-side.
+- **Immutable code** — each row shows its `code` as read-only text; there
+  is no input, and no request body this panel builds ever contains a
+  `code` field.
+- **Editable display name** — a text input per row; Save sends
+  `displayName` only when it actually changed.
+- **Enable/disable control** — a checkbox per row; Save sends `enabled`
+  only when it actually changed. A change to `enabled: false` (and only
+  that direction) requires a native confirmation dialog before the
+  request is sent — the confirmation occurs before the panel's in-flight
+  guard is set and before any network call, so cancelling it issues no
+  request at all. The confirmation text tells staff that new reservations
+  for that Service will be blocked from that point on, and that existing
+  reservations and ServiceSessions are not changed by it. Rename-only and
+  enable operations never prompt.
+- **Safety protections** — the same conventions every other panel in this
+  file already follows: one shared in-flight guard preventing double
+  submission, cleared in `finally`; a monotonic request token discarding a
+  stale, superseded load response; stale rows cleared before an
+  authoritative reload; a mutation's own success message and a subsequent
+  reload's own warning kept on two separate message elements; every
+  dynamic value rendered via `textContent`/safe DOM construction, never
+  raw interpolated `innerHTML`; a 401/403 on either route shown as one
+  generic Dutch permission message, never a role or permission name; a
+  `SERVICE_NOT_FOUND` response mapped to a safe "refresh the page"
+  instruction; no client-side role or permission branching anywhere in
+  the panel.
+
+**Development activation:** the migration is applied in
+`helix_reservations_dev`; `services` holds exactly the two canonical
+rows, `lunch`/`Lunch`/enabled and `dinner`/`Dinner`/enabled.
+`ServiceSessions = 0`, unaffected by anything in this panel — disabling a
+Service here blocks only *future* canonical Reservation/Walk-in
+validation; it never rewrites an existing Reservation, and it never
+closes, cancels, disables, or otherwise touches an existing
+ServiceSession.
+
+- **Automated verification is complete** — application, real-PostgreSQL
+  integration (including a rollback-contained proof of the committed
+  migration guard and the ServiceSession→Service foreign key's
+  `RESTRICT`/`RESTRICT` behavior), API, and pilot source-text tests all
+  pass; see `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` for full
+  totals.
+- **No authenticated human browser workflow has been completed** — no
+  staff member has logged in and read or edited a Service through this
+  panel.
+- **No development Service row has been changed through the API or UI** —
+  every mutation exercised so far was against an isolated fake/in-memory
+  repository in tests, or a real-PostgreSQL transaction that always rolls
+  back; the two shared canonical rows in `helix_reservations_dev` remain
+  exactly as seeded.
+- **Nothing has been deployed anywhere.**
+- `CAP-D02.01`'s capability status remains `Designed` — this pilot panel
+  is **not** claimed as a `Pilot` promotion for `CAP-D02.01`, unlike
+  `CAP-D03.02`'s R1-DOC-7 promotion above. This slice covers only a
+  bounded read/edit surface over a fixed, two-row catalog; the
+  capability's own registered rules — service naming (partially: only
+  `displayName`), default operating times, and default reservation
+  duration — remain entirely undelivered, and no Create/Delete Service
+  operation exists.
+
 ## Before starting
 
 1. `npm install && npx prisma migrate deploy && npm run typecheck && npm test` — all green.
@@ -266,6 +338,17 @@ permission) — there is no self-service sign-up.
   No geometric/adjacency floorplan editor exists or is required — see
   `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`'s R1-DOC-7
   addendum.
+- **Reconciled (R1-DOC-8).** "`CAP-D02.01`'s persisted Service
+  definition" is no longer missing, as of R1.6-P3A/P3B: a real, persisted
+  `services` table exists, `CanonicalServicePeriodReader` consults it, and
+  a "Diensten" pilot panel exposes bounded read/edit access — see "Service
+  Catalog status" above. Unlike `CAP-D03.02`'s R1-DOC-7 promotion,
+  `CAP-D02.01` is **not** promoted to `Pilot` by this: the capability's
+  own registered service-naming/default-operating-time/default-duration
+  rules and its Create/Delete events remain entirely undelivered.
+  `CAP-D02.01` remains `Designed`. `CAP-D02.02`'s own persisted
+  reservation-to-session relationship still does not exist, unaffected by
+  this change. See `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md`.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

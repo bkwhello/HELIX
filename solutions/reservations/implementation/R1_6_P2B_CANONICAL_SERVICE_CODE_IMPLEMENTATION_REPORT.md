@@ -81,3 +81,74 @@ Before this milestone, `README.md` stated `infrastructure/UnvalidatedServicePeri
 ## Next gate
 
 Unchanged from R1.6-P2A's own conclusion: no further Service/ServiceSession implementation should begin before the four product-owner decisions that addendum identified (the meal-only-vs-area-flavored Service axis; code-level-vs-persisted `Service` now; whether identity ultimately needs an area dimension; whether a `ServiceSession` lifecycle is worth building in isolation given it would otherwise produce operationally inert records) are resolved. This report does not reopen or resolve any of them.
+
+---
+
+## R1-DOC-8 reconciliation (added 2026-09-24 — does not alter anything above)
+
+Everything above this line is preserved exactly as written on 2026-09-10
+and describes what was true about R1.6-P2B at that time — including,
+correctly, that no persisted `Service` definition existed ("Four distinct
+concerns" item 3, and "Accepted limitations"). Do not read the sections
+above as describing the current state; this section records what changed
+after them.
+
+Later, Chief-Engineer-authorized work built the persisted model that
+R1.6-P2B's own "Four distinct concerns" item 3 explicitly identified as
+not yet existing:
+
+- **R1.6-P3A** (commit `5020a9843d1282c68be047a09c92fbe45cbf04c9`,
+  2026-09-23, `feat(service): persist canonical service catalog`) added a
+  real `services` table (migration
+  `20260922145528_add_service_catalog`), seeded with exactly the two
+  canonical rows this report's own boundary already established
+  (`lunch`, `dinner`), a `service_sessions.service_code` foreign key to
+  it, and wired `CanonicalServicePeriodReader` (this report's own "Real
+  validator" row above) to also consult that persisted catalog — a
+  missing or disabled row now fails canonical validation closed
+  (`CAP-D02.01-R01`), on top of, not instead of, the code-derivation
+  behavior this report describes.
+- **Development schema activation**: the migration above was applied to
+  `helix_reservations_dev` in a separate, explicit step after R1.6-P3A's
+  commit — `services` now holds exactly the two canonical, enabled rows
+  in development.
+- **R1.6-P3B** (commit `a9899edad6f6cdbc4493a9c518e019c2a83c1e96`,
+  2026-09-23, `feat(service): expose catalog management`) added an
+  authenticated management surface over that same persisted table —
+  `GET /services`, `PATCH /services/:code` limited to `displayName`/
+  `enabled`, `code` immutable — and a "Diensten" pilot panel exposing it.
+
+**What this does NOT change, and what remains true today exactly as this
+report's own "Four distinct concerns" and "Accepted limitations" sections
+described them:**
+
+- The time-derived classification behavior this report documents
+  (`deriveServiceCode`, the `[12:00,16:00)` Amsterdam-local boundary, the
+  create/modify/walk-in enforcement contract) is unchanged by either
+  later milestone.
+- Booking-window eligibility (`ServicePeriod.ts`/`ServicePeriodService.ts`,
+  this report's concern 2) and the dated `ServiceSession` lifecycle
+  capability CAP-D02.02 (this report's concern 4) are unaffected by
+  R1.6-P3A/P3B — proven structurally: neither `ServiceSessionService.ts`
+  nor its Prisma repository references the new Service-definition
+  repository or `.enabled` anywhere, and the production construction path
+  never gives `ServiceSessionService` one.
+- `CAP-D02.01` remains `Designed` — R1.6-P3A/P3B did not promote it. This
+  capability's own registered rules (service naming beyond a display
+  name, default operating times, default reservation duration) and two of
+  its three registered events (`ServiceCreated`, `ServiceDeactivated`)
+  remain entirely undelivered; no Create or Delete Service operation
+  exists anywhere in this codebase.
+- The four historical, legacy `sp-dinner` Reservation `servicePeriodId`
+  values this report's own "Accepted limitations" section describes as
+  "not backfilled" remain exactly that — unbackfilled, unchanged, and
+  outside the new persisted catalog's foreign key (which constrains
+  `service_sessions`, never `reservations`).
+- No authenticated human browser workflow has exercised either the new
+  API or the "Diensten" panel, and no development `services` row has been
+  changed through them — `helix_reservations_dev` holds only the two
+  rows the migration itself seeded. Nothing from either milestone has
+  been deployed anywhere.
+
+See `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` for the complete
+design, evidence, and accepted-limitations record for this later work.
