@@ -98,14 +98,34 @@ export class FakeServicePeriodReader implements ServicePeriodReader {
  * integration test's own database connection might see.
  */
 export class FakeServiceDefinitionRepository implements ServiceDefinitionRepository {
+  /** R1.6-P3C-1 — lunch seeded [720,960) (12:00-16:00), matching the real migration's own seed exactly; dinner stays null, matching the real migration's own "no accepted product value" posture. */
   private readonly rows = new Map<ServiceCode, ServiceDefinition>([
-    ["lunch", { code: "lunch", displayName: "Lunch", enabled: true, createdAt: new Date(0), updatedAt: new Date(0) }],
-    ["dinner", { code: "dinner", displayName: "Dinner", enabled: true, createdAt: new Date(0), updatedAt: new Date(0) }],
+    [
+      "lunch",
+      {
+        code: "lunch",
+        displayName: "Lunch",
+        enabled: true,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        defaultOperatingInterval: { startMinute: 720, endMinute: 960 },
+      },
+    ],
+    [
+      "dinner",
+      { code: "dinner", displayName: "Dinner", enabled: true, createdAt: new Date(0), updatedAt: new Date(0), defaultOperatingInterval: null },
+    ],
   ]);
 
   setEnabled(code: ServiceCode, enabled: boolean): void {
     const existing = this.rows.get(code);
     if (existing) this.rows.set(code, { ...existing, enabled });
+  }
+
+  /** R1.6-P3C-1 — test-only seam (no production update path accepts this until P3C-2); lets a test set up a specific defaultOperatingInterval (including `null`) before exercising ServiceSession creation. */
+  setDefaultOperatingInterval(code: ServiceCode, interval: ServiceDefinition["defaultOperatingInterval"]): void {
+    const existing = this.rows.get(code);
+    if (existing) this.rows.set(code, { ...existing, defaultOperatingInterval: interval });
   }
 
   /** Simulates a missing/never-seeded row — the fail-closed branch, distinct from an explicitly disabled one. */

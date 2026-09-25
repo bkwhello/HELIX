@@ -387,3 +387,186 @@ describe("Migration guard — real PostgreSQL failure proof (rollback-contained)
     expect(stillRejected).toBeNull();
   });
 });
+
+/**
+ * R1.6-P3C-1 — the operating-interval snapshot foundation migration
+ * (`20260925120000_add_service_operating_interval`). Same rollback-
+ * contained discipline as the guard/FK proofs above: every CHECK-
+ * violation proof below runs inside a `prisma.$transaction` that is
+ * guaranteed to roll back (the violation itself throws), so the shared
+ * `lunch`/`dinner` rows and this file's own narrow date range are never
+ * left mutated for a concurrently running test file to observe.
+ */
+function operatingIntervalMigrationSqlPath(): string {
+  return path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "prisma",
+    "migrations",
+    "20260925120000_add_service_operating_interval",
+    "migration.sql"
+  );
+}
+
+describe("Migration content — add_service_operating_interval — only authorized statements", () => {
+  it("contains exactly: two ALTER TABLE ADD COLUMN pairs, two CHECK constraints, one lunch-only seed UPDATE — nothing else", () => {
+    const sql = readFileSync(operatingIntervalMigrationSqlPath(), "utf-8");
+
+    expect(sql).toContain('ALTER TABLE "services" ADD COLUMN "default_start_minute" INTEGER');
+    expect(sql).toContain('ADD COLUMN "default_end_minute" INTEGER');
+    expect(sql).toContain('ALTER TABLE "service_sessions" ADD COLUMN "start_minute" INTEGER');
+    expect(sql).toContain('ADD COLUMN "end_minute" INTEGER');
+    expect(sql).toContain('ADD CONSTRAINT "services_default_operating_interval_check"');
+    expect(sql).toContain('ADD CONSTRAINT "service_sessions_operating_interval_snapshot_check"');
+    expect(sql).toMatch(/UPDATE "services" SET "default_start_minute" = 720, "default_end_minute" = 960 WHERE "code" = 'lunch'/);
+
+    // No unrelated/destructive statement, no FK, no trigger, no index,
+    // no dinner seed, no rewrite of any other column.
+    expect(sql).not.toMatch(/DROP /);
+    expect(sql).not.toMatch(/CREATE TABLE/);
+    expect(sql).not.toMatch(/ADD CONSTRAINT "[^"]*_fkey"/);
+    expect(sql).not.toMatch(/CREATE (UNIQUE )?INDEX/);
+    expect(sql).not.toMatch(/CREATE TRIGGER/);
+    expect(sql).not.toMatch(/WHERE "code" = 'dinner'/);
+    expect(sql).not.toMatch(/UPDATE "service_sessions"/);
+  });
+});
+
+describe("Schema — operating-interval columns and CHECK constraints exist", () => {
+  it("all four columns exist, integer, nullable", async () => {
+    const cols = await prisma.$queryRawUnsafe<{ table_name: string; column_name: string; data_type: string; is_nullable: string }[]>(
+      `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+       WHERE (table_name = 'services' AND column_name IN ('default_start_minute','default_end_minute'))
+          OR (table_name = 'service_sessions' AND column_name IN ('start_minute','end_minute'))
+       ORDER BY table_name, column_name`
+    );
+    expect(cols).toHaveLength(4);
+    for (const col of cols) {
+      expect(col.data_type).toBe("integer");
+      expect(col.is_nullable).toBe("YES");
+    }
+  });
+
+  it("both CHECK constraints exist", async () => {
+    const constraints = await prisma.$queryRawUnsafe<{ conname: string; contype: string }[]>(
+      `SELECT conname, contype FROM pg_constraint
+       WHERE conname IN ('services_default_operating_interval_check', 'service_sessions_operating_interval_snapshot_check')`
+    );
+    expect(constraints).toHaveLength(2);
+    for (const c of constraints) expect(c.contype).toBe("c");
+  });
+});
+
+describe("Seed — lunch configured, dinner unconfigured, no unrelated row changes", () => {
+  it("lunch is seeded to exactly [720, 960)", async () => {
+    const lunch = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+    expect(lunch.defaultStartMinute).toBe(720);
+    expect(lunch.defaultEndMinute).toBe(960);
+  });
+
+  it("dinner remains null — no guessed value was seeded", async () => {
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultStartMinute).toBeNull();
+    expect(dinner.defaultEndMinute).toBeNull();
+  });
+
+  it("no unrelated column changed — displayName/enabled remain exactly as the original catalog migration seeded them", async () => {
+    const rows = await prisma.service.findMany({ orderBy: { code: "asc" } });
+    expect(rows.map((r) => ({ code: r.code, displayName: r.displayName, enabled: r.enabled }))).toEqual([
+      { code: "dinner", displayName: "Dinner", enabled: true },
+      { code: "lunch", displayName: "Lunch", enabled: true },
+    ]);
+  });
+});
+
+describe("CHECK constraint — paired nullability and range, both tables, rollback-contained", () => {
+  class RollbackSentinel extends Error {}
+
+  it("services: a partial pair (start set, end left null) is rejected by the database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = 100 WHERE "code" = 'dinner'`);
+      })
+    ).rejects.toThrow();
+
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultStartMinute).toBeNull();
+    expect(dinner.defaultEndMinute).toBeNull();
+  });
+
+  it("services: an invalid range (end <= start) is rejected by the database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = 500, "default_end_minute" = 500 WHERE "code" = 'dinner'`);
+      })
+    ).rejects.toThrow();
+
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultStartMinute).toBeNull();
+    expect(dinner.defaultEndMinute).toBeNull();
+  });
+
+  it("services: an out-of-range start (negative) is rejected by the database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = -1, "default_end_minute" = 100 WHERE "code" = 'dinner'`);
+      })
+    ).rejects.toThrow();
+  });
+
+  it("service_sessions: a partial pair on a raw insert is rejected by the database, fully rolled back", async () => {
+    try {
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "service_sessions" (id, service_code, service_date, status, created_by, start_minute)
+             VALUES ('p3c1-check-partial-pair', 'lunch', '2028-01-17', 'Created', 'staff-catalog', 100)`
+          );
+        })
+      ).rejects.toThrow();
+      throw new RollbackSentinel();
+    } catch (err) {
+      if (!(err instanceof RollbackSentinel)) throw err;
+    }
+    const row = await prisma.serviceSession.findUnique({ where: { id: "p3c1-check-partial-pair" } });
+    expect(row).toBeNull();
+  });
+
+  it("service_sessions: an invalid range on a raw insert is rejected by the database, fully rolled back", async () => {
+    try {
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "service_sessions" (id, service_code, service_date, status, created_by, start_minute, end_minute)
+             VALUES ('p3c1-check-invalid-range', 'lunch', '2028-01-17', 'Created', 'staff-catalog', 960, 720)`
+          );
+        })
+      ).rejects.toThrow();
+      throw new RollbackSentinel();
+    } catch (err) {
+      if (!(err instanceof RollbackSentinel)) throw err;
+    }
+    const row = await prisma.serviceSession.findUnique({ where: { id: "p3c1-check-invalid-range" } });
+    expect(row).toBeNull();
+  });
+
+  it("a valid pair on both tables is accepted (positive control, rollback-contained)", async () => {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = 1020, "default_end_minute" = 1320 WHERE "code" = 'dinner'`);
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "service_sessions" (id, service_code, service_date, status, created_by, start_minute, end_minute)
+           VALUES ('p3c1-check-valid-pair', 'dinner', '2028-01-17', 'Created', 'staff-catalog', 1020, 1320)`
+        );
+        throw new RollbackSentinel();
+      });
+    } catch (err) {
+      if (!(err instanceof RollbackSentinel)) throw err;
+    }
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultStartMinute).toBeNull();
+    const row = await prisma.serviceSession.findUnique({ where: { id: "p3c1-check-valid-pair" } });
+    expect(row).toBeNull();
+  });
+});

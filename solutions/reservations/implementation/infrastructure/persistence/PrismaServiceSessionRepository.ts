@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSession, ServiceSessionStatus } from "../../domain/availability/ServiceSession.js";
+import { ServiceOperatingInterval, parsePersistedServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
 import { ServiceCode, deriveServiceCode } from "../../domain/availability/Service.js";
 import { toLocalServiceDate, localDateToPaddedUtcRange } from "../../domain/availability/ServiceTime.js";
 import { deriveServiceSessionLockKey } from "../../domain/availability/LockKey.js";
@@ -34,8 +35,11 @@ interface ServiceSessionRow {
   createdBy: string;
   createdAt: Date;
   version: number;
+  startMinute: number | null;
+  endMinute: number | null;
 }
 
+/** R1.6-P3C-1 — `parsePersistedServiceOperatingInterval` throws on a partially-populated pair rather than silently coercing it to `null`; this repository never catches that error, so a malformed persisted state fails loudly here too (the database's own CHECK constraint should make this unreachable in practice). */
 function toDomain(row: ServiceSessionRow): ServiceSession {
   return {
     id: row.id,
@@ -43,6 +47,7 @@ function toDomain(row: ServiceSessionRow): ServiceSession {
     serviceDate: fromDateOnly(row.serviceDate),
     status: row.status as ServiceSessionStatus,
     floorplanVersionId: row.floorplanVersionId,
+    operatingIntervalSnapshot: parsePersistedServiceOperatingInterval(row.startMinute, row.endMinute),
     openedAt: row.openedAt,
     closedAt: row.closedAt,
     cancelledAt: row.cancelledAt,
@@ -90,9 +95,11 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
     readonly serviceDate: string;
     readonly createdBy: string;
     readonly createdAt: Date;
+    readonly operatingIntervalSnapshot?: ServiceOperatingInterval | null;
     readonly tx: TransactionContext;
   }): Promise<ServiceSession> {
     const client = asPrismaTx(input.tx);
+    const snapshot = input.operatingIntervalSnapshot ?? null;
     const row = await client.serviceSession.create({
       data: {
         id: input.id,
@@ -101,6 +108,8 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
         status: "Created",
         createdBy: input.createdBy,
         createdAt: input.createdAt,
+        startMinute: snapshot ? snapshot.startMinute : null,
+        endMinute: snapshot ? snapshot.endMinute : null,
       },
     });
     return toDomain(row);

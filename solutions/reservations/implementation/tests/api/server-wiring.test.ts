@@ -197,3 +197,47 @@ describe("api/server.ts — R1.5-P2D Floorplan-membership enforcement wiring", (
     expect(matches).toHaveLength(1);
   });
 });
+
+describe("api/server.ts — R1.6-P3C-1 Service operating-interval snapshot production wiring", () => {
+  it("documents the deployment precondition: the operating-interval migration must be applied before this wiring is started against a database", () => {
+    expect(source).toContain("20260925120000_add_service_operating_interval");
+    expect(source).toMatch(/DEPLOYMENT PRECONDITION/);
+  });
+
+  it("the precondition comment states migration-before-start, next to the serviceCatalog composition it documents", () => {
+    const match = source.match(/serviceCatalog:\s*\{([\s\S]*?)\},/);
+    // The comment sits immediately above the serviceCatalog block it
+    // documents — capture the 800 chars preceding it too, since the
+    // block regex above only captures the object literal itself.
+    const blockStart = source.indexOf("serviceCatalog:");
+    const precedingComment = source.slice(Math.max(0, blockStart - 800), blockStart);
+    expect(precedingComment).toContain("20260925120000_add_service_operating_interval");
+    expect(precedingComment).toMatch(/DEPLOYMENT PRECONDITION/);
+    expect(precedingComment).toMatch(/MUST be applied before starting a build/);
+    expect(match).not.toBeNull();
+  });
+
+  it("still reuses the SAME shared serviceDefinitionRepository instance — no second Service Definition repository or PrismaClient introduced by this correction", () => {
+    const instantiations = source.match(/new PrismaServiceDefinitionRepository\(/g) ?? [];
+    expect(instantiations).toHaveLength(1);
+    expect(source).toMatch(/new CanonicalServicePeriodReader\(serviceDefinitionRepository\)/);
+    expect(source).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
+    const clientMatches = source.match(/new PrismaClient\(\)/g) || [];
+    expect(clientMatches).toHaveLength(1);
+  });
+
+  it("existing ServiceSession, Floorplan, capacity, communications, and authentication wiring remains intact, unaffected by this correction", () => {
+    expect(source).toMatch(/serviceSessions:\s*\{/);
+    expect(source).toMatch(/floorplans:\s*\{/);
+    expect(source).toMatch(/capacity:\s*\{/);
+    expect(source).toMatch(/communications:\s*\{/);
+    expect(source).toMatch(/auth:\s*\{/);
+    expect(source).toContain("serviceSessionRepository: new PrismaServiceSessionRepository(prisma)");
+    expect(source).toContain("floorplanRepository: new PrismaFloorplanRepository(prisma)");
+  });
+
+  it("this correction changes no route, permission, or startup behavior — the port/host binding is unchanged", () => {
+    expect(source).toContain('const port = Number(process.env["PORT"] ?? 3001);');
+    expect(source).toContain("startListening(app, port, appHost);");
+  });
+});

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { Express } from "express";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createApp } from "../../api/app.js";
 import { createTestPrismaClient, truncateStaffDomainTables } from "../integration/support/testDatabaseSafety.js";
 import { PrismaReservationRepository } from "../../infrastructure/persistence/PrismaReservationRepository.js";
@@ -17,6 +20,7 @@ import { PrismaTransactionManager } from "../../infrastructure/persistence/Prism
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { PrismaServiceSessionRepository } from "../../infrastructure/persistence/PrismaServiceSessionRepository.js";
 import { PrismaFloorplanRepository } from "../../infrastructure/persistence/PrismaFloorplanRepository.js";
+import { PrismaServiceDefinitionRepository } from "../../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
 import { seedFloor } from "../../ops/floor/seedFloor.js";
@@ -65,6 +69,49 @@ function buildApp(): Express {
   });
 }
 
+/**
+ * R1.6-P3C-1 — the SAME base wiring as buildApp() above, plus
+ * `serviceCatalog` (the real, shared-instance-pattern
+ * PrismaServiceDefinitionRepository, read-only in these tests — never
+ * mutated) so `POST /service-sessions` resolves and forwards the
+ * matching Service's current `defaultOperatingInterval`. A separate app
+ * instance rather than changing `buildApp()` itself, so every existing
+ * test in this file keeps exercising the "catalog dependency absent"
+ * deployment shape unchanged (and therefore keeps proving `null` is
+ * forwarded in that shape, per the STOP-gate's own required coverage).
+ */
+function buildAppWithCatalog(): Express {
+  return createApp({
+    repository: new PrismaReservationRepository(prisma),
+    duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
+    contactRepository: new PrismaContactRepository(prisma),
+    transactionManager: new PrismaTransactionManager(prisma),
+    servicePeriodReader: new UnvalidatedServicePeriodReader(),
+    closingDayStore: new PrismaClosingDayStore(prisma),
+    idGenerator: new RandomIdGenerator(),
+    eventIdGenerator: new RandomIdGenerator(),
+    clock: { now: () => new Date() },
+    serviceSessions: {
+      serviceSessionRepository: new PrismaServiceSessionRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
+      floorplanRepository: new PrismaFloorplanRepository(prisma),
+      floorplanId: FLOORPLAN_FIXTURE_ID,
+    },
+    serviceCatalog: {
+      repository: new PrismaServiceDefinitionRepository(prisma),
+    },
+    auth: {
+      staffUserRepository: new PrismaStaffUserRepository(prisma),
+      sessionRepository: new PrismaSessionRepository(prisma),
+      passwordHasher: new ScryptPasswordHasher(),
+      sessionTokenGenerator: new RandomSessionTokenGenerator(),
+      cookieSecure: false,
+      expectedOrigin: null,
+      loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
+    },
+  });
+}
+
 function post(agent: ReturnType<typeof request.agent>, url: string) {
   return agent.post(url).set(CSRF_HEADER_NAME, "1");
 }
@@ -74,6 +121,7 @@ let staffUserRepository: PrismaStaffUserRepository;
 let ownerAgent: ReturnType<typeof request.agent>;
 let managerAgent: ReturnType<typeof request.agent>;
 let receptionAgent: ReturnType<typeof request.agent>;
+let ownerUsername: string;
 
 async function createStaffUser(usernameSuffix: string, role: ActorRole): Promise<{ id: string; username: string }> {
   const username = `svs-${usernameSuffix}-${RUN_ID}`;
@@ -94,6 +142,14 @@ async function loginAgent(username: string): Promise<ReturnType<typeof request.a
   const agent = request.agent(app);
   const res = await post(agent, "/auth/login").send({ username, password: PASSWORD });
   if (res.status !== 200) throw new Error(`test setup failed to log in as ${username}: ${res.status} ${JSON.stringify(res.body)}`);
+  return agent;
+}
+
+/** R1.6-P3C-1 — same credentials, a DIFFERENT app instance (buildAppWithCatalog()) — valid because sessions are validated against the same shared, Prisma-backed SessionRepository regardless of which Express app instance handles a given request. */
+async function loginTo(targetApp: Express, username: string): Promise<ReturnType<typeof request.agent>> {
+  const agent = request.agent(targetApp);
+  const res = await post(agent, "/auth/login").send({ username, password: PASSWORD });
+  if (res.status !== 200) throw new Error(`test setup failed to log in as ${username} against this app instance: ${res.status} ${JSON.stringify(res.body)}`);
   return agent;
 }
 
@@ -135,6 +191,7 @@ beforeAll(async () => {
   ownerAgent = await loginAgent(owner.username);
   managerAgent = await loginAgent(manager.username);
   receptionAgent = await loginAgent(reception.username);
+  ownerUsername = owner.username;
 });
 afterAll(async () => {
   await prisma.$disconnect();
@@ -403,5 +460,62 @@ describe("R1.5-P2D — ACTIVE_ASSIGNMENTS_OUTSIDE_FLOORPLAN mapping, and no iden
     const row = await prisma.serviceSession.findUniqueOrThrow({ where: { id } });
     expect(row.status).toBe("Created");
     expect(row.floorplanVersionId).toBeNull();
+  });
+});
+
+describe("POST /service-sessions — R1.6-P3C-1 operatingIntervalSnapshot resolution", () => {
+  it("resolves and forwards the current defaultOperatingInterval when the Service Catalog dependency is wired (lunch -> [720,960))", async () => {
+    const appWithCatalog = buildAppWithCatalog();
+    const agent = await loginTo(appWithCatalog, ownerUsername);
+    const serviceDate = nextServiceDate();
+    const res = await post(agent, "/service-sessions").send({ serviceCode: "lunch", serviceDate });
+    expect(res.status).toBe(201);
+    expect(res.body.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("resolves null when the matching Service has no configured default (dinner, unconfigured), even with the catalog dependency wired", async () => {
+    const appWithCatalog = buildAppWithCatalog();
+    const agent = await loginTo(appWithCatalog, ownerUsername);
+    const serviceDate = nextServiceDate();
+    const res = await post(agent, "/service-sessions").send({ serviceCode: "dinner", serviceDate });
+    expect(res.status).toBe(201);
+    expect(res.body.session.operatingIntervalSnapshot).toBeNull();
+  });
+
+  it("uses null when the optional Service Catalog dependency is absent from this deployment (this file's own default buildApp())", async () => {
+    const serviceDate = nextServiceDate();
+    const res = await post(ownerAgent, "/service-sessions").send({ serviceCode: "lunch", serviceDate });
+    expect(res.status).toBe(201);
+    expect(res.body.session.operatingIntervalSnapshot).toBeNull();
+  });
+
+  it("GET /service-sessions returns the session's own STORED snapshot (round-trip)", async () => {
+    const appWithCatalog = buildAppWithCatalog();
+    const agent = await loginTo(appWithCatalog, ownerUsername);
+    const serviceDate = nextServiceDate();
+    const created = await post(agent, "/service-sessions").send({ serviceCode: "lunch", serviceDate });
+    expect(created.body.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+
+    const read = await agent.get(`/service-sessions?serviceDate=${encodeURIComponent(serviceDate)}`);
+    const lunchSession = read.body.sessions.find((s: { serviceCode: string }) => s.serviceCode === "lunch");
+    expect(lunchSession.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("structurally, GET /service-sessions never reads the Service Catalog at all — only POST resolves a defaultOperatingInterval, so a GET response can only ever reflect what was stored at creation, never the catalog's current state", () => {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const appSource = readFileSync(path.join(root, "api", "app.ts"), "utf-8");
+    const getHandlerMatch = appSource.match(/app\.get\("\/service-sessions",[\s\S]*?\n {4}\}\);/);
+    expect(getHandlerMatch).not.toBeNull();
+    expect(getHandlerMatch![0]).not.toMatch(/serviceCatalog/);
+  });
+
+  it("existing authentication and permission behavior is unaffected by the catalog dependency being wired", async () => {
+    const appWithCatalog = buildAppWithCatalog();
+    const unauthenticated = await request(appWithCatalog).get(`/service-sessions?serviceDate=${nextServiceDate()}`);
+    expect(unauthenticated.status).toBe(401);
+
+    const receptionAgentOnCatalogApp = await loginTo(appWithCatalog, ownerUsername);
+    const readRes = await receptionAgentOnCatalogApp.get(`/service-sessions?serviceDate=${nextServiceDate()}`);
+    expect(readRes.status).toBe(200);
   });
 });

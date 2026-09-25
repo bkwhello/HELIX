@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { createTestPrismaClient } from "../integration/support/testDatabaseSafety.js";
 import { PrismaServiceDefinitionRepository } from "../../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
+import { InvalidServiceOperatingIntervalError } from "../../domain/availability/ServiceOperatingInterval.js";
 
 /**
  * R1.6-P3A — CAP-D02.01 persisted-catalog foundation. Real-PostgreSQL,
@@ -174,5 +175,44 @@ describe("PrismaServiceDefinitionRepository — update()", () => {
 
     const afterRollback = await repository.findByCode("dinner");
     expect(afterRollback?.displayName).toBe("Dinner");
+  });
+});
+
+describe("PrismaServiceDefinitionRepository — defaultOperatingInterval mapping (R1.6-P3C-1)", () => {
+  it("maps a valid persisted pair (lunch, seeded [720,960)) to the atomic domain value", async () => {
+    const lunch = await repository.findByCode("lunch");
+    expect(lunch?.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("maps a both-null persisted pair (dinner, unconfigured) to null", async () => {
+    const dinner = await repository.findByCode("dinner");
+    expect(dinner?.defaultOperatingInterval).toBeNull();
+  });
+
+  it("a malformed (partially populated) persisted pair causes the repository to throw explicitly — never silently coerced to null (rollback-contained: the CHECK constraint is dropped only inside this transaction, which always rolls back)", async () => {
+    class RollbackSentinel extends Error {}
+
+    await prisma
+      .$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`ALTER TABLE "services" DROP CONSTRAINT "services_default_operating_interval_check"`);
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = 500 WHERE "code" = 'dinner'`);
+
+        const ctx = tx as TransactionContext;
+        await expect(repository.findByCode("dinner", ctx)).rejects.toThrow(InvalidServiceOperatingIntervalError);
+
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+
+    // Verify afterward: the CHECK constraint is back (rolled back with
+    // everything else), and dinner's pair is unchanged.
+    const constraintRows = await prisma.$queryRawUnsafe<{ conname: string }[]>(
+      `SELECT conname FROM pg_constraint WHERE conname = 'services_default_operating_interval_check'`
+    );
+    expect(constraintRows).toHaveLength(1);
+    const dinner = await repository.findByCode("dinner");
+    expect(dinner?.defaultOperatingInterval).toBeNull();
   });
 });

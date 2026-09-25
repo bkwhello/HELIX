@@ -467,3 +467,137 @@ describe("ServiceSessionService — archiving a non-default version referenced b
     expect(version?.status).toBe("Archived");
   });
 });
+
+describe("ServiceSessionService.create — R1.6-P3C-1 operatingIntervalSnapshot", () => {
+  it("stores whatever pair the caller supplies (the route composition's resolved defaultOperatingInterval — this service never resolves it itself)", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-01",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 720, endMinute: 960 },
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    expect(created.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("stores null when the caller supplies null (mirrors an unconfigured Service default, e.g. dinner)", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "dinner",
+      serviceDate: "2026-10-01",
+      actor: staffActor,
+      operatingIntervalSnapshot: null,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    expect(created.session.operatingIntervalSnapshot).toBeNull();
+  });
+
+  it("stores null when the caller omits the field entirely (e.g. the optional Service Catalog dependency is absent in that deployment)", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({ serviceCode: "lunch", serviceDate: "2026-10-02", actor: staffActor });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    expect(created.session.operatingIntervalSnapshot).toBeNull();
+  });
+
+  it("an idempotent repeated create (ALREADY_EXISTS) preserves the ORIGINAL snapshot, even if the repeat call supplies a different one", async () => {
+    const svc = service(prisma);
+    const first = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-03",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 720, endMinute: 960 },
+    });
+    if (first.type !== "CREATED") throw new Error("unreachable");
+
+    const repeat = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-03",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 0, endMinute: 60 }, // a deliberately DIFFERENT pair
+    });
+    expect(repeat.type).toBe("ALREADY_EXISTS");
+    if (repeat.type !== "ALREADY_EXISTS") throw new Error("unreachable");
+    expect(repeat.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+    expect(repeat.session.id).toBe(first.session.id);
+  });
+
+  it("open() preserves the snapshot taken at creation, unchanged", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-01",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 720, endMinute: 960 },
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const opened = await svc.open(created.session.id);
+    if (opened.type !== "OPENED") throw new Error("unreachable");
+    expect(opened.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("close() preserves the snapshot taken at creation, unchanged", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-01",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 720, endMinute: 960 },
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const opened = await svc.open(created.session.id);
+    if (opened.type !== "OPENED") throw new Error("unreachable");
+    const closed = await svc.close(created.session.id);
+    if (closed.type !== "CLOSED") throw new Error("unreachable");
+    expect(closed.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("cancel() preserves the snapshot taken at creation, unchanged", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "dinner",
+      serviceDate: "2026-10-02",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 1020, endMinute: 1320 },
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const cancelled = await svc.cancel(created.session.id);
+    if (cancelled.type !== "CANCELLED") throw new Error("unreachable");
+    expect(cancelled.session.operatingIntervalSnapshot).toEqual({ startMinute: 1020, endMinute: 1320 });
+  });
+
+  it("changing the Service catalog's own default AFTER a session is created never rewrites that session's already-taken snapshot (rollback-contained real-catalog proof)", async () => {
+    class RollbackSentinel extends Error {}
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-03",
+      actor: staffActor,
+      operatingIntervalSnapshot: { startMinute: 720, endMinute: 960 },
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+
+    await prisma
+      .$transaction(async (tx) => {
+        // Simulates a later change to lunch's own catalog default —
+        // this session's own snapshot column is never touched by it.
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = 660, "default_end_minute" = 900 WHERE "code" = 'lunch'`);
+        const changed = await tx.service.findUniqueOrThrow({ where: { code: "lunch" } });
+        expect(changed.defaultStartMinute).toBe(660);
+
+        const stillOriginal = await tx.serviceSession.findUniqueOrThrow({ where: { id: created.session.id } });
+        expect(stillOriginal.startMinute).toBe(720);
+        expect(stillOriginal.endMinute).toBe(960);
+
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+
+    const lunch = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+    expect(lunch.defaultStartMinute).toBe(720);
+    const session = await svc.findById(created.session.id);
+    expect(session?.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+});

@@ -553,3 +553,58 @@ describe("Initialization and existing features — unaffected", () => {
     expect(source).toContain("GET /service-sessions?serviceDate=YYYY-MM-DD");
   });
 });
+
+describe("Servicesessies — R1.6-P3C-1 read-only operating-interval snapshot display", () => {
+  let formatterBlock: string;
+
+  beforeAll(() => {
+    const formatterStart = source.indexOf("function formatOperatingIntervalMinute(minute) {");
+    const formatterEnd = source.indexOf("function loadServiceSessions() {", formatterStart);
+    expect(formatterStart).toBeGreaterThan(-1);
+    expect(formatterEnd).toBeGreaterThan(formatterStart);
+    formatterBlock = source.slice(formatterStart, formatterEnd);
+  });
+
+  it("a formatting helper exists and returns the null-state text for a null/absent interval", () => {
+    expect(formatterBlock).toMatch(/function formatOperatingIntervalSnapshot\(interval\)/);
+    expect(formatterBlock).toMatch(/if \(!interval\) return "Geen standaardtijd vastgelegd";/);
+  });
+
+  it("the render function reads the value from session.operatingIntervalSnapshot only — never from a Service catalog fetch, never recomputed from the selected list date", () => {
+    expect(renderPanelBlock).toMatch(/formatOperatingIntervalSnapshot\(session\.operatingIntervalSnapshot\)/);
+    expect(renderPanelBlock).not.toMatch(/fetch\(["'`]\/services/);
+    expect(renderPanelBlock).not.toMatch(/listDateInput/);
+  });
+
+  it("the interval text is shown only for a real session row (not for 'NotCreated' or still-loading), gated on `if (session)`", () => {
+    expect(renderPanelBlock).toMatch(/if \(session\) \{[\s\S]*?formatOperatingIntervalSnapshot/);
+  });
+
+  it("dynamic text is assigned via .textContent, never raw interpolated innerHTML", () => {
+    expect(renderPanelBlock).toMatch(/intervalSpan\.textContent = formatOperatingIntervalSnapshot/);
+    expect(renderPanelBlock).not.toMatch(/innerHTML\s*=\s*`[^`]*\$\{[^}]*(interval|Minute)/i);
+  });
+
+  it("no editor, input, or save control exists for the operating-interval snapshot anywhere in this panel — it is read-only display text only", () => {
+    expect(source).not.toMatch(/service-session-operating-interval["'][^>]*<input/);
+    expect(source).not.toMatch(/operatingIntervalSnapshot[\s\S]{0,80}\.value\s*=/);
+    expect(source).not.toMatch(/saveOperatingInterval|editOperatingInterval/);
+  });
+
+  it("the Diensten catalog editor is unchanged by this addition — still no operating-interval input there either (deferred to P3C-2)", () => {
+    const dienstenStart = source.indexOf("// --- Diensten (R1.6-P3B)");
+    const dienstenEnd = source.indexOf("// --- Sluitingsdagen", dienstenStart);
+    expect(dienstenStart).toBeGreaterThan(-1);
+    const dienstenScript = source.slice(dienstenStart, dienstenEnd);
+    expect(dienstenScript).not.toMatch(/defaultOperatingInterval/);
+    expect(dienstenScript).not.toMatch(/startMinute|endMinute/);
+  });
+
+  it("no confirmation dialog was added to this panel by this change, and the lifecycle action matrix (Aanmaken/Openen/Annuleren/Sluiten) is unchanged", () => {
+    expect(renderPanelBlock).toMatch(/"Aanmaken"/);
+    expect(renderPanelBlock).toMatch(/"Openen"/);
+    expect(renderPanelBlock).toMatch(/"Annuleren"/);
+    expect(renderPanelBlock).toMatch(/"Sluiten"/);
+    expect(renderPanelBlock).not.toMatch(/confirm\(/);
+  });
+});

@@ -118,3 +118,15 @@ describe("ServiceSession lifecycle remains independent of the management service
     expect(construction![1]).not.toMatch(/ServiceDefinitionRepository|serviceCatalog/);
   });
 });
+
+describe("R1.6-P3C-1 — production still uses exactly one shared PrismaServiceDefinitionRepository instance", () => {
+  it("api/server.ts constructs PrismaServiceDefinitionRepository exactly once, reused by both servicePeriodReader and serviceCatalog", () => {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const serverSource = readFileSync(path.join(root, "api", "server.ts"), "utf-8");
+    const instantiations = serverSource.match(/new PrismaServiceDefinitionRepository\(/g) ?? [];
+    expect(instantiations).toHaveLength(1);
+    expect(serverSource).toMatch(/const serviceDefinitionRepository = new PrismaServiceDefinitionRepository\(prisma\);/);
+    expect(serverSource).toMatch(/new CanonicalServicePeriodReader\(serviceDefinitionRepository\)/);
+    expect(serverSource).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
+  });
+});

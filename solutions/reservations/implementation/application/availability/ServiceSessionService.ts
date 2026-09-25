@@ -1,6 +1,7 @@
 import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSession, ServiceSessionStatus, isValidServiceSessionTransition } from "../../domain/availability/ServiceSession.js";
 import { isServiceCode } from "../../domain/availability/Service.js";
+import { ServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
 import { FloorplanRepository } from "../../domain/repositories/FloorplanRepository.js";
 import { MAIN_FLOORPLAN_ID } from "../../domain/floor/Floorplan.js";
 import { TransactionManager } from "../ports/TransactionManager.js";
@@ -100,7 +101,26 @@ export class ServiceSessionService {
    * the constraint is what actually guarantees it" posture as every
    * other idempotency mechanism in this codebase).
    */
-  async create(input: { readonly serviceCode: string; readonly serviceDate: string; readonly actor: Actor }): Promise<ServiceSessionCreateOutcome> {
+  /**
+   * R1.6-P3C-1 — `operatingIntervalSnapshot` is written exactly as
+   * supplied (or `null`), once, and never re-read or rewritten
+   * afterward — this method does NOT resolve it from any Service
+   * catalog itself (this class's own constructor dependencies are
+   * unchanged by this milestone — still no way to reach the Service
+   * catalog at all); the caller (the `POST /service-sessions` route
+   * composition) resolves the matching Service's current
+   * `defaultOperatingInterval` BEFORE calling this method and passes the
+   * single resolved value through. The idempotent-repeat branch below
+   * (`ALREADY_EXISTS`) already preserves whatever snapshot the FIRST
+   * create wrote, with no change needed here — it simply returns the
+   * already-committed row untouched, exactly as it always has.
+   */
+  async create(input: {
+    readonly serviceCode: string;
+    readonly serviceDate: string;
+    readonly actor: Actor;
+    readonly operatingIntervalSnapshot?: ServiceOperatingInterval | null;
+  }): Promise<ServiceSessionCreateOutcome> {
     if (!isServiceCode(input.serviceCode)) return { type: "INVALID_SERVICE_CODE" };
     if (!isValidServiceDate(input.serviceDate)) return { type: "INVALID_SERVICE_DATE" };
 
@@ -114,6 +134,7 @@ export class ServiceSessionService {
         serviceDate: input.serviceDate,
         createdBy: input.actor.id,
         createdAt: this.clock.now(),
+        operatingIntervalSnapshot: input.operatingIntervalSnapshot ?? null,
         tx,
       });
       return { type: "CREATED", session };

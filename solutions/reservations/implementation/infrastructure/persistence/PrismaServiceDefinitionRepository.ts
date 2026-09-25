@@ -2,6 +2,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDefinitionRepository.js";
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode, isServiceCode } from "../../domain/availability/Service.js";
+import { parsePersistedServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { asPrismaTx } from "./PrismaTransactionManager.js";
 
@@ -11,12 +12,33 @@ interface ServiceRow {
   enabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+  defaultStartMinute: number | null;
+  defaultEndMinute: number | null;
 }
 
-/** `code` is validated against the closed `ServiceCode` union at the read boundary — this repository never returns a row whose stored code has drifted outside {"lunch","dinner"}; such a row (which nothing in this increment can create) is treated as absent rather than surfaced as a malformed ServiceDefinition. */
+/**
+ * `code` is validated against the closed `ServiceCode` union at the read
+ * boundary — this repository never returns a row whose stored code has
+ * drifted outside {"lunch","dinner"}; such a row (which nothing in this
+ * increment can create) is treated as absent rather than surfaced as a
+ * malformed ServiceDefinition.
+ *
+ * R1.6-P3C-1 — `parsePersistedServiceOperatingInterval` THROWS on a
+ * partially-populated pair rather than silently coercing it to `null` —
+ * this repository never catches that error, so a malformed persisted
+ * state (which the database's own CHECK constraint should make
+ * unreachable in practice) fails loudly here too, never silently.
+ */
 function toDomainServiceDefinition(row: ServiceRow): ServiceDefinition | null {
   if (!isServiceCode(row.code)) return null;
-  return { code: row.code, displayName: row.displayName, enabled: row.enabled, createdAt: row.createdAt, updatedAt: row.updatedAt };
+  return {
+    code: row.code,
+    displayName: row.displayName,
+    enabled: row.enabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    defaultOperatingInterval: parsePersistedServiceOperatingInterval(row.defaultStartMinute, row.defaultEndMinute),
+  };
 }
 
 export class PrismaServiceDefinitionRepository implements ServiceDefinitionRepository {

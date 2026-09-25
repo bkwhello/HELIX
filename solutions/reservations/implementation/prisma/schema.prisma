@@ -217,6 +217,19 @@ model ServiceSession {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   // Optimistic-concurrency token — same convention as Reservation.version.
   version     Int       @default(1)
+  // R1.6-P3C-1 — the matching Service's `defaultOperatingInterval` at
+  // creation time, copied once and never rewritten afterward — see
+  // domain/availability/ServiceSession.ts's own doc comment on
+  // `operatingIntervalSnapshot`, and ServiceOperatingInterval.ts for the
+  // atomic domain value these two columns are reconciled into. Both null
+  // together (no default was configured / supplied at creation), or both
+  // non-null — enforced by this same migration's own paired-nullability
+  // CHECK constraint (same "Prisma's schema language has no native CHECK
+  // syntax" posture as floorplanVersionId's own CHECK constraint above).
+  // Read-only historical planning data: no application code path ever
+  // updates these two columns after the row's own INSERT.
+  startMinute Int? @map("start_minute")
+  endMinute   Int? @map("end_minute")
 
   floorplanVersion FloorplanVersion? @relation(fields: [floorplanVersionId], references: [id], onDelete: Restrict)
   // R1.6-P3A — integrity backstop only, not a behavior change: serviceCode
@@ -258,6 +271,21 @@ model Service {
   enabled     Boolean
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  // R1.6-P3C-1 — a planning DEFAULT only, per the R1.6-P3C-A design
+  // addendum's accepted decisions: does not affect deriveServiceCode
+  // classification, booking-window eligibility, capacity, seating, or
+  // ServiceSession open/close/cancel transitions. Not editable through
+  // the management API/pilot until P3C-2 (read-only in this milestone).
+  // Both null together, or both non-null — enforced by this migration's
+  // own paired-nullability CHECK constraint (Prisma's schema language has
+  // no native CHECK syntax used elsewhere in this project — same posture
+  // as ServiceSession.floorplanVersionId's own CHECK constraint). Seeded
+  // by this migration for `lunch` only (720/960 — the already-accepted
+  // [12:00,16:00) classification boundary, not a new guess); `dinner`
+  // stays null — no accepted product value exists for it. See
+  // domain/availability/ServiceOperatingInterval.ts.
+  defaultStartMinute Int? @map("default_start_minute")
+  defaultEndMinute   Int? @map("default_end_minute")
 
   serviceSessions ServiceSession[]
 

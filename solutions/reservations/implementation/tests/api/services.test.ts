@@ -161,13 +161,23 @@ describe("GET /services — authentication only, no specific permission", () => 
     expect(res.body.services.map((s: { code: string }) => s.code)).toEqual(["lunch", "dinner"]);
   });
 
-  it("exact allowlisted keys per row — code, displayName, enabled, createdAt, updatedAt, nothing else", async () => {
+  it("exact allowlisted keys per row — code, displayName, enabled, createdAt, updatedAt, defaultOperatingInterval, nothing else", async () => {
     const app = buildApp(freshCatalog());
     const agent = await loginTo(app, ownerUsername);
     const res = await agent.get("/services");
     for (const row of res.body.services) {
-      expect(Object.keys(row).sort()).toEqual(["code", "createdAt", "displayName", "enabled", "updatedAt"].sort());
+      expect(Object.keys(row).sort()).toEqual(["code", "createdAt", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort());
     }
+  });
+
+  it("R1.6-P3C-1 — defaultOperatingInterval is the nested atomic {startMinute,endMinute} shape or null, never independent optional fields", async () => {
+    const app = buildApp(freshCatalog());
+    const agent = await loginTo(app, ownerUsername);
+    const res = await agent.get("/services");
+    const lunch = res.body.services.find((s: { code: string }) => s.code === "lunch");
+    const dinner = res.body.services.find((s: { code: string }) => s.code === "dinner");
+    expect(lunch.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+    expect(dinner.defaultOperatingInterval).toBeNull();
   });
 
   it("empty repository behavior — services: [], not an error", async () => {
@@ -252,6 +262,13 @@ describe("PATCH /services/:code — structural/domain validation, 422 violations
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
   });
 
+  it("R1.6-P3C-1 — defaultOperatingInterval is rejected as an unknown field; PATCH still accepts only displayName/enabled in this milestone", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0, endMinute: 60 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
+  });
+
   it("code in body -> 422, rejected even when it matches the path param", async () => {
     const agent = await ownerAgentFor(freshCatalog());
     const res = await patch(agent, "/services/lunch").send({ code: "lunch", displayName: "X" });
@@ -310,7 +327,14 @@ describe("PATCH /services/:code — successful mutation", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       type: "UPDATED",
-      service: { code: "lunch", displayName: "Middagmenu", enabled: true, createdAt: expect.any(String), updatedAt: expect.any(String) },
+      service: {
+        code: "lunch",
+        displayName: "Middagmenu",
+        enabled: true,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+        defaultOperatingInterval: { startMinute: 720, endMinute: 960 },
+      },
     });
   });
 

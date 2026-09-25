@@ -11,6 +11,7 @@
  * `application/availability/ServiceSessionService.ts`.
  */
 import { ServiceCode } from "./Service.js";
+import { ServiceOperatingInterval } from "./ServiceOperatingInterval.js";
 
 export type ServiceSessionStatus = "Created" | "Opened" | "Closed" | "Cancelled";
 
@@ -20,6 +21,18 @@ export interface ServiceSession {
   /** Amsterdam-local calendar date, "YYYY-MM-DD" — matches ServiceTime.ts's toLocalServiceDate output exactly. */
   readonly serviceDate: string;
   readonly status: ServiceSessionStatus;
+  /**
+   * R1.6-P3C-1 — the matching Service's `defaultOperatingInterval` at the
+   * instant this session was CREATED, copied once and never re-read or
+   * rewritten afterward — same "set exactly once, on Created ->
+   * anything, never rewritten" posture as `floorplanVersionId` below.
+   * `null` if the Service had no configured default at creation time, or
+   * if the caller supplied none (e.g. the optional Service Catalog
+   * dependency was absent in that deployment). Read-only historical
+   * planning data: does not affect open/close/cancel, capacity, seating,
+   * or classification in any way.
+   */
+  readonly operatingIntervalSnapshot: ServiceOperatingInterval | null;
   /**
    * R1.5-P2C — the FloorplanVersion snapshotted at Open time (the
    * Published default of MAIN_FLOORPLAN_ID at that instant). Null for

@@ -2061,6 +2061,21 @@
   const serviceSessionMessage = document.getElementById("service-session-message");
   const serviceSessionList = document.getElementById("service-session-list");
 
+  // R1.6-P3C-1 — pure display formatting only, never a computation of
+  // what the interval "should" be. The value always comes from the
+  // session's OWN `operatingIntervalSnapshot` (its historical planning
+  // data, fixed at creation) — never from the current Service catalog
+  // row, and never recomputed from the selected Dagoverzicht date.
+  function formatOperatingIntervalMinute(minute) {
+    const hour = Math.floor(minute / 60);
+    const min = minute % 60;
+    return String(hour).padStart(2, "0") + ":" + String(min).padStart(2, "0");
+  }
+  function formatOperatingIntervalSnapshot(interval) {
+    if (!interval) return "Geen standaardtijd vastgelegd";
+    return formatOperatingIntervalMinute(interval.startMinute) + "–" + formatOperatingIntervalMinute(interval.endMinute);
+  }
+
   // Keyed by serviceCode ("lunch"/"dinner"). undefined = not yet loaded
   // for the current list-date; null = loaded and confirmed absent
   // ("Niet aangemaakt"); otherwise the real session object returned by
@@ -2100,6 +2115,16 @@
       badge.className = "status" + (status ? " session-status-" + status : "");
       badge.textContent = status ? SESSION_STATUS_LABELS[status] : "…";
       label.appendChild(badge);
+      // R1.6-P3C-1 — read-only historical planning text, shown only once
+      // a real session row exists (not for "NotCreated"/still-loading,
+      // which have no snapshot to show at all). Sourced exclusively from
+      // that session's own operatingIntervalSnapshot.
+      if (session) {
+        const intervalSpan = document.createElement("span");
+        intervalSpan.className = "service-session-operating-interval";
+        intervalSpan.textContent = formatOperatingIntervalSnapshot(session.operatingIntervalSnapshot);
+        label.appendChild(intervalSpan);
+      }
       row.appendChild(label);
 
       const actions = document.createElement("div");

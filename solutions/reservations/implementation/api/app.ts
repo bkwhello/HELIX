@@ -1079,6 +1079,10 @@ export function createApp(deps: AppDependencies): Express {
           serviceDate: s.serviceDate,
           status: s.status,
           floorplanVersionId: s.floorplanVersionId,
+          // R1.6-P3C-1 — the session's own historical snapshot, never the
+          // current Service default; see ServiceSession.ts's own doc
+          // comment on this field.
+          operatingIntervalSnapshot: s.operatingIntervalSnapshot,
           openedAt: s.openedAt ? s.openedAt.toISOString() : null,
           closedAt: s.closedAt ? s.closedAt.toISOString() : null,
           cancelledAt: s.cancelledAt ? s.cancelledAt.toISOString() : null,
@@ -1098,7 +1102,26 @@ export function createApp(deps: AppDependencies): Express {
         res.status(400).json({ message: "serviceDate must be a YYYY-MM-DD date." });
         return;
       }
-      const result = await serviceSessionService.create({ serviceCode: body.serviceCode, serviceDate: body.serviceDate, actor });
+      // R1.6-P3C-1 — this route (not ServiceSessionService, which stays
+      // free of a ServiceDefinitionRepository dependency) resolves the
+      // matching Service's CURRENT defaultOperatingInterval and passes
+      // the single resolved value through as a one-time creation
+      // snapshot. This read has no freshness invariant (it is planning
+      // metadata, never re-consulted after creation) and deliberately
+      // happens before ServiceSessionService's own transaction begins —
+      // see ServiceOperatingInterval.ts and ServiceSession.ts's own doc
+      // comments. If the optional Service Catalog dependency is not
+      // wired in this deployment, the snapshot is null — never blocking
+      // session creation.
+      const operatingIntervalSnapshot = deps.serviceCatalog
+        ? (await deps.serviceCatalog.repository.findByCode(body.serviceCode))?.defaultOperatingInterval ?? null
+        : null;
+      const result = await serviceSessionService.create({
+        serviceCode: body.serviceCode,
+        serviceDate: body.serviceDate,
+        actor,
+        operatingIntervalSnapshot,
+      });
       switch (result.type) {
         case "CREATED":
           res.status(201).json({ type: "CREATED", session: result.session });
@@ -1185,6 +1208,10 @@ export function createApp(deps: AppDependencies): Express {
         enabled: service.enabled,
         createdAt: service.createdAt.toISOString(),
         updatedAt: service.updatedAt.toISOString(),
+        // R1.6-P3C-1 — read-only in this milestone; PATCH /services/:code
+        // does not accept this field until P3C-2 (see the body validation
+        // below, which rejects any key other than displayName/enabled).
+        defaultOperatingInterval: service.defaultOperatingInterval,
       };
     }
 

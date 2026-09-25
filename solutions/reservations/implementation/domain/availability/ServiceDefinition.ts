@@ -26,6 +26,7 @@
  * reference-data tables (product-principles.md PRP-014/PRP-020).
  */
 import { ServiceCode } from "./Service.js";
+import { ServiceOperatingInterval } from "./ServiceOperatingInterval.js";
 
 export interface ServiceDefinition {
   readonly code: ServiceCode;
@@ -33,4 +34,12 @@ export interface ServiceDefinition {
   readonly enabled: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
+  /**
+   * R1.6-P3C-1 — a planning default only (see ServiceOperatingInterval.ts's
+   * own header). `null` means "not configured" — never a guessed value.
+   * Not editable through the management API/pilot until P3C-2; read-only
+   * in this milestone, consulted only to prepopulate a new
+   * ServiceSession's own snapshot at creation time.
+   */
+  readonly defaultOperatingInterval: ServiceOperatingInterval | null;
 }

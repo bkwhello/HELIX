@@ -152,6 +152,13 @@ const app = createApp({
   // R1.6-P3B — mounts GET /services and PATCH /services/:code. Reuses the
   // SAME serviceDefinitionRepository instance servicePeriodReader above
   // already holds — never a second instance, never a second connection.
+  //
+  // DEPLOYMENT PRECONDITION: migration `20260925120000_add_service_operating_interval`
+  // (adds the Service.defaultOperatingInterval and ServiceSession.operatingIntervalSnapshot
+  // columns, R1.6-P3C-1) MUST be applied before starting a build that
+  // selects or writes those columns — every read through
+  // serviceDefinitionRepository/PrismaServiceSessionRepository below
+  // depends on them existing.
   serviceCatalog: {
     repository: serviceDefinitionRepository,
   },

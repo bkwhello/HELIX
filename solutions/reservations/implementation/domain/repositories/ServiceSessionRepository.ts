@@ -1,4 +1,5 @@
 import { ServiceSession, ServiceSessionStatus } from "../availability/ServiceSession.js";
+import { ServiceOperatingInterval } from "../availability/ServiceOperatingInterval.js";
 import { TransactionContext } from "../shared/TransactionContext.js";
 
 /**
@@ -23,13 +24,26 @@ export interface ServiceSessionRepository {
    */
   listByServiceDate(serviceDate: string, tx?: TransactionContext): Promise<readonly ServiceSession[]>;
 
-  /** Rejects (translated by the caller) on the `(serviceCode, serviceDate)` unique-constraint collision — never a pre-check-then-write. */
+  /**
+   * Rejects (translated by the caller) on the `(serviceCode, serviceDate)`
+   * unique-constraint collision — never a pre-check-then-write.
+   *
+   * R1.6-P3C-1 — `operatingIntervalSnapshot` is written exactly as
+   * supplied (or `null`) and never read back from `services` by this
+   * repository or by `ServiceSessionService` — the caller (the
+   * `POST /service-sessions` route composition, not this service) is
+   * responsible for resolving the Service's current
+   * `defaultOperatingInterval` BEFORE calling this, mirroring this same
+   * interface's own established "caller resolves, this repository just
+   * persists" division of responsibility.
+   */
   create(input: {
     readonly id: string;
     readonly serviceCode: string;
     readonly serviceDate: string;
     readonly createdBy: string;
     readonly createdAt: Date;
+    readonly operatingIntervalSnapshot?: ServiceOperatingInterval | null;
     readonly tx: TransactionContext;
   }): Promise<ServiceSession>;
 
