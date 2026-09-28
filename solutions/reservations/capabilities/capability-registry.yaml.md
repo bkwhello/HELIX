@@ -394,18 +394,91 @@ capabilities:
     # no authenticated human browser workflow has exercised the panel —
     # automated tests are the only evidence to date (see
     # `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md`).
+    #
+    # R1-DOC-9 — R1.6-P3C-1 (commit `be5926fbb61383141e5fbcd780e98e918c422e40`,
+    # 2026-09-25, "feat(service): snapshot operating intervals") and
+    # R1.6-P3C-2 (commit `c93f6576e512bc75b84ab7105ace494e86b20746`,
+    # 2026-09-28, "feat(service): manage operating intervals") together
+    # deliver the first real, non-inert slice of this capability's
+    # **default operating times** owned rule:
+    #   - `Service` gained an optional, atomic PAIRED operating interval
+    #     (`domain/availability/ServiceOperatingInterval.ts`:
+    #     `{ startMinute, endMinute }`, Europe/Amsterdam local wall-time
+    #     minutes-since-midnight, end EXCLUSIVE) with three enforced
+    #     invariants — both columns null or both non-null (never one),
+    #     each minute bounded (`startMinute` in `[0,1439]`,
+    #     `endMinute` in `[1,1440]`), and `endMinute > startMinute`
+    #     (overnight intervals unsupported). Enforced twice: the
+    #     constructor (`createServiceOperatingInterval`,
+    #     `parsePersistedServiceOperatingInterval`) and a database
+    #     `CHECK` constraint on each of the two tables it touches —
+    #     migration `20260925120000_add_service_operating_interval`,
+    #     applied in `helix_reservations_dev`. Development currently
+    #     seeds `lunch` at `[720,960)` (12:00–16:00, the same boundary
+    #     already canonical for `deriveServiceCode`) and leaves `dinner`
+    #     unset (`null`) — no accepted product value for a dinner end
+    #     time exists.
+    #   - `ServiceSession` gained a matching optional pair,
+    #     `operatingIntervalSnapshot`, copied from the owning Service's
+    #     CURRENT interval exactly once, at session creation
+    #     (`POST /service-sessions`'s own route handler resolves it, NOT
+    #     `ServiceSessionService`, which deliberately still has no
+    #     `ServiceDefinitionRepository` dependency — see the P3C-A design
+    #     addendum's accepted decision to preserve that decoupling
+    #     invariant). The snapshot is then immutable: idempotent repeats,
+    #     `open()`/`close()`/`cancel()`, and any LATER Service edit
+    #     (including a full clear) never rewrite an already-created
+    #     session's own stored pair — proven with a barrier-controlled
+    #     (not timing-only) concurrent update-vs-create race in
+    #     `tests/integration/service-session-lifecycle.test.ts`.
+    #   - `PATCH /services/:code` (the same existing route and
+    #     permission, `Permission.CapacitySettingsManage` — no new route,
+    #     no new permission) now also accepts an optional
+    #     `defaultOperatingInterval` field: omitted means no change, a
+    #     complete `{startMinute,endMinute}` object atomically sets both
+    #     columns in one write, and literal `null` atomically clears both
+    #     — independent start-only/end-only fields are never accepted or
+    #     exposed. A same-value object or a null-clear-of-an-already-null
+    #     interval is a no-op that preserves `updatedAt`, exactly like the
+    #     pre-existing `displayName`/`enabled` same-value contract. Every
+    #     range/pairing rule is enforced by ONE place,
+    #     `createServiceOperatingInterval` — the route never duplicates
+    #     it — and a shape or value violation returns the established
+    #     `422 { violations }` envelope under one new, still-provisional
+    #     rule id, `CAP-D02.01-R07`.
+    #   - The "Diensten" pilot panel now exposes quarter-hour start
+    #     (`00:00`–`23:45`)/end (`00:15`–`24:00`) selects and an explicit
+    #     clear checkbox per row, submitted as one atomic nested value,
+    #     changed-fields-only, with no confirmation prompt (unlike the
+    #     pre-existing disable-a-Service confirmation, which this
+    #     milestone leaves untouched).
+    # `helix_reservations_dev` has this migration applied; `lunch` holds
+    # `[720,960)`, `dinner` holds `null`; `ServiceSessions = 0`; no
+    # development Service row has been edited through the API or UI since
+    # activation, and no authenticated human browser workflow has
+    # exercised either panel — automated tests are the only evidence to
+    # date (see `R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md`).
+    # This does NOT change: `lunch`/`dinner` classification
+    # (`deriveServiceCode` is untouched and unconsulted by any of this),
+    # booking-window eligibility (`ServicePeriod`/`BookingWindow`
+    # remain the sole authority, entirely independent of this axis),
+    # capacity behavior, ServiceSession lifecycle transitions
+    # (Created/Opened/Closed/Cancelled and their guards are unchanged),
+    # Floorplan selection or membership, or any existing Reservation's
+    # `servicePeriodId` value.
     # `delivery_status` intentionally remains unchanged at `Designed`:
     # this capability's own registered `owns.rules` — service naming
-    # (partially: only `displayName`, not the full naming/identity
-    # authority a Create/Delete/rename-code surface would imply),
-    # **default operating times**, and **default reservation
-    # duration** — are still entirely absent, as are two of this
+    # (still partial: only `displayName`), **default operating times**
+    # (now a real but MINIMAL slice: one optional daily interval, planning-
+    # default/snapshot semantics only — not yet any richer recurring or
+    # per-day-of-week schedule), and **default reservation duration**
+    # (still entirely absent, no field or concept exists for it anywhere)
+    # — remain short of the full registered rule set, as do two of this
     # capability's three registered `owns.events`
-    # (`ServiceCreated`/`ServiceDeactivated`; the catalog is fixed by
-    # migration seed data, not created or deactivated through any code
-    # path). No schedule, operating-time, or duration persistence exists
-    # anywhere in this slice — do not read this note as claiming
-    # otherwise.
+    # (`ServiceCreated`/`ServiceDeactivated`; the catalog is still fixed
+    # at exactly two rows by migration seed data, never created or
+    # deactivated through any code path — this milestone adds a bounded
+    # `ServiceModified`-shaped edit only, same as R1.6-P3B before it).
     delivery_status: Designed
     operational_maturity: M1
     mvp: true

@@ -264,8 +264,81 @@ ServiceSession.
   bounded read/edit surface over a fixed, two-row catalog; the
   capability's own registered rules — service naming (partially: only
   `displayName`), default operating times, and default reservation
-  duration — remain entirely undelivered, and no Create/Delete Service
-  operation exists.
+  duration — remained entirely undelivered at this milestone, and no
+  Create/Delete Service operation exists.
+  **Corrected (R1-DOC-9).** "Default operating times... remained
+  entirely undelivered" is no longer accurate — see the new "Service
+  Operating-Interval status" section immediately below for what R1.6-
+  P3C-1/P3C-2 subsequently added to this same panel.
+
+## Service Operating-Interval status (R1.6-P3C-1/P3C-2 — `CAP-D02.01`, remains `Designed`)
+
+The same "Diensten" panel described above now also exposes an optional,
+per-Service default operating interval — composing the same two routes
+(`GET /services`, `PATCH /services/:code`); no new backend surface.
+
+**What operators can view and edit:**
+
+- **Start/end quarter-hour selects** — start offers `00:00` through
+  `23:45`; end offers `00:15` through `24:00`; both in 15-minute steps.
+  The pair is edited and submitted as ONE atomic value
+  (`defaultOperatingInterval: {startMinute, endMinute}`) — there is no
+  way to send an independent start-only or end-only change.
+- **Explicit clear** — a dedicated checkbox per row ("Geen standaard
+  bedieningstijd"); checking it and saving sends
+  `defaultOperatingInterval: null`, atomically clearing both persisted
+  columns. Unchecking it restores whatever the selects currently show.
+- **Changed-fields-only submission** — Save compares the pending pair
+  against the authoritative one BY VALUE and includes
+  `defaultOperatingInterval` in the request only when it actually
+  differs; a no-op (nothing changed, including the interval) sends no
+  request at all, same as the pre-existing `displayName`/`enabled`
+  behavior.
+- **No confirmation dialog for interval edits** — setting, changing, or
+  clearing the interval never prompts. The existing confirmation for
+  disabling a Service (`enabled: false`) is unchanged: it still occurs
+  before the panel's in-flight guard and before any request, and
+  cancelling it still issues no request.
+- All the panel's other safety protections (single in-flight guard
+  cleared in `finally`, monotonic request token, authoritative reload
+  after a successful save, separate success/refresh messages, safe
+  401/403/422 handling, no client-side role branching) are unchanged and
+  apply equally to interval edits.
+
+**Session snapshots remain read-only in "Servicesessies":** that panel
+still only ever displays `ServiceSession.operatingIntervalSnapshot` as
+plain text (see the "Service Session status" section above) — it has no
+editor of its own, before or after this milestone.
+
+**Later Service edits never rewrite an existing session's snapshot:**
+the interval is copied from the owning Service's CURRENT value exactly
+once, at the moment a ServiceSession is created. Changing — or fully
+clearing — a Service's default afterward has no effect whatsoever on any
+ServiceSession already created for that Service, including sessions
+created before the change and sessions for a different date. This is
+proven with a real, barrier-controlled (not timing-only) concurrent
+race between a Service update and a session creation — see
+`R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md`.
+
+**Development activation (facts, verified read-only):**
+
+- Migration `20260925120000_add_service_operating_interval` is applied
+  in `helix_reservations_dev`.
+- `lunch` holds `defaultStartMinute=720`, `defaultEndMinute=960`
+  (`[720,960)`, 12:00–16:00).
+- `dinner` holds both values `null` — no accepted product value for a
+  dinner end time exists.
+- `ServiceSessions = 0` in development, unaffected by this milestone.
+- **No authenticated human browser workflow or smoke test was
+  performed** — no staff member has logged in and set, changed, or
+  cleared an interval through this panel against a running server.
+- **Nothing was deployed anywhere.**
+- `CAP-D02.01` remains `Designed` — this is a real but still minimal
+  slice of the *default operating times* owned rule (one optional daily
+  interval only, no richer recurring or per-day-of-week schedule); the
+  capability's *default reservation duration* rule and its
+  `ServiceCreated`/`ServiceDeactivated` owned events remain entirely
+  undelivered.
 
 ## Before starting
 

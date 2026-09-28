@@ -234,9 +234,10 @@ top of the three above:
   it; no Create/Delete route or UI exists, and `code` is never editable
   anywhere. See "Controlled pilot" below and
   `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` for the full design,
-  evidence, and the explicit boundary of what remains undelivered
-  (schedule, default operating time, default reservation duration — none
-  of it exists).
+  evidence, and the explicit boundary of what remained undelivered at
+  that milestone (schedule, default operating time, default reservation
+  duration — see the R1.6-P3C-1/P3C-2 bullet immediately below for what
+  has since changed).
   - **Automated verification is complete** — application, real-PostgreSQL
     integration (including a rollback-contained proof that the committed
     migration guard and the FK's `RESTRICT` actions are enforced by the
@@ -251,10 +252,50 @@ top of the three above:
     API or UI.
   - **Nothing has been deployed anywhere.**
   - `CAP-D02.01`'s capability status remains `Designed`, not `Pilot` —
-    unlike `CAP-D03.02`'s R1-DOC-7 promotion above, this slice does not
+    unlike `CAP-D03.02`'s R1-DOC-7 promotion above, this slice did not
     cover enough of the capability's own registered `owns.rules` (service
     naming is only partial; default operating times and default
-    reservation duration are entirely absent) to warrant one.
+    reservation duration were entirely absent at this milestone).
+- **Persisted Service operating-interval defaults and snapshots**
+  (`be5926f`, `c93f657`, R1.6-P3C-1/P3C-2 — `CAP-D02.01`, remains
+  `Designed`; R1-DOC-9): `Service` gained an optional, atomic paired
+  operating interval (`domain/availability/ServiceOperatingInterval.ts` —
+  `{startMinute,endMinute}`, paired-null/bounded-minute/`end > start`
+  rules enforced both in the constructor and by a database `CHECK`
+  constraint), and `ServiceSession` gained a matching
+  `operatingIntervalSnapshot` copied from the owning Service's CURRENT
+  interval exactly once, at creation — later Service edits, including a
+  full clear, never rewrite an already-created session's own snapshot
+  (proven with a barrier-controlled, non-timing-only concurrent
+  update-vs-create race). `PATCH /services/:code` (the same existing
+  route/permission) now also accepts `defaultOperatingInterval`: omitted
+  means no change, a complete object atomically sets both columns, `null`
+  atomically clears both — independent start/end fields are never
+  accepted or exposed, and a same-value/same-null request is a no-op
+  preserving `updatedAt`. The "Diensten" pilot panel exposes quarter-hour
+  (`00:00`–`23:45` start, `00:15`–`24:00` end) selects and an explicit
+  clear checkbox, submitted atomically with no confirmation prompt (the
+  existing disable-a-Service confirmation is unchanged). Migration
+  `20260925120000_add_service_operating_interval` is applied in
+  `helix_reservations_dev`: `lunch` holds `[720,960)` (12:00–16:00),
+  `dinner` holds `null`, `ServiceSessions = 0`. See
+  `R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md` for full
+  design, evidence, and totals.
+  - **This is a planning default only** — it does not change
+    `lunch`/`dinner` classification (`deriveServiceCode`), booking-window
+    eligibility, capacity behavior, ServiceSession lifecycle transitions,
+    Floorplan selection/membership, or any existing Reservation's
+    `servicePeriodId`.
+  - **No authenticated human browser workflow, development route call,
+    development Service edit, or development ServiceSession creation has
+    occurred** — automated tests and one authorized, read-only-verified
+    schema activation are the only evidence to date. **Nothing has been
+    deployed anywhere.**
+  - `CAP-D02.01` remains `Designed` — this is a real but still minimal
+    slice of the *default operating times* owned rule (one optional daily
+    interval; no richer recurring/per-day-of-week schedule), and *default
+    reservation duration* plus the `ServiceCreated`/`ServiceDeactivated`
+    owned events remain entirely undelivered.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -369,11 +410,23 @@ top of the three above:
     accurate as of R1.6-P3A/P3B (`5020a98`, `a9899ed`): a real, persisted
     `services` table now exists — see the new Status-section bullet above
     and `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` for the full
-    design. What remains genuinely undelivered, precisely: any Create or
-    Delete Service operation; `code` renaming (immutable everywhere by
-    design); and this capability's own registered schedule/default-
-    operating-time/default-reservation-duration rules, which do not exist
-    in any form. `CAP-D02.01` remains `Designed`.
+    design. What remained genuinely undelivered at that milestone,
+    precisely: any Create or Delete Service operation; `code` renaming
+    (immutable everywhere by design); and this capability's own
+    registered schedule/default-operating-time/default-reservation-
+    duration rules, which did not exist in any form. `CAP-D02.01` remains
+    `Designed`.
+    **Corrected further (R1-DOC-9).** The "default-operating-time... does
+    not exist in any form" clause immediately above is no longer accurate:
+    R1.6-P3C-1/P3C-2 (`be5926f`, `c93f657`) added a real, persisted,
+    optional paired operating interval per Service and a matching
+    immutable ServiceSession snapshot, plus management-API/pilot editing
+    for it — see the R1.6-P3C-1/P3C-2 Status-section bullet above and
+    `R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md`. Still
+    genuinely undelivered: any Create/Delete Service operation, `code`
+    renaming, default reservation duration, and any richer recurring/
+    per-day-of-week schedule beyond one optional daily interval.
+    `CAP-D02.01` remains `Designed`.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side
@@ -529,8 +582,9 @@ per-date `lunch`/`dinner` operational session lifecycle, with a matching
 status column on the daily list, a "Floorplannen" panel (R1.5-P2E-2,
 same permission for mutations) exposing Floorplan/version administration
 and Draft Table-membership editing, and a "Diensten" panel (R1.6-P3B,
-same permission for mutations) exposing read/edit access to the two
-persisted, canonical `lunch`/`dinner` Service rows — `displayName` and
-`enabled` only, no create/delete, `code` never editable. See `PILOT.md`
-for scope, known limitations, and success criteria before using it with
-real bookings.
+extended R1.6-P3C-2, same permission for mutations) exposing read/edit
+access to the two persisted, canonical `lunch`/`dinner` Service rows —
+`displayName`, `enabled`, and an optional quarter-hour default operating
+interval (set/change/clear, submitted atomically) — no create/delete,
+`code` never editable. See `PILOT.md` for scope, known limitations, and
+success criteria before using it with real bookings.

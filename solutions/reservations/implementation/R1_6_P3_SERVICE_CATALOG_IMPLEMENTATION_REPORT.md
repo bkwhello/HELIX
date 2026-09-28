@@ -319,3 +319,71 @@ anywhere in this codebase; this report does not claim otherwise.
   (whether/when to build Create/Delete Service, schedule/duration
   management, and any concurrency-precondition mechanism) are resolved.
   This report does not reopen or resolve any of them.
+
+## R1-DOC-9 reconciliation — what R1.6-P3C-1/P3C-2 subsequently added
+
+Everything above this section describes R1.6-P3A/P3B exactly as it stood
+at that milestone and is left unchanged — it was accurate then and
+remains an accurate historical record. This section records, without
+rewriting any of it, what two later, separately authorized milestones
+built on top of that foundation.
+
+**R1.6-P3C-1** (commit `be5926fbb61383141e5fbcd780e98e918c422e40`,
+2026-09-25, `feat(service): snapshot operating intervals`) added:
+
+- `domain/availability/ServiceOperatingInterval.ts` — the atomic
+  `{startMinute,endMinute}` value type this report's own "next
+  engineering gate" section above had explicitly left unresolved
+  ("default operating time... management" as a still-undelivered owned
+  rule).
+- Two new nullable-pair columns on `services`
+  (`default_start_minute`/`default_end_minute`) and two on
+  `service_sessions` (`start_minute`/`end_minute`), migration
+  `20260925120000_add_service_operating_interval`, each pair backed by a
+  database `CHECK` constraint mirroring the domain constructor's own
+  paired-null/bounded-minute/`end > start` rules.
+- `ServiceSession` creation copies the owning Service's CURRENT interval
+  exactly once, resolved by the `POST /service-sessions` route handler
+  itself (not `ServiceSessionService`, which still has no
+  `ServiceDefinitionRepository` dependency — a deliberate, tested
+  invariant).
+- Read-only exposure only at this milestone: `GET /services` and
+  `GET /service-sessions` both surface the new fields; `PATCH
+  /services/:code` still rejected `defaultOperatingInterval` as an
+  unknown field, and the "Diensten" panel had no editor for it yet —
+  editing was explicitly deferred to R1.6-P3C-2.
+
+**R1.6-P3C-2** (commit `c93f6576e512bc75b84ab7105ace494e86b20746`,
+2026-09-28, `feat(service): manage operating intervals`) added, with NO
+further schema or migration change:
+
+- `PATCH /services/:code` now accepts an optional
+  `defaultOperatingInterval`: omitted means no change, a complete object
+  atomically sets both columns in one write, `null` atomically clears
+  both — under one new provisional rule id, `CAP-D02.01-R07`, validated
+  exclusively through `createServiceOperatingInterval` (no duplicated
+  range/pairing logic in the route).
+- `ServiceCatalogManagementService.update()` and
+  `PrismaServiceDefinitionRepository.update()` both extended with the
+  same same-value/same-null no-op idempotency the pre-existing
+  `displayName`/`enabled` fields already had.
+- The "Diensten" pilot panel gained quarter-hour start/end selects and an
+  explicit clear checkbox, submitted atomically, changed-fields-only, no
+  new confirmation prompt.
+- A deterministic, barrier-controlled (not timing-only) proof that a
+  concurrent Service-interval update and a ServiceSession creation can
+  each only ever produce a COMPLETE old or COMPLETE new snapshot pair,
+  never a mix, and that an already-created session's snapshot is never
+  rewritten by a later Service edit (including a full clear).
+
+**Both milestones together:** `helix_reservations_dev` has the migration
+applied; `lunch` holds `[720,960)`; `dinner` holds `null`;
+`ServiceSessions = 0`; no development Service row has been edited and no
+development ServiceSession has been created since activation; no
+authenticated human browser workflow has exercised either panel; nothing
+has been deployed anywhere. `CAP-D02.01` remains `Designed` — see this
+capability's own registry entry (`R1-DOC-9` note) for the precise,
+current boundary of what remains undelivered. Full design, evidence, and
+test totals for both milestones are in the dedicated
+`R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md`, not
+repeated here.
