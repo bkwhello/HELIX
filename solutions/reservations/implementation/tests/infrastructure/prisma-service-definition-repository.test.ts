@@ -216,3 +216,93 @@ describe("PrismaServiceDefinitionRepository — defaultOperatingInterval mapping
     expect(dinner?.defaultOperatingInterval).toBeNull();
   });
 });
+
+/**
+ * R1.6-P3C-2 — real-adapter `update()` coverage for
+ * `defaultOperatingInterval`. Same rollback-contained convention as the
+ * P3B `update()` describe block above: every real write against the
+ * canonical `lunch`/`dinner` rows happens inside a transaction that always
+ * rolls back, so no persistent mutation of shared canonical rows is ever
+ * left behind for another test file to observe.
+ */
+describe("PrismaServiceDefinitionRepository — update() defaultOperatingInterval (R1.6-P3C-2)", () => {
+  class RollbackSentinel extends Error {}
+
+  // `fn` receives BOTH the opaque `TransactionContext` (for the repository
+  // call under test) and the real Prisma transaction client `tx` (for this
+  // test file's own raw verification queries) — verification must read
+  // through the SAME uncommitted transaction the write happened in; a raw
+  // query through the outer `prisma` client is a separate connection that
+  // cannot see uncommitted state at all, and would silently "pass" by
+  // reading the pre-existing committed row instead of proving anything.
+  async function rollbackContained(fn: (ctx: TransactionContext, tx: typeof prisma) => Promise<void>): Promise<void> {
+    await prisma
+      .$transaction(async (tx) => {
+        await fn(tx as TransactionContext, tx as unknown as typeof prisma);
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+  }
+
+  it("rollback-contained: an object patch atomically sets both columns in one write", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      const updated = await repository.update("dinner", { defaultOperatingInterval: { startMinute: 1080, endMinute: 1320 } }, ctx);
+      expect(updated?.defaultOperatingInterval).toEqual({ startMinute: 1080, endMinute: 1320 });
+
+      const raw = await tx.$queryRawUnsafe<{ s: number | null; e: number | null }[]>(
+        `SELECT default_start_minute AS s, default_end_minute AS e FROM services WHERE code = 'dinner'`
+      );
+      expect(raw[0]).toEqual({ s: 1080, e: 1320 });
+    });
+
+    const afterRollback = await repository.findByCode("dinner");
+    expect(afterRollback?.defaultOperatingInterval).toBeNull();
+  });
+
+  it("rollback-contained: a null patch atomically clears both columns in one write", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      const updated = await repository.update("lunch", { defaultOperatingInterval: null }, ctx);
+      expect(updated?.defaultOperatingInterval).toBeNull();
+
+      const raw = await tx.$queryRawUnsafe<{ s: number | null; e: number | null }[]>(
+        `SELECT default_start_minute AS s, default_end_minute AS e FROM services WHERE code = 'lunch'`
+      );
+      expect(raw[0]).toEqual({ s: null, e: null });
+    });
+
+    const afterRollback = await repository.findByCode("lunch");
+    expect(afterRollback?.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("rollback-contained: omitting defaultOperatingInterval touches neither column — combined with a displayName change", async () => {
+    await rollbackContained(async (ctx) => {
+      const updated = await repository.update("lunch", { displayName: "Lunchkaart" }, ctx);
+      expect(updated?.displayName).toBe("Lunchkaart");
+      expect(updated?.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+    });
+
+    const afterRollback = await repository.findByCode("lunch");
+    expect(afterRollback?.displayName).toBe("Lunch");
+    expect(afterRollback?.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+
+  it("an invalid direct persistence attempt (bypassing the repository) is rejected by the database CHECK constraint, not silently accepted", async () => {
+    await expect(
+      prisma.$executeRawUnsafe(`UPDATE "services" SET "default_start_minute" = 100, "default_end_minute" = 50 WHERE "code" = 'dinner'`)
+    ).rejects.toThrow(/services_default_operating_interval_check/);
+
+    // Never applied — the statement-level CHECK violation prevents the write entirely.
+    const dinner = await repository.findByCode("dinner");
+    expect(dinner?.defaultOperatingInterval).toBeNull();
+  });
+
+  it("P2025 (unknown/non-canonical code) returns null, not an error, when a defaultOperatingInterval patch is supplied", async () => {
+    const fixtureCode = `test-fixture-${Date.now().toString(36)}-interval`;
+    const result = await repository.update(fixtureCode as never, { defaultOperatingInterval: { startMinute: 0, endMinute: 60 } });
+    expect(result).toBeNull();
+    const row = await prisma.service.findUnique({ where: { code: fixtureCode } });
+    expect(row).toBeNull();
+  });
+});

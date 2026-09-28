@@ -1,12 +1,19 @@
 import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDefinitionRepository.js";
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode, isServiceCode } from "../../domain/availability/Service.js";
+import { ServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
 
 export type ServiceCatalogUpdateOutcome =
   | { readonly type: "UPDATED"; readonly service: ServiceDefinition }
   | { readonly type: "SERVICE_NOT_FOUND" };
 
 const CANONICAL_ORDER: readonly ServiceCode[] = ["lunch", "dinner"];
+
+/** By value, never by object identity — two independently-constructed intervals with equal minutes are equal, and `null` only equals `null`. */
+function intervalsEqual(a: ServiceOperatingInterval | null, b: ServiceOperatingInterval | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.startMinute === b.startMinute && a.endMinute === b.endMinute;
+}
 
 /**
  * R1.6-P3B — CAP-D02.01 Service catalog management: authenticated read of
@@ -50,15 +57,31 @@ export class ServiceCatalogManagementService {
    * no real change (an empty diff after comparison) returns UPDATED with
    * the existing, byte-identical row — no repository call, so
    * `updatedAt` is never bumped for a no-op request.
+   *
+   * R1.6-P3C-2 — `defaultOperatingInterval` joins that same same-value
+   * idempotency check, compared by value via `intervalsEqual` (never by
+   * object identity, and never by re-deriving it from two independent
+   * minute fields): omitted means "no interval change," an object means
+   * "atomically set," `null` means "atomically clear" — and either of the
+   * latter two is only actually written if it differs from the current
+   * value, so a same-value object resend and a null-clear-of-an-already-
+   * null interval are both no-ops, exactly like unchanged displayName/
+   * enabled.
    */
-  async update(code: string, patch: { readonly displayName?: string; readonly enabled?: boolean }): Promise<ServiceCatalogUpdateOutcome> {
+  async update(
+    code: string,
+    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceOperatingInterval | null }
+  ): Promise<ServiceCatalogUpdateOutcome> {
     if (!isServiceCode(code)) return { type: "SERVICE_NOT_FOUND" };
     const existing = await this.repository.findByCode(code);
     if (!existing) return { type: "SERVICE_NOT_FOUND" };
 
-    const changes: { displayName?: string; enabled?: boolean } = {};
+    const changes: { displayName?: string; enabled?: boolean; defaultOperatingInterval?: ServiceOperatingInterval | null } = {};
     if (patch.displayName !== undefined && patch.displayName !== existing.displayName) changes.displayName = patch.displayName;
     if (patch.enabled !== undefined && patch.enabled !== existing.enabled) changes.enabled = patch.enabled;
+    if (patch.defaultOperatingInterval !== undefined && !intervalsEqual(patch.defaultOperatingInterval, existing.defaultOperatingInterval)) {
+      changes.defaultOperatingInterval = patch.defaultOperatingInterval;
+    }
 
     if (Object.keys(changes).length === 0) {
       return { type: "UPDATED", service: existing };

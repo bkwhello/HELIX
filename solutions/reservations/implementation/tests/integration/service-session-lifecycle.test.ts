@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createTestPrismaClient, truncateReservationDomainTables } from "./support/testDatabaseSafety.js";
 import { PrismaServiceSessionRepository } from "../../infrastructure/persistence/PrismaServiceSessionRepository.js";
+import { PrismaServiceDefinitionRepository } from "../../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { PrismaTransactionManager } from "../../infrastructure/persistence/PrismaTransactionManager.js";
 import { PrismaFloorplanRepository } from "../../infrastructure/persistence/PrismaFloorplanRepository.js";
 import { ServiceSessionService } from "../../application/availability/ServiceSessionService.js";
@@ -599,5 +600,114 @@ describe("ServiceSessionService.create — R1.6-P3C-1 operatingIntervalSnapshot"
     expect(lunch.defaultStartMinute).toBe(720);
     const session = await svc.findById(created.session.id);
     expect(session?.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+  });
+});
+
+/**
+ * R1.6-P3C-2 — deterministic (barrier-controlled, never timing-only) proof
+ * for a real Service.update() interval change racing against a real
+ * ServiceSession creation. Each test performs a REAL committed
+ * PrismaServiceDefinitionRepository.update() against the canonical
+ * `lunch` row (not rollback-contained — a genuine cross-operation
+ * independence proof requires both operations to actually commit), and
+ * restores lunch's own [720,960) default in a `finally` block, so no
+ * persistent mutation of the shared canonical row survives this file's
+ * run for any other test file to observe.
+ */
+describe("ServiceSessionService.create — R1.6-P3C-2 deterministic race with a concurrent Service.update()", () => {
+  const definitionRepo = new PrismaServiceDefinitionRepository(prisma);
+
+  async function restoreLunchDefault(): Promise<void> {
+    await prisma.service.update({ where: { code: "lunch" }, data: { defaultStartMinute: 720, defaultEndMinute: 960 } });
+  }
+
+  it("a session whose interval READ happens before a concurrent Service.update() commits still receives the COMPLETE OLD pair, never a mix with the new one", async () => {
+    try {
+      const before = await definitionRepo.findByCode("lunch");
+      expect(before?.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+
+      // Deterministic barrier: the "create" half of the route's own
+      // read-then-create flow is held back on an explicit signal — it
+      // cannot proceed until the concurrent Service.update() below has
+      // already committed. This is not a timing race that happens to
+      // resolve one way; the ordering is enforced by the test itself.
+      let releaseCreate: () => void;
+      const createMayProceed = new Promise<void>((resolve) => {
+        releaseCreate = resolve;
+      });
+
+      const svc = service(prisma);
+      const createTask = (async () => {
+        await createMayProceed;
+        return svc.create({
+          serviceCode: "lunch",
+          serviceDate: "2026-10-04",
+          actor: staffActor,
+          operatingIntervalSnapshot: before?.defaultOperatingInterval ?? null,
+        });
+      })();
+
+      // Commits WHILE createTask is still blocked on the barrier above.
+      const updated = await definitionRepo.update("lunch", { defaultOperatingInterval: { startMinute: 600, endMinute: 700 } });
+      expect(updated?.defaultOperatingInterval).toEqual({ startMinute: 600, endMinute: 700 });
+
+      releaseCreate!();
+      const created = await createTask;
+      if (created.type !== "CREATED") throw new Error("unreachable");
+
+      // Complete OLD pair — never e.g. {start: 600, end: 960}, a mix of new-start/old-end.
+      expect(created.session.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+
+      // Both operations remained independently valid: the catalog update
+      // itself is visible...
+      const lunchAfter = await definitionRepo.findByCode("lunch");
+      expect(lunchAfter?.defaultOperatingInterval).toEqual({ startMinute: 600, endMinute: 700 });
+      // ...and it never rewrote the already-created session's own snapshot.
+      const reread = await svc.findById(created.session.id);
+      expect(reread?.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+    } finally {
+      await restoreLunchDefault();
+    }
+  });
+
+  it("a session created AFTER a Service.update() has committed receives the COMPLETE NEW pair — a future ServiceSession picks up the updated default", async () => {
+    try {
+      const updated = await definitionRepo.update("lunch", { defaultOperatingInterval: { startMinute: 660, endMinute: 900 } });
+      expect(updated?.defaultOperatingInterval).toEqual({ startMinute: 660, endMinute: 900 });
+
+      const current = await definitionRepo.findByCode("lunch");
+      const svc = service(prisma);
+      const created = await svc.create({
+        serviceCode: "lunch",
+        serviceDate: "2026-10-05",
+        actor: staffActor,
+        operatingIntervalSnapshot: current?.defaultOperatingInterval ?? null,
+      });
+      if (created.type !== "CREATED") throw new Error("unreachable");
+      expect(created.session.operatingIntervalSnapshot).toEqual({ startMinute: 660, endMinute: 900 });
+    } finally {
+      await restoreLunchDefault();
+    }
+  });
+
+  it("clearing a Service's default interval (null) does not clear an already-created ServiceSession's own snapshot", async () => {
+    try {
+      const svc = service(prisma);
+      const created = await svc.create({
+        serviceCode: "lunch",
+        serviceDate: "2026-10-06",
+        actor: staffActor,
+        operatingIntervalSnapshot: { startMinute: 720, endMinute: 960 },
+      });
+      if (created.type !== "CREATED") throw new Error("unreachable");
+
+      const cleared = await definitionRepo.update("lunch", { defaultOperatingInterval: null });
+      expect(cleared?.defaultOperatingInterval).toBeNull();
+
+      const reread = await svc.findById(created.session.id);
+      expect(reread?.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
+    } finally {
+      await restoreLunchDefault();
+    }
   });
 });

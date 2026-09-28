@@ -137,3 +137,114 @@ describe("ServiceCatalogManagementService.update — partial update by immutable
     void svc.update("lunch", { code: "dinner" });
   });
 });
+
+describe("ServiceCatalogManagementService.update — R1.6-P3C-2 defaultOperatingInterval", () => {
+  it("object set: an object patch atomically sets the interval", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("dinner", { defaultOperatingInterval: { startMinute: 1080, endMinute: 1320 } });
+    expect(result).toEqual({
+      type: "UPDATED",
+      service: expect.objectContaining({ code: "dinner", defaultOperatingInterval: { startMinute: 1080, endMinute: 1320 } }),
+    });
+  });
+
+  it("null clear: a null patch atomically clears an existing interval", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("lunch", { defaultOperatingInterval: null });
+    expect(result).toEqual({ type: "UPDATED", service: expect.objectContaining({ code: "lunch", defaultOperatingInterval: null }) });
+  });
+
+  it("omission: no defaultOperatingInterval key leaves the existing interval untouched", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("lunch", { displayName: "Lunchkaart" });
+    expect(result).toEqual({
+      type: "UPDATED",
+      service: expect.objectContaining({ displayName: "Lunchkaart", defaultOperatingInterval: { startMinute: 720, endMinute: 960 } }),
+    });
+  });
+
+  it("same-value object patch is a no-op: repository.update is never called, updatedAt is preserved exactly", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const before = await repo.findByCode("lunch");
+    let updateCalls = 0;
+    const originalUpdate = repo.update.bind(repo);
+    repo.update = async (...args) => {
+      updateCalls += 1;
+      return originalUpdate(...args);
+    };
+
+    const result = await service(repo).update("lunch", { defaultOperatingInterval: { startMinute: 720, endMinute: 960 } });
+    expect(result).toEqual({ type: "UPDATED", service: before });
+    expect(updateCalls).toBe(0);
+  });
+
+  it("same-null patch (clearing an already-null interval) is a no-op: repository.update is never called", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const before = await repo.findByCode("dinner");
+    let updateCalls = 0;
+    const originalUpdate = repo.update.bind(repo);
+    repo.update = async (...args) => {
+      updateCalls += 1;
+      return originalUpdate(...args);
+    };
+
+    const result = await service(repo).update("dinner", { defaultOperatingInterval: null });
+    expect(result).toEqual({ type: "UPDATED", service: before });
+    expect(updateCalls).toBe(0);
+  });
+
+  it("combined displayName + enabled + defaultOperatingInterval update applies all three together", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("lunch", {
+      displayName: "Lunchkaart",
+      enabled: false,
+      defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+    });
+    expect(result).toEqual({
+      type: "UPDATED",
+      service: expect.objectContaining({
+        code: "lunch",
+        displayName: "Lunchkaart",
+        enabled: false,
+        defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+      }),
+    });
+  });
+
+  it("unspecified fields (displayName/enabled) remain unchanged when only the interval is patched", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("lunch", { defaultOperatingInterval: null });
+    expect(result).toEqual({
+      type: "UPDATED",
+      service: expect.objectContaining({ displayName: "Lunch", enabled: true }),
+    });
+  });
+
+  it("interval equality is by value, not object identity — a freshly-constructed object with equal minutes is still treated as unchanged", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    let updateCalls = 0;
+    const originalUpdate = repo.update.bind(repo);
+    repo.update = async (...args) => {
+      updateCalls += 1;
+      return originalUpdate(...args);
+    };
+    // A brand-new object literal, never the same reference as the stored value.
+    const result = await service(repo).update("lunch", { defaultOperatingInterval: { startMinute: 720, endMinute: 960 } });
+    expect(result.type).toBe("UPDATED");
+    expect(updateCalls).toBe(0);
+  });
+
+  it("an unknown Service code returns SERVICE_NOT_FOUND even when a defaultOperatingInterval patch is supplied", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    repo.remove("lunch");
+    const result = await service(repo).update("lunch", { defaultOperatingInterval: { startMinute: 0, endMinute: 60 } });
+    expect(result).toEqual({ type: "SERVICE_NOT_FOUND" });
+  });
+
+  it("updatedAt is preserved exactly across a same-value interval no-op, matching the existing displayName/enabled no-op contract", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const before = await repo.findByCode("dinner");
+    const result = await service(repo).update("dinner", { defaultOperatingInterval: null });
+    expect((result as { service: { updatedAt: Date } }).service.updatedAt).toEqual(before?.updatedAt);
+  });
+});

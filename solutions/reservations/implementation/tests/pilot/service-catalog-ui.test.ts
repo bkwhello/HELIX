@@ -250,6 +250,72 @@ describe("Diensten — no schedule/duration/session/floorplan control", () => {
   });
 });
 
+describe("Diensten — R1.6-P3C-2 operating-interval controls", () => {
+  it("renders a start select, an end select, and an explicit clear checkbox per row, alongside the existing name/enabled controls", () => {
+    expect(renderBlock).toMatch(/serviceCatalogIntervalStartId\(row\.code\)/);
+    expect(renderBlock).toMatch(/serviceCatalogIntervalEndId\(row\.code\)/);
+    expect(renderBlock).toMatch(/serviceCatalogIntervalClearId\(row\.code\)/);
+    expect(renderBlock).toMatch(/createElement\("select"\)/);
+    expect(renderBlock).toMatch(/Geen standaard bedieningstijd \(wissen\)/);
+  });
+
+  it("start options cover 00:00 through 23:45, end options cover 00:15 through 24:00, in quarter-hour steps", () => {
+    expect(wholeServiceCatalogScript).toMatch(/for \(let m = 0; m <= 23 \* 60 \+ 45; m \+= 15\) SERVICE_CATALOG_INTERVAL_START_MINUTES\.push\(m\);/);
+    expect(wholeServiceCatalogScript).toMatch(/for \(let m = 15; m <= 24 \* 60; m \+= 15\) SERVICE_CATALOG_INTERVAL_END_MINUTES\.push\(m\);/);
+  });
+
+  it("the pair is compared and submitted as one atomic value via serviceCatalogIntervalPatchValue/serviceCatalogIntervalsEqual — never two independent minute fields", () => {
+    expect(wholeServiceCatalogScript).toMatch(/function serviceCatalogIntervalPatchValue\(pending\)/);
+    expect(wholeServiceCatalogScript).toMatch(/function serviceCatalogIntervalsEqual\(a, b\)/);
+    expect(saveRowBlock).toMatch(/const pendingInterval = serviceCatalogIntervalPatchValue\(pending\);/);
+    expect(saveRowBlock).toMatch(/body\.defaultOperatingInterval = pendingInterval;/);
+    // No independent startMinute/endMinute key is ever assigned directly onto the body.
+    expect(saveRowBlock).not.toMatch(/body\.startMinute|body\.endMinute|body\[.startMinute.\]|body\[.endMinute.\]/);
+  });
+
+  it("the PATCH body includes defaultOperatingInterval only when the atomic value actually differs from the authoritative one", () => {
+    expect(saveRowBlock).toMatch(
+      /if \(!serviceCatalogIntervalsEqual\(pendingInterval, original\.defaultOperatingInterval\)\) body\.defaultOperatingInterval = pendingInterval;/
+    );
+  });
+
+  it("clearing sends defaultOperatingInterval: null only through the explicit 'wissen' checkbox state, never a bare minute omission", () => {
+    expect(wholeServiceCatalogScript).toMatch(/return pending\.intervalCleared \? null : \{ startMinute: pending\.intervalStartMinute, endMinute: pending\.intervalEndMinute \};/);
+  });
+
+  it("changing/clearing the interval never calls confirm() — only body.enabled === false does (structural: no confirm() call inside the interval controls' own event handlers)", () => {
+    const startHandlerStart = renderBlock.indexOf("intervalStartSelect.addEventListener");
+    const startHandlerEnd = renderBlock.indexOf("});", startHandlerStart);
+    const endHandlerStart = renderBlock.indexOf("intervalEndSelect.addEventListener");
+    const endHandlerEnd = renderBlock.indexOf("});", endHandlerStart);
+    const clearHandlerStart = renderBlock.indexOf("intervalClearInput.addEventListener");
+    const clearHandlerEnd = renderBlock.indexOf("});", clearHandlerStart);
+    expect(renderBlock.slice(startHandlerStart, startHandlerEnd)).not.toMatch(/confirm\(/);
+    expect(renderBlock.slice(endHandlerStart, endHandlerEnd)).not.toMatch(/confirm\(/);
+    expect(renderBlock.slice(clearHandlerStart, clearHandlerEnd)).not.toMatch(/confirm\(/);
+  });
+
+  it("interval controls are disabled during an in-flight mutation, same guard as every other control in this panel", () => {
+    expect(renderBlock).toMatch(/intervalStartSelect\.disabled = serviceCatalogActionInFlight \|\| pending\.intervalCleared;/);
+    expect(renderBlock).toMatch(/intervalEndSelect\.disabled = serviceCatalogActionInFlight \|\| pending\.intervalCleared;/);
+    expect(renderBlock).toMatch(/intervalClearInput\.disabled = serviceCatalogActionInFlight;/);
+  });
+
+  it("required explanatory copy is present: newly-created-sessions-only, existing snapshots retained, and no classification/availability/lifecycle/capacity/duration effect", () => {
+    expect(sectionMarkup).toMatch(/NIEUW aangemaakte servicesessies/);
+    expect(sectionMarkup).toMatch(/Bestaande\s+servicesessies behouden hun eigen vastgelegde tijd/);
+    expect(sectionMarkup).toMatch(/indeling van\s+reserveringen/);
+    expect(sectionMarkup).toMatch(/beschikbaarheid om te boeken/);
+    expect(sectionMarkup).toMatch(/automatisch openen of sluiten van een\s+servicesessie/);
+    expect(sectionMarkup).toMatch(/capaciteit, de zitduur, of de reserveringsduur/);
+  });
+
+  it("dynamic option labels are assigned via textContent, never interpolated into innerHTML", () => {
+    expect(renderBlock).toMatch(/option\.textContent = formatOperatingIntervalMinute\(minute\);/);
+    expect(renderBlock).not.toMatch(/innerHTML\s*=\s*`[^`]*\$\{[^}]*[Mm]inute/);
+  });
+});
+
 describe("Diensten — existing panels unaffected", () => {
   it("Servicesessies and Floorplannen sections still exist, unchanged in position relative to Diensten", () => {
     const serviceSessionsIndex = source.indexOf("<h2>Servicesessies</h2>");

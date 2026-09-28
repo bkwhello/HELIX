@@ -433,14 +433,20 @@
        administration. Composes GET /services and PATCH /services/:code —
        no new backend surface beyond those two routes. Date-independent by
        design (the Service catalog has no date dimension) — deliberately
-       NOT wired to listDateInput, same posture as Floorplannen above. Only
-       displayName/enabled are editable for the two fixed codes
-       lunch/dinner — no schedule, duration, capacity, area, or Floorplan
-       control lives here, and no Create/Delete action exists. Every
-       mutation is re-validated authoritatively server-side regardless of
-       what this panel predicts. -->
+       NOT wired to listDateInput, same posture as Floorplannen above.
+       displayName/enabled/defaultOperatingInterval (R1.6-P3C-2) are
+       editable for the two fixed codes lunch/dinner — still no duration,
+       capacity, area, or Floorplan control here, and no Create/Delete
+       action exists. Every mutation is re-validated authoritatively
+       server-side regardless of what this panel predicts. -->
   <section class="full-width">
     <h2>Diensten</h2>
+    <p class="hint">
+      De standaard bedieningstijd wordt alleen gekopieerd naar NIEUW aangemaakte servicesessies. Bestaande
+      servicesessies behouden hun eigen vastgelegde tijd. Wijzigen of wissen heeft geen invloed op de indeling van
+      reserveringen (lunch/diner), de beschikbaarheid om te boeken, het automatisch openen of sluiten van een
+      servicesessie, de capaciteit, de zitduur, of de reserveringsduur.
+    </p>
     <div id="service-catalog-message"></div>
     <div id="service-catalog-refresh-message"></div>
     <div id="service-catalog-list"></div>
@@ -3025,7 +3031,10 @@
   // surface beyond those two routes. Date-independent (unlike
   // Servicesessies above): never wired to listDateInput. No client-side
   // role/permission branching — a 401/403 from PATCH is handled generically,
-  // exactly like every other panel in this file.
+  // exactly like every other panel in this file. R1.6-P3C-2 added
+  // defaultOperatingInterval editing (start/end quarter-hour selects plus
+  // an explicit clear checkbox) to this same panel — no new route, no new
+  // confirmation, no change to the Servicesessies lifecycle action matrix.
   const serviceCatalogMessage = document.getElementById("service-catalog-message");
   // A SEPARATE element from serviceCatalogMessage, same posture as
   // floorplanRefreshMessage above: a mutation's own success/failure is
@@ -3054,12 +3063,48 @@
   function serviceCatalogSaveButtonId(code) {
     return `service-catalog-save-${code}`;
   }
+  function serviceCatalogIntervalStartId(code) {
+    return `service-catalog-interval-start-${code}`;
+  }
+  function serviceCatalogIntervalEndId(code) {
+    return `service-catalog-interval-end-${code}`;
+  }
+  function serviceCatalogIntervalClearId(code) {
+    return `service-catalog-interval-clear-${code}`;
+  }
+
+  // R1.6-P3C-2 — quarter-hour minute values for the start/end selects.
+  // Start covers 00:00 through 23:45 (the interval's own domain
+  // constructor already rejects startMinute === 1440, so no later slot is
+  // offered); end covers 00:15 through 24:00 (the constructor requires
+  // endMinute >= 1, and 24:00/1440 is the one valid end value with no
+  // matching start value, i.e. a full-day interval when paired with 00:00).
+  const SERVICE_CATALOG_INTERVAL_START_MINUTES = [];
+  for (let m = 0; m <= 23 * 60 + 45; m += 15) SERVICE_CATALOG_INTERVAL_START_MINUTES.push(m);
+  const SERVICE_CATALOG_INTERVAL_END_MINUTES = [];
+  for (let m = 15; m <= 24 * 60; m += 15) SERVICE_CATALOG_INTERVAL_END_MINUTES.push(m);
+
+  // Default values offered when a staff member turns a cleared interval
+  // back on — an arbitrary but valid starting point they then adjust; it
+  // is never sent to the server on its own (Save only sends a value that
+  // differs from the authoritative one, per the dirty check below).
+  const SERVICE_CATALOG_INTERVAL_DEFAULT_START = 720; // 12:00
+  const SERVICE_CATALOG_INTERVAL_DEFAULT_END = 960; // 16:00
+
+  function serviceCatalogIntervalPatchValue(pending) {
+    return pending.intervalCleared ? null : { startMinute: pending.intervalStartMinute, endMinute: pending.intervalEndMinute };
+  }
+  function serviceCatalogIntervalsEqual(a, b) {
+    if (a === null || b === null) return a === b;
+    return a.startMinute === b.startMinute && a.endMinute === b.endMinute;
+  }
 
   function isServiceCatalogRowDirty(code) {
     const original = serviceCatalogRows.find((s) => s.code === code);
     const pending = serviceCatalogPendingEdits.get(code);
     if (!original || !pending) return false;
-    return pending.displayName !== original.displayName || pending.enabled !== original.enabled;
+    const intervalChanged = !serviceCatalogIntervalsEqual(original.defaultOperatingInterval, serviceCatalogIntervalPatchValue(pending));
+    return pending.displayName !== original.displayName || pending.enabled !== original.enabled || intervalChanged;
   }
 
   // Lightweight refresh — toggles just this row's Save button, without
@@ -3069,6 +3114,21 @@
   function refreshServiceCatalogSaveButton(code) {
     const button = document.getElementById(serviceCatalogSaveButtonId(code));
     if (button) button.disabled = serviceCatalogActionInFlight || !isServiceCatalogRowDirty(code);
+  }
+
+  // R1.6-P3C-2 — same lightweight-refresh posture as
+  // refreshServiceCatalogSaveButton: toggling "wissen" only needs to
+  // enable/disable the two selects and the Save button, never a full
+  // renderServiceCatalog() (which would rebuild every row's DOM and drop
+  // focus, same reasoning as the text-input handler above).
+  function refreshServiceCatalogIntervalControls(code) {
+    const pending = serviceCatalogPendingEdits.get(code);
+    if (!pending) return;
+    const startSelect = document.getElementById(serviceCatalogIntervalStartId(code));
+    const endSelect = document.getElementById(serviceCatalogIntervalEndId(code));
+    if (startSelect) startSelect.disabled = serviceCatalogActionInFlight || pending.intervalCleared;
+    if (endSelect) endSelect.disabled = serviceCatalogActionInFlight || pending.intervalCleared;
+    refreshServiceCatalogSaveButton(code);
   }
 
   async function loadServiceCatalog() {
@@ -3095,7 +3155,18 @@
       // Authoritative reload discards any unsaved local edit — every call
       // site (initApp, and after a successful save below) is a point
       // where starting fresh from the server is correct.
-      serviceCatalogPendingEdits = new Map(serviceCatalogRows.map((s) => [s.code, { displayName: s.displayName, enabled: s.enabled }]));
+      serviceCatalogPendingEdits = new Map(
+        serviceCatalogRows.map((s) => [
+          s.code,
+          {
+            displayName: s.displayName,
+            enabled: s.enabled,
+            intervalCleared: s.defaultOperatingInterval === null,
+            intervalStartMinute: s.defaultOperatingInterval ? s.defaultOperatingInterval.startMinute : SERVICE_CATALOG_INTERVAL_DEFAULT_START,
+            intervalEndMinute: s.defaultOperatingInterval ? s.defaultOperatingInterval.endMinute : SERVICE_CATALOG_INTERVAL_DEFAULT_END,
+          },
+        ])
+      );
       clearMessage(serviceCatalogRefreshMessage);
       renderServiceCatalog();
     } catch (err) {
@@ -3138,6 +3209,14 @@
     const body = {};
     if (pending.displayName.trim() !== original.displayName) body.displayName = pending.displayName.trim();
     if (pending.enabled !== original.enabled) body.enabled = pending.enabled;
+    // R1.6-P3C-2 — always the complete atomic value (the full object or
+    // `null`), compared by value against the authoritative pair; never an
+    // independent startMinute/endMinute key. Sent only when it actually
+    // differs from the authoritative row — a no-op toggle of the "wissen"
+    // checkbox back to its original state, or leaving the selects
+    // untouched, adds nothing to the body.
+    const pendingInterval = serviceCatalogIntervalPatchValue(pending);
+    if (!serviceCatalogIntervalsEqual(pendingInterval, original.defaultOperatingInterval)) body.defaultOperatingInterval = pendingInterval;
     if (Object.keys(body).length === 0) return;
 
     // Confirmation must occur before the in-flight guard is set and
@@ -3219,6 +3298,63 @@
       enabledLabel.appendChild(enabledInput);
       enabledLabel.appendChild(document.createTextNode(" Ingeschakeld"));
       label.appendChild(enabledLabel);
+      label.appendChild(document.createElement("br"));
+
+      // R1.6-P3C-2 — start/end quarter-hour selects plus an explicit
+      // "wissen" (clear) checkbox. The selects stay populated with the
+      // pending minute values even while cleared is checked (disabled,
+      // not destroyed) — unchecking "wissen" restores whatever the
+      // selects already show, rather than resetting them.
+      const intervalStartSelect = document.createElement("select");
+      intervalStartSelect.id = serviceCatalogIntervalStartId(row.code);
+      intervalStartSelect.disabled = serviceCatalogActionInFlight || pending.intervalCleared;
+      for (const minute of SERVICE_CATALOG_INTERVAL_START_MINUTES) {
+        const option = document.createElement("option");
+        option.value = String(minute);
+        option.textContent = formatOperatingIntervalMinute(minute);
+        if (minute === pending.intervalStartMinute) option.selected = true;
+        intervalStartSelect.appendChild(option);
+      }
+      intervalStartSelect.addEventListener("change", () => {
+        const current = serviceCatalogPendingEdits.get(row.code);
+        serviceCatalogPendingEdits.set(row.code, { ...current, intervalStartMinute: Number(intervalStartSelect.value) });
+        refreshServiceCatalogSaveButton(row.code);
+      });
+      label.appendChild(intervalStartSelect);
+      label.appendChild(document.createTextNode(" tot "));
+
+      const intervalEndSelect = document.createElement("select");
+      intervalEndSelect.id = serviceCatalogIntervalEndId(row.code);
+      intervalEndSelect.disabled = serviceCatalogActionInFlight || pending.intervalCleared;
+      for (const minute of SERVICE_CATALOG_INTERVAL_END_MINUTES) {
+        const option = document.createElement("option");
+        option.value = String(minute);
+        option.textContent = minute === 24 * 60 ? "24:00" : formatOperatingIntervalMinute(minute);
+        if (minute === pending.intervalEndMinute) option.selected = true;
+        intervalEndSelect.appendChild(option);
+      }
+      intervalEndSelect.addEventListener("change", () => {
+        const current = serviceCatalogPendingEdits.get(row.code);
+        serviceCatalogPendingEdits.set(row.code, { ...current, intervalEndMinute: Number(intervalEndSelect.value) });
+        refreshServiceCatalogSaveButton(row.code);
+      });
+      label.appendChild(intervalEndSelect);
+      label.appendChild(document.createElement("br"));
+
+      const intervalClearLabel = document.createElement("label");
+      const intervalClearInput = document.createElement("input");
+      intervalClearInput.type = "checkbox";
+      intervalClearInput.id = serviceCatalogIntervalClearId(row.code);
+      intervalClearInput.checked = pending.intervalCleared;
+      intervalClearInput.disabled = serviceCatalogActionInFlight;
+      intervalClearInput.addEventListener("change", () => {
+        const current = serviceCatalogPendingEdits.get(row.code);
+        serviceCatalogPendingEdits.set(row.code, { ...current, intervalCleared: intervalClearInput.checked });
+        refreshServiceCatalogIntervalControls(row.code);
+      });
+      intervalClearLabel.appendChild(intervalClearInput);
+      intervalClearLabel.appendChild(document.createTextNode(" Geen standaard bedieningstijd (wissen)"));
+      label.appendChild(intervalClearLabel);
 
       item.appendChild(label);
 

@@ -2,7 +2,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDefinitionRepository.js";
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode, isServiceCode } from "../../domain/availability/Service.js";
-import { parsePersistedServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
+import { ServiceOperatingInterval, parsePersistedServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { asPrismaTx } from "./PrismaTransactionManager.js";
 
@@ -58,12 +58,26 @@ export class PrismaServiceDefinitionRepository implements ServiceDefinitionRepos
 
   async update(
     code: ServiceCode,
-    patch: { readonly displayName?: string; readonly enabled?: boolean },
+    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceOperatingInterval | null },
     tx?: TransactionContext
   ): Promise<ServiceDefinition | null> {
     const client = tx ? asPrismaTx(tx) : this.prisma;
+    const data: Prisma.ServiceUpdateInput = {};
+    if (patch.displayName !== undefined) data.displayName = patch.displayName;
+    if (patch.enabled !== undefined) data.enabled = patch.enabled;
+    // R1.6-P3C-2 — both columns are always assigned together, in this same
+    // single `data` object, so Prisma emits exactly one UPDATE statement
+    // touching both `default_start_minute` and `default_end_minute` (or
+    // neither) — a partial-pair write is not something this branch can
+    // express, matching the port's own "no partial-pair write is ever
+    // possible" contract.
+    if (patch.defaultOperatingInterval !== undefined) {
+      const interval = patch.defaultOperatingInterval;
+      data.defaultStartMinute = interval === null ? null : interval.startMinute;
+      data.defaultEndMinute = interval === null ? null : interval.endMinute;
+    }
     try {
-      const row = await client.service.update({ where: { code }, data: patch });
+      const row = await client.service.update({ where: { code }, data });
       return toDomainServiceDefinition(row);
     } catch (err) {
       // P2025 — no row for this code. Never thrown as a not-found error;

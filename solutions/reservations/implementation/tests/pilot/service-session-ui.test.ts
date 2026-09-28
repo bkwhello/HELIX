@@ -591,13 +591,20 @@ describe("Servicesessies — R1.6-P3C-1 read-only operating-interval snapshot di
     expect(source).not.toMatch(/saveOperatingInterval|editOperatingInterval/);
   });
 
-  it("the Diensten catalog editor is unchanged by this addition — still no operating-interval input there either (deferred to P3C-2)", () => {
+  it("R1.6-P3C-2's operating-interval editor lives in the Diensten panel only — it never crosses into this (Servicesessies) panel's own script", () => {
+    // R1.6-P3C-1 (this file's own subject) added read-only display here;
+    // R1.6-P3C-2 separately added an EDITOR to the Diensten panel — see
+    // tests/pilot/service-catalog-ui.test.ts for that panel's own
+    // dedicated coverage. This test only confirms the two stay separate:
+    // Diensten legitimately gained defaultOperatingInterval editing, and
+    // this panel's own render block did not.
     const dienstenStart = source.indexOf("// --- Diensten (R1.6-P3B)");
     const dienstenEnd = source.indexOf("// --- Sluitingsdagen", dienstenStart);
     expect(dienstenStart).toBeGreaterThan(-1);
+    expect(dienstenEnd).toBeGreaterThan(dienstenStart);
     const dienstenScript = source.slice(dienstenStart, dienstenEnd);
-    expect(dienstenScript).not.toMatch(/defaultOperatingInterval/);
-    expect(dienstenScript).not.toMatch(/startMinute|endMinute/);
+    expect(dienstenScript).toMatch(/defaultOperatingInterval/);
+    expect(renderPanelBlock).not.toMatch(/defaultOperatingInterval/);
   });
 
   it("no confirmation dialog was added to this panel by this change, and the lifecycle action matrix (Aanmaken/Openen/Annuleren/Sluiten) is unchanged", () => {

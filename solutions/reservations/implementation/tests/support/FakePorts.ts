@@ -141,14 +141,27 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
     return [...this.rows.values()].sort((a, b) => a.code.localeCompare(b.code));
   }
 
-  /** R1.6-P3B — mirrors PrismaServiceDefinitionRepository.update()'s own contract: partial patch, `updatedAt` bumped only on an actual call, `null` for an unknown code. */
-  async update(code: ServiceCode, patch: { readonly displayName?: string; readonly enabled?: boolean }): Promise<ServiceDefinition | null> {
+  /**
+   * R1.6-P3B — mirrors PrismaServiceDefinitionRepository.update()'s own
+   * contract: partial patch, `updatedAt` bumped only on an actual call,
+   * `null` for an unknown code. R1.6-P3C-2 — `defaultOperatingInterval`
+   * joins that same partial patch: omitted (`!== undefined` is false)
+   * touches nothing, an object or `null` sets it atomically, exactly
+   * mirroring the real repository's "both columns in one write, never a
+   * partial pair" contract (there is only one field here, so nothing can
+   * write half of it).
+   */
+  async update(
+    code: ServiceCode,
+    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceDefinition["defaultOperatingInterval"] }
+  ): Promise<ServiceDefinition | null> {
     const existing = this.rows.get(code);
     if (!existing) return null;
     const updated: ServiceDefinition = {
       ...existing,
       ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
       ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      ...(patch.defaultOperatingInterval !== undefined ? { defaultOperatingInterval: patch.defaultOperatingInterval } : {}),
       updatedAt: new Date(),
     };
     this.rows.set(code, updated);

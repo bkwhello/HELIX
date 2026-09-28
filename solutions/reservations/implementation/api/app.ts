@@ -59,6 +59,7 @@ import { FloorplanRepository } from "../domain/repositories/FloorplanRepository.
 import { FloorplanService } from "../application/floor/FloorplanService.js";
 import { ServiceDefinitionRepository } from "../domain/repositories/ServiceDefinitionRepository.js";
 import { ServiceCatalogManagementService } from "../application/availability/ServiceCatalogManagementService.js";
+import { ServiceOperatingInterval, createServiceOperatingInterval, InvalidServiceOperatingIntervalError } from "../domain/availability/ServiceOperatingInterval.js";
 import { RuleViolation, violation } from "../domain/shared/Result.js";
 import {
   SESSION_COOKIE_NAME,
@@ -1208,9 +1209,9 @@ export function createApp(deps: AppDependencies): Express {
         enabled: service.enabled,
         createdAt: service.createdAt.toISOString(),
         updatedAt: service.updatedAt.toISOString(),
-        // R1.6-P3C-1 — read-only in this milestone; PATCH /services/:code
-        // does not accept this field until P3C-2 (see the body validation
-        // below, which rejects any key other than displayName/enabled).
+        // R1.6-P3C-2 — PATCH /services/:code now accepts this field (see
+        // the body validation below); the response shape itself is
+        // unchanged from the P3C-1 read-only exposure.
         defaultOperatingInterval: service.defaultOperatingInterval,
       };
     }
@@ -1230,26 +1231,67 @@ export function createApp(deps: AppDependencies): Express {
         const isPlainObject = typeof body === "object" && body !== null && !Array.isArray(body);
         const record: Record<string, unknown> = isPlainObject ? (body as Record<string, unknown>) : {};
 
+        // R1.6-P3C-2 — resolved once, below the shape checks, and reused
+        // for both the "at least one field" check and the patch build.
+        // `undefined` means "not present in the request" (never explicitly
+        // assigned), so a later `!== undefined` check on `intervalPatch`
+        // reliably distinguishes "omitted" from "explicitly null".
+        let intervalPatch: ServiceOperatingInterval | null | undefined;
+
         if (!isPlainObject) {
-          violations.push(violation("CAP-D02.01-R02", "The request body must be a JSON object containing at least one of displayName or enabled."));
+          violations.push(violation("CAP-D02.01-R02", "The request body must be a JSON object containing at least one of displayName, enabled, or defaultOperatingInterval."));
         } else {
           for (const key of Object.keys(record)) {
             if (key === "code") {
               violations.push(violation("CAP-D02.01-R04", "code is immutable and must not be included in the request body."));
-            } else if (key !== "displayName" && key !== "enabled") {
+            } else if (key !== "displayName" && key !== "enabled" && key !== "defaultOperatingInterval") {
               violations.push(violation("CAP-D02.01-R03", `Unknown field "${key}" is not permitted in the request body.`));
             }
           }
           const hasDisplayName = Object.prototype.hasOwnProperty.call(record, "displayName");
           const hasEnabled = Object.prototype.hasOwnProperty.call(record, "enabled");
-          if (!hasDisplayName && !hasEnabled) {
-            violations.push(violation("CAP-D02.01-R02", "The request body must contain at least one of displayName or enabled."));
+          const hasInterval = Object.prototype.hasOwnProperty.call(record, "defaultOperatingInterval");
+          if (!hasDisplayName && !hasEnabled && !hasInterval) {
+            violations.push(violation("CAP-D02.01-R02", "The request body must contain at least one of displayName, enabled, or defaultOperatingInterval."));
           }
           if (hasDisplayName && (typeof record["displayName"] !== "string" || (record["displayName"] as string).trim().length === 0)) {
             violations.push(violation("CAP-D02.01-R05", "displayName must be a non-empty string."));
           }
           if (hasEnabled && typeof record["enabled"] !== "boolean") {
             violations.push(violation("CAP-D02.01-R06", "enabled must be a boolean."));
+          }
+          // R1.6-P3C-2 — one provisional rule identifier (R07) for every
+          // way `defaultOperatingInterval` can be invalid: wrong top-level
+          // type, wrong/missing/extra nested keys, or a value the P3C-1
+          // domain constructor itself rejects (non-integer, out of range,
+          // end <= start). createServiceOperatingInterval is the ONLY
+          // place range/pairing rules are enforced — this route never
+          // duplicates them.
+          if (hasInterval) {
+            const value = record["defaultOperatingInterval"];
+            if (value === null) {
+              intervalPatch = null;
+            } else if (typeof value !== "object" || Array.isArray(value)) {
+              violations.push(
+                violation("CAP-D02.01-R07", "defaultOperatingInterval must be an object with integer startMinute and endMinute, or null to clear it.")
+              );
+            } else {
+              const nested = value as Record<string, unknown>;
+              const nestedKeys = Object.keys(nested).sort();
+              if (nestedKeys.length !== 2 || nestedKeys[0] !== "endMinute" || nestedKeys[1] !== "startMinute") {
+                violations.push(violation("CAP-D02.01-R07", "defaultOperatingInterval must contain exactly startMinute and endMinute."));
+              } else {
+                try {
+                  intervalPatch = createServiceOperatingInterval(nested["startMinute"] as number, nested["endMinute"] as number);
+                } catch (err) {
+                  if (err instanceof InvalidServiceOperatingIntervalError) {
+                    violations.push(violation("CAP-D02.01-R07", err.message));
+                  } else {
+                    throw err;
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -1258,9 +1300,10 @@ export function createApp(deps: AppDependencies): Express {
           return;
         }
 
-        const patch: { displayName?: string; enabled?: boolean } = {};
+        const patch: { displayName?: string; enabled?: boolean; defaultOperatingInterval?: ServiceOperatingInterval | null } = {};
         if (Object.prototype.hasOwnProperty.call(record, "displayName")) patch.displayName = (record["displayName"] as string).trim();
         if (Object.prototype.hasOwnProperty.call(record, "enabled")) patch.enabled = record["enabled"] as boolean;
+        if (intervalPatch !== undefined) patch.defaultOperatingInterval = intervalPatch;
 
         const result = await serviceCatalogService.update(routeParam(req, "code"), patch);
         switch (result.type) {

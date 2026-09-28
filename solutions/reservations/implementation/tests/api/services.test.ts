@@ -262,11 +262,113 @@ describe("PATCH /services/:code — structural/domain validation, 422 violations
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
   });
 
-  it("R1.6-P3C-1 — defaultOperatingInterval is rejected as an unknown field; PATCH still accepts only displayName/enabled in this milestone", async () => {
+  it("R1.6-P3C-2 — a valid defaultOperatingInterval object is accepted (no longer an unknown field)", async () => {
     const agent = await ownerAgentFor(freshCatalog());
     const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0, endMinute: 60 } });
+    expect(res.status).toBe(200);
+  });
+
+  it("defaultOperatingInterval missing startMinute -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { endMinute: 60 } });
     expect(res.status).toBe(422);
-    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval missing endMinute -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval with an extra nested key -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0, endMinute: 60, label: "brunch" } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval with non-integer values -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0.5, endMinute: 60 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval out of range (startMinute negative) -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: -1, endMinute: 60 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval out of range (endMinute > 1440) -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0, endMinute: 1441 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval equal endpoints -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 60, endMinute: 60 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it("defaultOperatingInterval reversed endpoints -> 422 R07", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 120, endMinute: 60 } });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+  });
+
+  it.each([["array", [0, 60]], ["string", "12:00-13:00"], ["boolean", true], ["number", 42]])(
+    "defaultOperatingInterval as a %s (not an object or null) -> 422 R07",
+    async (_label, value) => {
+      const agent = await ownerAgentFor(freshCatalog());
+      const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: value });
+      expect(res.status).toBe(422);
+      expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R07")).toBe(true);
+    }
+  );
+
+  it("boundary 0/1440 is accepted (full-day interval)", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 0, endMinute: 1440 } });
+    expect(res.status).toBe(200);
+    expect(res.body.service.defaultOperatingInterval).toEqual({ startMinute: 0, endMinute: 1440 });
+  });
+
+  it("defaultOperatingInterval: null (clear) is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: null });
+    expect(res.status).toBe(200);
+    expect(res.body.service.defaultOperatingInterval).toBeNull();
+  });
+
+  it("interval-only request (no displayName/enabled) is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/dinner").send({ defaultOperatingInterval: { startMinute: 660, endMinute: 900 } });
+    expect(res.status).toBe(200);
+    expect(res.body.service).toMatchObject({ code: "dinner", displayName: "Dinner", enabled: true });
+  });
+
+  it("combined displayName + enabled + defaultOperatingInterval update is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({
+      displayName: "Lunchkaart",
+      enabled: false,
+      defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.service).toMatchObject({
+      code: "lunch",
+      displayName: "Lunchkaart",
+      enabled: false,
+      defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+    });
   });
 
   it("code in body -> 422, rejected even when it matches the path param", async () => {
@@ -368,6 +470,41 @@ describe("PATCH /services/:code — successful mutation", () => {
     const res = await patch(agent, "/services/lunch").send({ displayName: "Lunch", enabled: true });
     expect(res.status).toBe(200);
     expect(res.body.service.updatedAt).toBe(before?.updatedAt.toISOString());
+  });
+
+  it("R1.6-P3C-2 — a same-value defaultOperatingInterval update is idempotent and preserves updatedAt exactly", async () => {
+    const repo = freshCatalog();
+    const app = buildApp(repo);
+    const agent = await loginTo(app, ownerUsername);
+    const before = await repo.findByCode("lunch");
+
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 720, endMinute: 960 } });
+    expect(res.status).toBe(200);
+    expect(res.body.service.updatedAt).toBe(before?.updatedAt.toISOString());
+  });
+
+  it("R1.6-P3C-2 — a null clear of an already-null interval is idempotent and preserves updatedAt exactly", async () => {
+    const repo = freshCatalog();
+    const app = buildApp(repo);
+    const agent = await loginTo(app, ownerUsername);
+    const before = await repo.findByCode("dinner");
+
+    const res = await patch(agent, "/services/dinner").send({ defaultOperatingInterval: null });
+    expect(res.status).toBe(200);
+    expect(res.body.service.updatedAt).toBe(before?.updatedAt.toISOString());
+  });
+
+  it("R1.6-P3C-2 — the successful-response allowlist is exact: no raw database column names, no extra fields", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultOperatingInterval: { startMinute: 660, endMinute: 900 } });
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body).sort()).toEqual(["service", "type"]);
+    expect(Object.keys(res.body.service).sort()).toEqual(
+      ["code", "createdAt", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort()
+    );
+    expect(Object.keys(res.body.service.defaultOperatingInterval).sort()).toEqual(["endMinute", "startMinute"]);
+    expect(res.body.service).not.toHaveProperty("default_start_minute");
+    expect(res.body.service).not.toHaveProperty("default_end_minute");
   });
 });
 
