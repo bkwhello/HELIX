@@ -207,10 +207,12 @@ describe("api/server.ts — R1.6-P3C-1 Service operating-interval snapshot produ
   it("the precondition comment states migration-before-start, next to the serviceCatalog composition it documents", () => {
     const match = source.match(/serviceCatalog:\s*\{([\s\S]*?)\},/);
     // The comment sits immediately above the serviceCatalog block it
-    // documents — capture the 800 chars preceding it too, since the
-    // block regex above only captures the object literal itself.
+    // documents — capture the preceding chars too, since the block regex
+    // above only captures the object literal itself. Widened from 800 to
+    // 2000 by R1.6-P3D-1's own additional precondition comment, which now
+    // sits between this one and the serviceCatalog block.
     const blockStart = source.indexOf("serviceCatalog:");
-    const precedingComment = source.slice(Math.max(0, blockStart - 800), blockStart);
+    const precedingComment = source.slice(Math.max(0, blockStart - 2000), blockStart);
     expect(precedingComment).toContain("20260925120000_add_service_operating_interval");
     expect(precedingComment).toMatch(/DEPLOYMENT PRECONDITION/);
     expect(precedingComment).toMatch(/MUST be applied before starting a build/);
@@ -237,6 +239,44 @@ describe("api/server.ts — R1.6-P3C-1 Service operating-interval snapshot produ
   });
 
   it("this correction changes no route, permission, or startup behavior — the port/host binding is unchanged", () => {
+    expect(source).toContain('const port = Number(process.env["PORT"] ?? 3001);');
+    expect(source).toContain("startListening(app, port, appHost);");
+  });
+});
+
+describe("api/server.ts — R1.6-P3D-1 Service default-duration snapshot production wiring", () => {
+  it("documents the additional deployment precondition: the default-duration migration must be applied before this wiring is started against a database", () => {
+    expect(source).toContain("20260928140000_add_service_default_duration");
+    expect(source).toMatch(/DEPLOYMENT PRECONDITION \(additional\)/);
+  });
+
+  it("the additional precondition comment states migration-before-start, and that it has NOT been applied to development, next to the serviceCatalog composition it documents", () => {
+    const blockStart = source.indexOf("serviceCatalog:");
+    const precedingComment = source.slice(Math.max(0, blockStart - 1200), blockStart);
+    expect(precedingComment).toContain("20260928140000_add_service_default_duration");
+    expect(precedingComment).toMatch(/DEPLOYMENT PRECONDITION \(additional\)/);
+    expect(precedingComment).toMatch(/MUST also be applied before starting a build/);
+    expect(precedingComment).toMatch(/helix_reservations_test.*ONLY/);
+    expect(precedingComment).toMatch(/NOT to.*helix_reservations_dev/);
+  });
+
+  it("still reuses the SAME shared serviceDefinitionRepository instance and single PrismaClient — no new client, repository instance, or startup side effect introduced by this addition", () => {
+    const instantiations = source.match(/new PrismaServiceDefinitionRepository\(/g) ?? [];
+    expect(instantiations).toHaveLength(1);
+    const clientMatches = source.match(/new PrismaClient\(\)/g) || [];
+    expect(clientMatches).toHaveLength(1);
+    expect(source).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
+  });
+
+  it("existing ServiceSession, Floorplan, capacity, communications, and authentication wiring remains intact, unaffected by this addition", () => {
+    expect(source).toMatch(/serviceSessions:\s*\{/);
+    expect(source).toMatch(/floorplans:\s*\{/);
+    expect(source).toMatch(/capacity:\s*\{/);
+    expect(source).toMatch(/communications:\s*\{/);
+    expect(source).toMatch(/auth:\s*\{/);
+  });
+
+  it("this addition changes no route, permission, or startup behavior — the port/host binding is unchanged", () => {
     expect(source).toContain('const port = Number(process.env["PORT"] ?? 3001);');
     expect(source).toContain("startListening(app, port, appHost);");
   });

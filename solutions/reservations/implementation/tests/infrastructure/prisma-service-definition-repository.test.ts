@@ -3,6 +3,7 @@ import { createTestPrismaClient } from "../integration/support/testDatabaseSafet
 import { PrismaServiceDefinitionRepository } from "../../infrastructure/persistence/PrismaServiceDefinitionRepository.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { InvalidServiceOperatingIntervalError } from "../../domain/availability/ServiceOperatingInterval.js";
+import { InvalidServiceDefaultDurationError } from "../../domain/availability/ServiceDefaultDuration.js";
 
 /**
  * R1.6-P3A — CAP-D02.01 persisted-catalog foundation. Real-PostgreSQL,
@@ -214,6 +215,59 @@ describe("PrismaServiceDefinitionRepository — defaultOperatingInterval mapping
     expect(constraintRows).toHaveLength(1);
     const dinner = await repository.findByCode("dinner");
     expect(dinner?.defaultOperatingInterval).toBeNull();
+  });
+});
+
+describe("PrismaServiceDefinitionRepository — defaultDurationMinutes mapping (R1.6-P3D-1)", () => {
+  it("maps the seeded null value (both canonical rows ship null at this milestone) to null", async () => {
+    const lunch = await repository.findByCode("lunch");
+    const dinner = await repository.findByCode("dinner");
+    expect(lunch?.defaultDurationMinutes).toBeNull();
+    expect(dinner?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("maps a real configured value to the atomic domain value (rollback-contained, never left committed against the canonical row)", async () => {
+    class RollbackSentinel extends Error {}
+
+    await prisma
+      .$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 90 WHERE "code" = 'dinner'`);
+        const ctx = tx as TransactionContext;
+        const dinner = await repository.findByCode("dinner", ctx);
+        expect(dinner?.defaultDurationMinutes).toBe(90);
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+
+    const afterRollback = await repository.findByCode("dinner");
+    expect(afterRollback?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("a malformed (out-of-range) persisted value causes the repository to throw explicitly — never silently coerced (rollback-contained: the CHECK constraint is dropped only inside this transaction, which always rolls back)", async () => {
+    class RollbackSentinel extends Error {}
+
+    await prisma
+      .$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`ALTER TABLE "services" DROP CONSTRAINT "services_default_duration_minutes_check"`);
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 5 WHERE "code" = 'dinner'`);
+
+        const ctx = tx as TransactionContext;
+        await expect(repository.findByCode("dinner", ctx)).rejects.toThrow(InvalidServiceDefaultDurationError);
+
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+
+    const constraintRows = await prisma.$queryRawUnsafe<{ conname: string }[]>(
+      `SELECT conname FROM pg_constraint WHERE conname = 'services_default_duration_minutes_check'`
+    );
+    expect(constraintRows).toHaveLength(1);
+    const dinner = await repository.findByCode("dinner");
+    expect(dinner?.defaultDurationMinutes).toBeNull();
   });
 });
 

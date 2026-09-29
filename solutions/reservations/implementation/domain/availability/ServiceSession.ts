@@ -34,6 +34,18 @@ export interface ServiceSession {
    */
   readonly operatingIntervalSnapshot: ServiceOperatingInterval | null;
   /**
+   * R1.6-P3D-1 — the matching Service's `defaultDurationMinutes` at the
+   * instant this session was CREATED, copied once and never re-read or
+   * rewritten afterward — identical "set exactly once, never rewritten"
+   * posture as `operatingIntervalSnapshot` immediately above. `null` if
+   * the Service had no configured default at creation time, or if the
+   * caller supplied none. Read-only historical planning data: does not
+   * affect open/close/cancel, capacity, seating, or classification in
+   * any way, and is entirely independent of `operatingIntervalSnapshot`
+   * (no pairing or cross-validation between the two exists).
+   */
+  readonly durationSnapshotMinutes: number | null;
+  /**
    * R1.5-P2C — the FloorplanVersion snapshotted at Open time (the
    * Published default of MAIN_FLOORPLAN_ID at that instant). Null for
    * Created and Cancelled-from-Created sessions; set exactly once, on the

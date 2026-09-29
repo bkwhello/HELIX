@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { ServiceSessionRepository } from "../../domain/repositories/ServiceSessionRepository.js";
 import { ServiceSession, ServiceSessionStatus } from "../../domain/availability/ServiceSession.js";
 import { ServiceOperatingInterval, parsePersistedServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
+import { createServiceDefaultDuration } from "../../domain/availability/ServiceDefaultDuration.js";
 import { ServiceCode, deriveServiceCode } from "../../domain/availability/Service.js";
 import { toLocalServiceDate, localDateToPaddedUtcRange } from "../../domain/availability/ServiceTime.js";
 import { deriveServiceSessionLockKey } from "../../domain/availability/LockKey.js";
@@ -37,9 +38,10 @@ interface ServiceSessionRow {
   version: number;
   startMinute: number | null;
   endMinute: number | null;
+  durationSnapshotMinutes: number | null;
 }
 
-/** R1.6-P3C-1 — `parsePersistedServiceOperatingInterval` throws on a partially-populated pair rather than silently coercing it to `null`; this repository never catches that error, so a malformed persisted state fails loudly here too (the database's own CHECK constraint should make this unreachable in practice). */
+/** R1.6-P3C-1 — `parsePersistedServiceOperatingInterval` throws on a partially-populated pair rather than silently coercing it to `null`; this repository never catches that error, so a malformed persisted state fails loudly here too (the database's own CHECK constraint should make this unreachable in practice). R1.6-P3D-1 — `durationSnapshotMinutes` re-validated the same way via `createServiceDefaultDuration`, its own single-scalar defense-in-depth counterpart. */
 function toDomain(row: ServiceSessionRow): ServiceSession {
   return {
     id: row.id,
@@ -48,6 +50,7 @@ function toDomain(row: ServiceSessionRow): ServiceSession {
     status: row.status as ServiceSessionStatus,
     floorplanVersionId: row.floorplanVersionId,
     operatingIntervalSnapshot: parsePersistedServiceOperatingInterval(row.startMinute, row.endMinute),
+    durationSnapshotMinutes: row.durationSnapshotMinutes === null ? null : createServiceDefaultDuration(row.durationSnapshotMinutes),
     openedAt: row.openedAt,
     closedAt: row.closedAt,
     cancelledAt: row.cancelledAt,
@@ -96,6 +99,7 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
     readonly createdBy: string;
     readonly createdAt: Date;
     readonly operatingIntervalSnapshot?: ServiceOperatingInterval | null;
+    readonly durationSnapshotMinutes?: number | null;
     readonly tx: TransactionContext;
   }): Promise<ServiceSession> {
     const client = asPrismaTx(input.tx);
@@ -110,6 +114,7 @@ export class PrismaServiceSessionRepository implements ServiceSessionRepository 
         createdAt: input.createdAt,
         startMinute: snapshot ? snapshot.startMinute : null,
         endMinute: snapshot ? snapshot.endMinute : null,
+        durationSnapshotMinutes: input.durationSnapshotMinutes ?? null,
       },
     });
     return toDomain(row);

@@ -159,6 +159,18 @@ const app = createApp({
   // selects or writes those columns — every read through
   // serviceDefinitionRepository/PrismaServiceSessionRepository below
   // depends on them existing.
+  //
+  // DEPLOYMENT PRECONDITION (additional): migration
+  // `20260928140000_add_service_default_duration` (adds
+  // Service.defaultDurationMinutes and ServiceSession.durationSnapshotMinutes,
+  // R1.6-P3D-1) MUST also be applied before starting a build that selects
+  // or writes those columns — the same serviceDefinitionRepository/
+  // PrismaServiceSessionRepository reads below depend on them existing.
+  // As of this change, this migration has been applied to
+  // `helix_reservations_test` ONLY — NOT to `helix_reservations_dev`
+  // (R1.6-P3D-1 STOP-gate report) — do not start this server against
+  // that database until a separate, explicit migration-application step
+  // has run, mirroring R1.6-P3C-1's own precedent.
   serviceCatalog: {
     repository: serviceDefinitionRepository,
   },

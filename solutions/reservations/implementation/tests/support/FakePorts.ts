@@ -109,11 +109,22 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
         createdAt: new Date(0),
         updatedAt: new Date(0),
         defaultOperatingInterval: { startMinute: 720, endMinute: 960 },
+        // R1.6-P3D-1 — null, matching the real migration's own "no seed
+        // value" decision exactly (both canonical rows ship null).
+        defaultDurationMinutes: null,
       },
     ],
     [
       "dinner",
-      { code: "dinner", displayName: "Dinner", enabled: true, createdAt: new Date(0), updatedAt: new Date(0), defaultOperatingInterval: null },
+      {
+        code: "dinner",
+        displayName: "Dinner",
+        enabled: true,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        defaultOperatingInterval: null,
+        defaultDurationMinutes: null,
+      },
     ],
   ]);
 
@@ -126,6 +137,12 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
   setDefaultOperatingInterval(code: ServiceCode, interval: ServiceDefinition["defaultOperatingInterval"]): void {
     const existing = this.rows.get(code);
     if (existing) this.rows.set(code, { ...existing, defaultOperatingInterval: interval });
+  }
+
+  /** R1.6-P3D-1 — test-only seam (no production update path accepts this field at all in this milestone); lets a test set up a specific defaultDurationMinutes (including `null`) before exercising ServiceSession creation. */
+  setDefaultDurationMinutes(code: ServiceCode, minutes: ServiceDefinition["defaultDurationMinutes"]): void {
+    const existing = this.rows.get(code);
+    if (existing) this.rows.set(code, { ...existing, defaultDurationMinutes: minutes });
   }
 
   /** Simulates a missing/never-seeded row — the fail-closed branch, distinct from an explicitly disabled one. */

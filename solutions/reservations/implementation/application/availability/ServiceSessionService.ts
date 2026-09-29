@@ -120,6 +120,17 @@ export class ServiceSessionService {
     readonly serviceDate: string;
     readonly actor: Actor;
     readonly operatingIntervalSnapshot?: ServiceOperatingInterval | null;
+    /**
+     * R1.6-P3D-1 — identical division of responsibility as
+     * `operatingIntervalSnapshot` immediately above: written exactly as
+     * supplied (or `null`), once, never re-read or rewritten afterward,
+     * and never resolved by this method itself (this class's own
+     * constructor dependencies remain unchanged — still no way to reach
+     * the Service catalog at all). The caller (the `POST /service-sessions`
+     * route composition) resolves the matching Service's current
+     * `defaultDurationMinutes` BEFORE calling this method.
+     */
+    readonly durationSnapshotMinutes?: number | null;
   }): Promise<ServiceSessionCreateOutcome> {
     if (!isServiceCode(input.serviceCode)) return { type: "INVALID_SERVICE_CODE" };
     if (!isValidServiceDate(input.serviceDate)) return { type: "INVALID_SERVICE_DATE" };
@@ -135,6 +146,7 @@ export class ServiceSessionService {
         createdBy: input.actor.id,
         createdAt: this.clock.now(),
         operatingIntervalSnapshot: input.operatingIntervalSnapshot ?? null,
+        durationSnapshotMinutes: input.durationSnapshotMinutes ?? null,
         tx,
       });
       return { type: "CREATED", session };

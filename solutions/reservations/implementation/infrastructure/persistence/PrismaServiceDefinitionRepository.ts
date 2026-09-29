@@ -3,6 +3,7 @@ import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDe
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode, isServiceCode } from "../../domain/availability/Service.js";
 import { ServiceOperatingInterval, parsePersistedServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
+import { createServiceDefaultDuration } from "../../domain/availability/ServiceDefaultDuration.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { asPrismaTx } from "./PrismaTransactionManager.js";
 
@@ -14,6 +15,7 @@ interface ServiceRow {
   updatedAt: Date;
   defaultStartMinute: number | null;
   defaultEndMinute: number | null;
+  defaultDurationMinutes: number | null;
 }
 
 /**
@@ -38,6 +40,15 @@ function toDomainServiceDefinition(row: ServiceRow): ServiceDefinition | null {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     defaultOperatingInterval: parsePersistedServiceOperatingInterval(row.defaultStartMinute, row.defaultEndMinute),
+    // R1.6-P3D-1 — re-validated on read, same defense-in-depth posture as
+    // defaultOperatingInterval above: the database's own CHECK constraint
+    // is the primary guard, this is the secondary, application-layer one.
+    // A single nullable scalar has no "partially populated" failure mode
+    // (unlike the paired interval), so only an out-of-range/non-multiple
+    // value that somehow bypassed the CHECK constraint could ever reach
+    // this line — and if it did, this throws rather than silently
+    // accepting it.
+    defaultDurationMinutes: row.defaultDurationMinutes === null ? null : createServiceDefaultDuration(row.defaultDurationMinutes),
   };
 }
 

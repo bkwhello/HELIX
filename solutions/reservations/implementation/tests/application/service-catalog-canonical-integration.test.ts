@@ -130,3 +130,66 @@ describe("R1.6-P3C-1 — production still uses exactly one shared PrismaServiceD
     expect(serverSource).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
   });
 });
+
+/**
+ * R1.6-P3D-1 — structural non-effect proof. `defaultDurationMinutes`/
+ * `durationSnapshotMinutes` must never be wired into the live, area-keyed
+ * capacity/availability/seating/floor-view engine — see the P3D design
+ * gate report's own "capacity impact" section and CapacityPool.ts's own
+ * header comment ("capacity/duration are fixed by the owner, not
+ * staff-configurable yet"). Plain source-text assertion (no execution) —
+ * the same posture as every other structural proof in this file.
+ */
+describe("R1.6-P3D-1 — defaultDurationMinutes/durationSnapshotMinutes never wired into capacity/availability/seating/floor-view", () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const FORBIDDEN = /defaultDurationMinutes|durationSnapshotMinutes/;
+
+  it("CapacityPool.ts never references the new fields — its own durationMinutes remains the sole, unchanged, area-keyed authority", () => {
+    const source = readFileSync(path.join(root, "domain", "availability", "CapacityPool.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+    expect(source).toContain("durationMinutes");
+  });
+
+  it("AvailabilityEvaluator.ts never references the new fields", () => {
+    const source = readFileSync(path.join(root, "domain", "availability", "AvailabilityEvaluator.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+  });
+
+  it("AvailabilityOrchestrator.ts never references the new fields — createWithCapacity/modify still derive duration exclusively from CAPACITY_POOLS", () => {
+    const source = readFileSync(path.join(root, "application", "availability", "AvailabilityOrchestrator.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+    expect(source).toMatch(/CAPACITY_POOLS\[/);
+  });
+
+  it("SeatingAvailabilityService.ts never references the new fields", () => {
+    const source = readFileSync(path.join(root, "application", "floor", "SeatingAvailabilityService.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+  });
+
+  it("SeatingOrchestrator.ts never references the new fields — seating intervals remain caller-supplied, never self-derived from a Service default", () => {
+    const source = readFileSync(path.join(root, "application", "floor", "SeatingOrchestrator.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+  });
+
+  it("FloorReadModel.ts never references the new fields — its own expectedEndTime derivation is unchanged by this milestone", () => {
+    const source = readFileSync(path.join(root, "application", "floor", "FloorReadModel.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+  });
+
+  it("ReservationAggregate.ts never references the new fields — no duration/end-time field was added to Reservation", () => {
+    const source = readFileSync(path.join(root, "domain", "aggregates", "ReservationAggregate.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+  });
+
+  it("ServicePeriod.ts (booking-window logic) never references the new fields", () => {
+    const source = readFileSync(path.join(root, "domain", "availability", "ServicePeriod.ts"), "utf-8");
+    expect(source).not.toMatch(FORBIDDEN);
+  });
+
+  it("api/app.ts's Reservation create route handler never references the new fields (structural: only the ServiceSession-related handlers do)", () => {
+    const source = readFileSync(path.join(root, "api", "app.ts"), "utf-8");
+    const createMatch = source.match(/app\.post\(\s*"\/availability\/reservations",[\s\S]*?\n {4}\}\);/);
+    expect(createMatch).not.toBeNull();
+    expect(createMatch![0]).not.toMatch(FORBIDDEN);
+  });
+});

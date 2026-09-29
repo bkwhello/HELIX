@@ -42,4 +42,15 @@ export interface ServiceDefinition {
    * ServiceSession's own snapshot at creation time.
    */
   readonly defaultOperatingInterval: ServiceOperatingInterval | null;
+  /**
+   * R1.6-P3D-1 — a planning default only (see ServiceDefaultDuration.ts's
+   * own header) — entirely separate from `CapacityPool.durationMinutes`,
+   * the live, area-keyed capacity/seating duration authority, which this
+   * field never influences. `null` means "not configured" — both
+   * canonical Services ship `null` at this milestone; no value is
+   * invented. Read-only: no write path accepts this field until a later,
+   * separately authorized milestone. Consulted only to prepopulate a new
+   * ServiceSession's own `durationSnapshotMinutes` at creation time.
+   */
+  readonly defaultDurationMinutes: number | null;
 }

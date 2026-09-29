@@ -161,12 +161,14 @@ describe("GET /services — authentication only, no specific permission", () => 
     expect(res.body.services.map((s: { code: string }) => s.code)).toEqual(["lunch", "dinner"]);
   });
 
-  it("exact allowlisted keys per row — code, displayName, enabled, createdAt, updatedAt, defaultOperatingInterval, nothing else", async () => {
+  it("exact allowlisted keys per row — code, displayName, enabled, createdAt, updatedAt, defaultOperatingInterval, defaultDurationMinutes, nothing else", async () => {
     const app = buildApp(freshCatalog());
     const agent = await loginTo(app, ownerUsername);
     const res = await agent.get("/services");
     for (const row of res.body.services) {
-      expect(Object.keys(row).sort()).toEqual(["code", "createdAt", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort());
+      expect(Object.keys(row).sort()).toEqual(
+        ["code", "createdAt", "defaultDurationMinutes", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort()
+      );
     }
   });
 
@@ -178,6 +180,26 @@ describe("GET /services — authentication only, no specific permission", () => 
     const dinner = res.body.services.find((s: { code: string }) => s.code === "dinner");
     expect(lunch.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
     expect(dinner.defaultOperatingInterval).toBeNull();
+  });
+
+  it("R1.6-P3D-1 — defaultDurationMinutes is exposed and null for both canonical Services (no value seeded at this milestone)", async () => {
+    const app = buildApp(freshCatalog());
+    const agent = await loginTo(app, ownerUsername);
+    const res = await agent.get("/services");
+    const lunch = res.body.services.find((s: { code: string }) => s.code === "lunch");
+    const dinner = res.body.services.find((s: { code: string }) => s.code === "dinner");
+    expect(lunch.defaultDurationMinutes).toBeNull();
+    expect(dinner.defaultDurationMinutes).toBeNull();
+  });
+
+  it("R1.6-P3D-1 — a configured defaultDurationMinutes value (via the fake repository seam) is exposed exactly", async () => {
+    const repo = freshCatalog();
+    repo.setDefaultDurationMinutes("lunch", 90);
+    const app = buildApp(repo);
+    const agent = await loginTo(app, ownerUsername);
+    const res = await agent.get("/services");
+    const lunch = res.body.services.find((s: { code: string }) => s.code === "lunch");
+    expect(lunch.defaultDurationMinutes).toBe(90);
   });
 
   it("empty repository behavior — services: [], not an error", async () => {
@@ -258,6 +280,13 @@ describe("PATCH /services/:code — structural/domain validation, 422 violations
   it("unknown key -> 422", async () => {
     const agent = await ownerAgentFor(freshCatalog());
     const res = await patch(agent, "/services/lunch").send({ scheduleWindow: "12:00-16:00" });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
+  });
+
+  it("R1.6-P3D-1 — defaultDurationMinutes is rejected as an unknown field; PATCH does not gain duration editing in this milestone", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 90 });
     expect(res.status).toBe(422);
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
   });
@@ -436,6 +465,7 @@ describe("PATCH /services/:code — successful mutation", () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
         defaultOperatingInterval: { startMinute: 720, endMinute: 960 },
+        defaultDurationMinutes: null,
       },
     });
   });
@@ -500,11 +530,12 @@ describe("PATCH /services/:code — successful mutation", () => {
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(["service", "type"]);
     expect(Object.keys(res.body.service).sort()).toEqual(
-      ["code", "createdAt", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort()
+      ["code", "createdAt", "defaultDurationMinutes", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort()
     );
     expect(Object.keys(res.body.service.defaultOperatingInterval).sort()).toEqual(["endMinute", "startMinute"]);
     expect(res.body.service).not.toHaveProperty("default_start_minute");
     expect(res.body.service).not.toHaveProperty("default_end_minute");
+    expect(res.body.service).not.toHaveProperty("default_duration_minutes");
   });
 });
 

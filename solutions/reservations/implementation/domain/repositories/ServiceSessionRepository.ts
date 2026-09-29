@@ -36,6 +36,12 @@ export interface ServiceSessionRepository {
    * `defaultOperatingInterval` BEFORE calling this, mirroring this same
    * interface's own established "caller resolves, this repository just
    * persists" division of responsibility.
+   *
+   * R1.6-P3D-1 — `durationSnapshotMinutes` follows the IDENTICAL
+   * division of responsibility: written exactly as supplied (or `null`),
+   * never read back from `services` by this repository or by
+   * `ServiceSessionService`. Entirely independent of
+   * `operatingIntervalSnapshot` above (no pairing, no cross-validation).
    */
   create(input: {
     readonly id: string;
@@ -44,6 +50,7 @@ export interface ServiceSessionRepository {
     readonly createdBy: string;
     readonly createdAt: Date;
     readonly operatingIntervalSnapshot?: ServiceOperatingInterval | null;
+    readonly durationSnapshotMinutes?: number | null;
     readonly tx: TransactionContext;
   }): Promise<ServiceSession>;
 

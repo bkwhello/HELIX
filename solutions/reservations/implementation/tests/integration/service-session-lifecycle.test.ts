@@ -711,3 +711,224 @@ describe("ServiceSessionService.create — R1.6-P3C-2 deterministic race with a 
     }
   });
 });
+
+describe("ServiceSessionService.create — R1.6-P3D-1 durationSnapshotMinutes", () => {
+  it("stores whatever value the caller supplies (the route composition's resolved defaultDurationMinutes — this service never resolves it itself)", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-07",
+      actor: staffActor,
+      durationSnapshotMinutes: 90,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    expect(created.session.durationSnapshotMinutes).toBe(90);
+  });
+
+  it("stores null when the caller supplies null (mirrors an unconfigured Service default — both canonical Services ship null at this milestone)", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "dinner",
+      serviceDate: "2026-10-07",
+      actor: staffActor,
+      durationSnapshotMinutes: null,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    expect(created.session.durationSnapshotMinutes).toBeNull();
+  });
+
+  it("stores null when the caller omits the field entirely", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({ serviceCode: "lunch", serviceDate: "2026-10-08", actor: staffActor });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    expect(created.session.durationSnapshotMinutes).toBeNull();
+  });
+
+  it("an idempotent repeated create (ALREADY_EXISTS) preserves the ORIGINAL snapshot, even if the repeat call supplies a different one", async () => {
+    const svc = service(prisma);
+    const first = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-09",
+      actor: staffActor,
+      durationSnapshotMinutes: 90,
+    });
+    if (first.type !== "CREATED") throw new Error("unreachable");
+
+    const repeat = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-09",
+      actor: staffActor,
+      durationSnapshotMinutes: 480, // a deliberately DIFFERENT value
+    });
+    expect(repeat.type).toBe("ALREADY_EXISTS");
+    if (repeat.type !== "ALREADY_EXISTS") throw new Error("unreachable");
+    expect(repeat.session.durationSnapshotMinutes).toBe(90);
+    expect(repeat.session.id).toBe(first.session.id);
+  });
+
+  it("open() preserves the snapshot taken at creation, unchanged", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-07",
+      actor: staffActor,
+      durationSnapshotMinutes: 90,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const opened = await svc.open(created.session.id);
+    if (opened.type !== "OPENED") throw new Error("unreachable");
+    expect(opened.session.durationSnapshotMinutes).toBe(90);
+  });
+
+  it("close() preserves the snapshot taken at creation, unchanged", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-07",
+      actor: staffActor,
+      durationSnapshotMinutes: 90,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const opened = await svc.open(created.session.id);
+    if (opened.type !== "OPENED") throw new Error("unreachable");
+    const closed = await svc.close(created.session.id);
+    if (closed.type !== "CLOSED") throw new Error("unreachable");
+    expect(closed.session.durationSnapshotMinutes).toBe(90);
+  });
+
+  it("cancel-from-Created preserves the snapshot taken at creation, unchanged", async () => {
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "dinner",
+      serviceDate: "2026-10-08",
+      actor: staffActor,
+      durationSnapshotMinutes: 150,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+    const cancelled = await svc.cancel(created.session.id);
+    if (cancelled.type !== "CANCELLED") throw new Error("unreachable");
+    expect(cancelled.session.durationSnapshotMinutes).toBe(150);
+  });
+
+  it("changing the Service catalog's own default duration AFTER a session is created never rewrites that session's already-taken snapshot (rollback-contained real-catalog proof)", async () => {
+    class RollbackSentinel extends Error {}
+    const svc = service(prisma);
+    const created = await svc.create({
+      serviceCode: "lunch",
+      serviceDate: "2026-10-09",
+      actor: staffActor,
+      durationSnapshotMinutes: 90,
+    });
+    if (created.type !== "CREATED") throw new Error("unreachable");
+
+    await prisma
+      .$transaction(async (tx) => {
+        // Simulates a later change to lunch's own catalog default — this
+        // session's own duration_snapshot_minutes column is never touched
+        // by it. Raw SQL (not PrismaServiceDefinitionRepository.update()),
+        // since no write path accepts this field in this milestone.
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 480 WHERE "code" = 'lunch'`);
+        const changed = await tx.service.findUniqueOrThrow({ where: { code: "lunch" } });
+        expect(changed.defaultDurationMinutes).toBe(480);
+
+        const stillOriginal = await tx.serviceSession.findUniqueOrThrow({ where: { id: created.session.id } });
+        expect(stillOriginal.durationSnapshotMinutes).toBe(90);
+
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+
+    const lunch = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+    expect(lunch.defaultDurationMinutes).toBeNull();
+    const session = await svc.findById(created.session.id);
+    expect(session?.durationSnapshotMinutes).toBe(90);
+  });
+});
+
+/**
+ * R1.6-P3D-1 — deterministic (barrier-controlled, never timing-only)
+ * proof for a real Service-catalog duration change racing against a real
+ * ServiceSession creation. No write path accepts `defaultDurationMinutes`
+ * in this milestone, so the "update" side uses a raw, real, COMMITTED SQL
+ * UPDATE against the canonical `lunch` row (restored to `NULL` in
+ * `finally`) rather than a repository call — the only way to exercise
+ * this race at all before a management API exists, mirroring the exact
+ * technique R1.6-P3C-1's own "Service catalog default change" tests
+ * already used before P3C-2 added a real update() method.
+ */
+describe("ServiceSessionService.create — R1.6-P3D-1 deterministic race with a concurrent Service duration change", () => {
+  async function restoreLunchDuration(): Promise<void> {
+    await prisma.service.update({ where: { code: "lunch" }, data: { defaultDurationMinutes: null } });
+  }
+
+  it("a session whose duration READ happens before a concurrent Service duration change commits still receives the COMPLETE OLD value, never a mix", async () => {
+    try {
+      const before = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+      expect(before.defaultDurationMinutes).toBeNull();
+
+      // Deterministic barrier: the "create" half of the route's own
+      // read-then-create flow is held back on an explicit signal — it
+      // cannot proceed until the concurrent duration change below has
+      // already committed. This is not a timing race; the ordering is
+      // enforced by the test itself.
+      let releaseCreate: () => void;
+      const createMayProceed = new Promise<void>((resolve) => {
+        releaseCreate = resolve;
+      });
+
+      const svc = service(prisma);
+      const createTask = (async () => {
+        await createMayProceed;
+        return svc.create({
+          serviceCode: "lunch",
+          serviceDate: "2026-10-10",
+          actor: staffActor,
+          durationSnapshotMinutes: before.defaultDurationMinutes,
+        });
+      })();
+
+      // Commits WHILE createTask is still blocked on the barrier above.
+      await prisma.service.update({ where: { code: "lunch" }, data: { defaultDurationMinutes: 90 } });
+      const updated = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+      expect(updated.defaultDurationMinutes).toBe(90);
+
+      releaseCreate!();
+      const created = await createTask;
+      if (created.type !== "CREATED") throw new Error("unreachable");
+
+      // Complete OLD value (null) — never the new one, never a torn/mixed state.
+      expect(created.session.durationSnapshotMinutes).toBeNull();
+
+      // Both operations remained independently valid: the catalog change
+      // itself is visible...
+      const lunchAfter = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+      expect(lunchAfter.defaultDurationMinutes).toBe(90);
+      // ...and it never rewrote the already-created session's own snapshot.
+      const reread = await svc.findById(created.session.id);
+      expect(reread?.durationSnapshotMinutes).toBeNull();
+    } finally {
+      await restoreLunchDuration();
+    }
+  });
+
+  it("a session created AFTER a Service duration change has committed receives the COMPLETE NEW value", async () => {
+    try {
+      await prisma.service.update({ where: { code: "lunch" }, data: { defaultDurationMinutes: 150 } });
+      const current = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+
+      const svc = service(prisma);
+      const created = await svc.create({
+        serviceCode: "lunch",
+        serviceDate: "2026-10-11",
+        actor: staffActor,
+        durationSnapshotMinutes: current.defaultDurationMinutes,
+      });
+      if (created.type !== "CREATED") throw new Error("unreachable");
+      expect(created.session.durationSnapshotMinutes).toBe(150);
+    } finally {
+      await restoreLunchDuration();
+    }
+  });
+});

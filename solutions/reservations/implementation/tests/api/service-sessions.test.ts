@@ -500,6 +500,37 @@ describe("POST /service-sessions — R1.6-P3C-1 operatingIntervalSnapshot resolu
     const lunchSession = read.body.sessions.find((s: { serviceCode: string }) => s.serviceCode === "lunch");
     expect(lunchSession.operatingIntervalSnapshot).toEqual({ startMinute: 720, endMinute: 960 });
   });
+});
+
+describe("POST /service-sessions — R1.6-P3D-1 durationSnapshotMinutes resolution", () => {
+  it("resolves null for both canonical Services (no default_duration_minutes value exists at this milestone), even with the catalog dependency wired", async () => {
+    const appWithCatalog = buildAppWithCatalog();
+    const agent = await loginTo(appWithCatalog, ownerUsername);
+    const serviceDate = nextServiceDate();
+    const res = await post(agent, "/service-sessions").send({ serviceCode: "lunch", serviceDate });
+    expect(res.status).toBe(201);
+    expect(res.body.session.durationSnapshotMinutes).toBeNull();
+  });
+
+  it("uses null when the optional Service Catalog dependency is absent from this deployment (this file's own default buildApp())", async () => {
+    const serviceDate = nextServiceDate();
+    const res = await post(ownerAgent, "/service-sessions").send({ serviceCode: "dinner", serviceDate });
+    expect(res.status).toBe(201);
+    expect(res.body.session.durationSnapshotMinutes).toBeNull();
+  });
+
+  it("GET /service-sessions returns the session's own STORED duration snapshot (round-trip)", async () => {
+    const appWithCatalog = buildAppWithCatalog();
+    const agent = await loginTo(appWithCatalog, ownerUsername);
+    const serviceDate = nextServiceDate();
+    const created = await post(agent, "/service-sessions").send({ serviceCode: "lunch", serviceDate });
+    expect(created.body.session.durationSnapshotMinutes).toBeNull();
+
+    const read = await agent.get(`/service-sessions?serviceDate=${encodeURIComponent(serviceDate)}`);
+    const lunchSession = read.body.sessions.find((s: { serviceCode: string }) => s.serviceCode === "lunch");
+    expect(lunchSession).toHaveProperty("durationSnapshotMinutes");
+    expect(lunchSession.durationSnapshotMinutes).toBeNull();
+  });
 
   it("structurally, GET /service-sessions never reads the Service Catalog at all — only POST resolves a defaultOperatingInterval, so a GET response can only ever reflect what was stored at creation, never the catalog's current state", () => {
     const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");

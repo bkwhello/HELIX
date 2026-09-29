@@ -1084,6 +1084,9 @@ export function createApp(deps: AppDependencies): Express {
           // current Service default; see ServiceSession.ts's own doc
           // comment on this field.
           operatingIntervalSnapshot: s.operatingIntervalSnapshot,
+          // R1.6-P3D-1 — same posture: the session's own historical
+          // snapshot, never the current Service default.
+          durationSnapshotMinutes: s.durationSnapshotMinutes,
           openedAt: s.openedAt ? s.openedAt.toISOString() : null,
           closedAt: s.closedAt ? s.closedAt.toISOString() : null,
           cancelledAt: s.cancelledAt ? s.cancelledAt.toISOString() : null,
@@ -1114,14 +1117,19 @@ export function createApp(deps: AppDependencies): Express {
       // comments. If the optional Service Catalog dependency is not
       // wired in this deployment, the snapshot is null — never blocking
       // session creation.
-      const operatingIntervalSnapshot = deps.serviceCatalog
-        ? (await deps.serviceCatalog.repository.findByCode(body.serviceCode))?.defaultOperatingInterval ?? null
-        : null;
+      // R1.6-P3D-1 — same posture, same single read, resolving the
+      // matching Service's CURRENT defaultDurationMinutes alongside the
+      // operating interval above (one findByCode call already covers
+      // both fields — no second read needed).
+      const catalogEntry = deps.serviceCatalog ? await deps.serviceCatalog.repository.findByCode(body.serviceCode) : null;
+      const operatingIntervalSnapshot = catalogEntry?.defaultOperatingInterval ?? null;
+      const durationSnapshotMinutes = catalogEntry?.defaultDurationMinutes ?? null;
       const result = await serviceSessionService.create({
         serviceCode: body.serviceCode,
         serviceDate: body.serviceDate,
         actor,
         operatingIntervalSnapshot,
+        durationSnapshotMinutes,
       });
       switch (result.type) {
         case "CREATED":
@@ -1213,6 +1221,11 @@ export function createApp(deps: AppDependencies): Express {
         // the body validation below); the response shape itself is
         // unchanged from the P3C-1 read-only exposure.
         defaultOperatingInterval: service.defaultOperatingInterval,
+        // R1.6-P3D-1 — read-only in this milestone; PATCH /services/:code
+        // does not accept this field yet (see the body validation below,
+        // which rejects any key other than displayName/enabled/
+        // defaultOperatingInterval).
+        defaultDurationMinutes: service.defaultDurationMinutes,
       };
     }
 

@@ -3,6 +3,7 @@ import { createTestPrismaClient } from "../integration/support/testDatabaseSafet
 import { PrismaServiceSessionRepository } from "../../infrastructure/persistence/PrismaServiceSessionRepository.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { InvalidServiceOperatingIntervalError } from "../../domain/availability/ServiceOperatingInterval.js";
+import { InvalidServiceDefaultDurationError } from "../../domain/availability/ServiceDefaultDuration.js";
 
 /**
  * R1.6-P3C-1 — real-PostgreSQL coverage for
@@ -69,6 +70,61 @@ describe("PrismaServiceSessionRepository — operatingIntervalSnapshot mapping a
     });
   });
 
+  it("R1.6-P3D-1 — create() persists a supplied durationSnapshotMinutes, and findById() maps it back to the atomic domain value", async () => {
+    await prisma.$transaction(async (tx) => {
+      const ctx = tx as TransactionContext;
+      const session = await repository.create({
+        id: "p3d1-repo-valid-duration",
+        serviceCode: "lunch",
+        serviceDate: "2029-02-01",
+        createdBy: "staff-catalog",
+        createdAt: new Date(),
+        durationSnapshotMinutes: 90,
+        tx: ctx,
+      });
+      expect(session.durationSnapshotMinutes).toBe(90);
+
+      const reread = await repository.findById("p3d1-repo-valid-duration", ctx);
+      expect(reread?.durationSnapshotMinutes).toBe(90);
+    });
+  });
+
+  it("R1.6-P3D-1 — create() with no durationSnapshotMinutes (or an explicit null) persists and round-trips null", async () => {
+    await prisma.$transaction(async (tx) => {
+      const ctx = tx as TransactionContext;
+      const session = await repository.create({
+        id: "p3d1-repo-null-duration",
+        serviceCode: "dinner",
+        serviceDate: "2029-02-01",
+        createdBy: "staff-catalog",
+        createdAt: new Date(),
+        tx: ctx,
+      });
+      expect(session.durationSnapshotMinutes).toBeNull();
+
+      const reread = await repository.findById("p3d1-repo-null-duration", ctx);
+      expect(reread?.durationSnapshotMinutes).toBeNull();
+    });
+  });
+
+  it("R1.6-P3D-1 — durationSnapshotMinutes and operatingIntervalSnapshot are independent: one configured, the other null, round-trip correctly together", async () => {
+    await prisma.$transaction(async (tx) => {
+      const ctx = tx as TransactionContext;
+      const session = await repository.create({
+        id: "p3d1-repo-mixed-independence",
+        serviceCode: "lunch",
+        serviceDate: "2029-02-01",
+        createdBy: "staff-catalog",
+        createdAt: new Date(),
+        operatingIntervalSnapshot: null,
+        durationSnapshotMinutes: 150,
+        tx: ctx,
+      });
+      expect(session.operatingIntervalSnapshot).toBeNull();
+      expect(session.durationSnapshotMinutes).toBe(150);
+    });
+  });
+
   it("a malformed (partially populated) persisted snapshot causes the repository to throw explicitly — never silently coerced to null (rollback-contained: the CHECK constraint is dropped only inside this transaction, which always rolls back)", async () => {
     class RollbackSentinel extends Error {}
 
@@ -94,6 +150,34 @@ describe("PrismaServiceSessionRepository — operatingIntervalSnapshot mapping a
     );
     expect(constraintRows).toHaveLength(1);
     const row = await prisma.serviceSession.findUnique({ where: { id: "p3c1-repo-malformed" } });
+    expect(row).toBeNull();
+  });
+
+  it("R1.6-P3D-1 — a malformed (out-of-range) persisted duration causes the repository to throw explicitly — never silently coerced to null (rollback-contained: the CHECK constraint is dropped only inside this transaction, which always rolls back)", async () => {
+    class RollbackSentinel extends Error {}
+
+    await prisma
+      .$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`ALTER TABLE "service_sessions" DROP CONSTRAINT "service_sessions_duration_snapshot_minutes_check"`);
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "service_sessions" (id, service_code, service_date, status, created_by, duration_snapshot_minutes)
+           VALUES ('p3d1-repo-malformed', 'lunch', '2029-02-03', 'Created', 'staff-catalog', 5)`
+        );
+
+        const ctx = tx as TransactionContext;
+        await expect(repository.findById("p3d1-repo-malformed", ctx)).rejects.toThrow(InvalidServiceDefaultDurationError);
+
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+
+    const constraintRows = await prisma.$queryRawUnsafe<{ conname: string }[]>(
+      `SELECT conname FROM pg_constraint WHERE conname = 'service_sessions_duration_snapshot_minutes_check'`
+    );
+    expect(constraintRows).toHaveLength(1);
+    const row = await prisma.serviceSession.findUnique({ where: { id: "p3d1-repo-malformed" } });
     expect(row).toBeNull();
   });
 });

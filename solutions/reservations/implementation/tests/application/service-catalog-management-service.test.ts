@@ -31,11 +31,11 @@ describe("ServiceCatalogManagementService.list — deterministic lunch-then-dinn
     expect(result.map((s) => s.code)).toEqual(["lunch", "dinner"]);
   });
 
-  it("each row carries exactly code/displayName/enabled/createdAt/updatedAt/defaultOperatingInterval — no duration/capacity/floorplan field", async () => {
+  it("each row carries exactly code/displayName/enabled/createdAt/updatedAt/defaultOperatingInterval/defaultDurationMinutes — no capacity/floorplan field", async () => {
     const result = await service().list();
     for (const row of result) {
       expect(Object.keys(row).sort()).toEqual(
-        ["code", "createdAt", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort()
+        ["code", "createdAt", "defaultDurationMinutes", "defaultOperatingInterval", "displayName", "enabled", "updatedAt"].sort()
       );
     }
   });

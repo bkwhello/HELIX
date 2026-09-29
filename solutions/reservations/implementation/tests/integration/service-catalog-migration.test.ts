@@ -570,3 +570,155 @@ describe("CHECK constraint — paired nullability and range, both tables, rollba
     expect(row).toBeNull();
   });
 });
+
+function defaultDurationMigrationSqlPath(): string {
+  return path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "prisma",
+    "migrations",
+    "20260928140000_add_service_default_duration",
+    "migration.sql"
+  );
+}
+
+describe("Migration content — add_service_default_duration — only authorized statements", () => {
+  it("contains exactly: two ALTER TABLE ADD COLUMN statements, two CHECK constraints — no seed/update statement", () => {
+    const sql = readFileSync(defaultDurationMigrationSqlPath(), "utf-8");
+
+    expect(sql).toContain('ALTER TABLE "services" ADD COLUMN "default_duration_minutes" INTEGER');
+    expect(sql).toContain('ALTER TABLE "service_sessions" ADD COLUMN "duration_snapshot_minutes" INTEGER');
+    expect(sql).toContain('ADD CONSTRAINT "services_default_duration_minutes_check"');
+    expect(sql).toContain('ADD CONSTRAINT "service_sessions_duration_snapshot_minutes_check"');
+
+    // No seed/update statement, no unrelated/destructive statement, no FK,
+    // no trigger, no index, no Reservation column.
+    expect(sql).not.toMatch(/UPDATE "services"/);
+    expect(sql).not.toMatch(/UPDATE "service_sessions"/);
+    expect(sql).not.toMatch(/^\s*INSERT /m);
+    expect(sql).not.toMatch(/DROP /);
+    expect(sql).not.toMatch(/CREATE TABLE/);
+    expect(sql).not.toMatch(/ALTER TABLE "reservations"/);
+    expect(sql).not.toMatch(/ADD CONSTRAINT "[^"]*_fkey"/);
+    expect(sql).not.toMatch(/CREATE (UNIQUE )?INDEX/);
+    expect(sql).not.toMatch(/CREATE TRIGGER/);
+  });
+});
+
+describe("Schema — default-duration columns and CHECK constraints exist", () => {
+  it("both columns exist, integer, nullable", async () => {
+    const cols = await prisma.$queryRawUnsafe<{ table_name: string; column_name: string; data_type: string; is_nullable: string }[]>(
+      `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+       WHERE (table_name = 'services' AND column_name = 'default_duration_minutes')
+          OR (table_name = 'service_sessions' AND column_name = 'duration_snapshot_minutes')
+       ORDER BY table_name, column_name`
+    );
+    expect(cols).toHaveLength(2);
+    for (const col of cols) {
+      expect(col.data_type).toBe("integer");
+      expect(col.is_nullable).toBe("YES");
+    }
+  });
+
+  it("both CHECK constraints exist", async () => {
+    const constraints = await prisma.$queryRawUnsafe<{ conname: string; contype: string }[]>(
+      `SELECT conname, contype FROM pg_constraint
+       WHERE conname IN ('services_default_duration_minutes_check', 'service_sessions_duration_snapshot_minutes_check')`
+    );
+    expect(constraints).toHaveLength(2);
+    for (const c of constraints) expect(c.contype).toBe("c");
+  });
+});
+
+describe("Seed — both canonical Services remain NULL, no unrelated row changes", () => {
+  it("lunch and dinner both have default_duration_minutes = NULL — no value was invented or seeded", async () => {
+    const rows = await prisma.service.findMany({ orderBy: { code: "asc" } });
+    expect(rows.map((r) => ({ code: r.code, defaultDurationMinutes: r.defaultDurationMinutes }))).toEqual([
+      { code: "dinner", defaultDurationMinutes: null },
+      { code: "lunch", defaultDurationMinutes: null },
+    ]);
+  });
+
+  it("no unrelated column changed — displayName/enabled/defaultOperatingInterval remain exactly as previously seeded", async () => {
+    const rows = await prisma.service.findMany({ orderBy: { code: "asc" } });
+    expect(
+      rows.map((r) => ({ code: r.code, displayName: r.displayName, enabled: r.enabled, s: r.defaultStartMinute, e: r.defaultEndMinute }))
+    ).toEqual([
+      { code: "dinner", displayName: "Dinner", enabled: true, s: null, e: null },
+      { code: "lunch", displayName: "Lunch", enabled: true, s: 720, e: 960 },
+    ]);
+  });
+});
+
+describe("CHECK constraint — default duration, both tables, rollback-contained", () => {
+  it("services: a value below 15 is rejected by the database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 10 WHERE "code" = 'dinner'`);
+      })
+    ).rejects.toThrow();
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultDurationMinutes).toBeNull();
+  });
+
+  it("services: a value above 480 is rejected by the database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 481 WHERE "code" = 'dinner'`);
+      })
+    ).rejects.toThrow();
+  });
+
+  it("services: a value not divisible by 15 is rejected by the database", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 100 WHERE "code" = 'dinner'`);
+      })
+    ).rejects.toThrow();
+  });
+
+  it("service_sessions: an invalid value on a raw insert is rejected by the database, fully rolled back", async () => {
+    class RollbackSentinel extends Error {}
+    try {
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "service_sessions" (id, service_code, service_date, status, created_by, duration_snapshot_minutes)
+             VALUES ('p3d1-check-invalid-duration', 'lunch', '2028-01-18', 'Created', 'staff-catalog', 10)`
+          );
+        })
+      ).rejects.toThrow();
+      throw new RollbackSentinel();
+    } catch (err) {
+      if (!(err instanceof RollbackSentinel)) throw err;
+    }
+    const row = await prisma.serviceSession.findUnique({ where: { id: "p3d1-check-invalid-duration" } });
+    expect(row).toBeNull();
+  });
+
+  it("a valid value on both tables is accepted (positive control, rollback-contained)", async () => {
+    class RollbackSentinel extends Error {}
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 90 WHERE "code" = 'dinner'`);
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "service_sessions" (id, service_code, service_date, status, created_by, duration_snapshot_minutes)
+           VALUES ('p3d1-check-valid-duration', 'dinner', '2028-01-18', 'Created', 'staff-catalog', 90)`
+        );
+        throw new RollbackSentinel();
+      });
+    } catch (err) {
+      if (!(err instanceof RollbackSentinel)) throw err;
+    }
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultDurationMinutes).toBeNull();
+    const row = await prisma.serviceSession.findUnique({ where: { id: "p3d1-check-valid-duration" } });
+    expect(row).toBeNull();
+  });
+
+  it("NULL is accepted on both tables (positive control, no transaction needed since nothing changes)", async () => {
+    const dinner = await prisma.service.findUniqueOrThrow({ where: { code: "dinner" } });
+    expect(dinner.defaultDurationMinutes).toBeNull();
+  });
+});
