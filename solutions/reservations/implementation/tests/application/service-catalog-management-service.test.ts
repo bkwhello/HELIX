@@ -248,3 +248,104 @@ describe("ServiceCatalogManagementService.update — R1.6-P3C-2 defaultOperating
     expect((result as { service: { updatedAt: Date } }).service.updatedAt).toEqual(before?.updatedAt);
   });
 });
+
+describe("ServiceCatalogManagementService.update — R1.6-P3D-2 defaultDurationMinutes", () => {
+  it("set from null: both canonical Services start null, a numeric patch atomically sets it", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    expect(result).toEqual({ type: "UPDATED", service: expect.objectContaining({ code: "lunch", defaultDurationMinutes: 90 }) });
+  });
+
+  it("replace configured value: a different number atomically replaces the existing one", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    const result = await service(repo).update("lunch", { defaultDurationMinutes: 480 });
+    expect(result).toEqual({ type: "UPDATED", service: expect.objectContaining({ code: "lunch", defaultDurationMinutes: 480 }) });
+  });
+
+  it("clear to null: a null patch atomically clears a configured value", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    const result = await service(repo).update("lunch", { defaultDurationMinutes: null });
+    expect(result).toEqual({ type: "UPDATED", service: expect.objectContaining({ code: "lunch", defaultDurationMinutes: null }) });
+  });
+
+  it("same-value patch is a no-op: repository.update is never called, updatedAt is preserved exactly", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const before = await repo.findByCode("dinner");
+    let updateCalls = 0;
+    const originalUpdate = repo.update.bind(repo);
+    repo.update = async (...args) => {
+      updateCalls += 1;
+      return originalUpdate(...args);
+    };
+
+    const result = await service(repo).update("dinner", { defaultDurationMinutes: null });
+    expect(result).toEqual({ type: "UPDATED", service: before });
+    expect(updateCalls).toBe(0);
+  });
+
+  it("same-value patch against a configured (non-null) value is also a no-op", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    let updateCalls = 0;
+    const originalUpdate = repo.update.bind(repo);
+    repo.update = async (...args) => {
+      updateCalls += 1;
+      return originalUpdate(...args);
+    };
+    const result = await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    expect(result.type).toBe("UPDATED");
+    expect(updateCalls).toBe(0);
+  });
+
+  it("mixed-field atomic update: displayName + enabled + defaultOperatingInterval + defaultDurationMinutes together are one repository call", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    let updateCalls = 0;
+    const originalUpdate = repo.update.bind(repo);
+    repo.update = async (...args) => {
+      updateCalls += 1;
+      return originalUpdate(...args);
+    };
+    const result = await service(repo).update("lunch", {
+      displayName: "Lunchkaart",
+      enabled: false,
+      defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+      defaultDurationMinutes: 90,
+    });
+    expect(result).toEqual({
+      type: "UPDATED",
+      service: expect.objectContaining({
+        code: "lunch",
+        displayName: "Lunchkaart",
+        enabled: false,
+        defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+        defaultDurationMinutes: 90,
+      }),
+    });
+    expect(updateCalls).toBe(1);
+  });
+
+  it("unspecified fields (displayName/enabled/interval) remain unchanged when only duration is patched", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    expect(result).toEqual({
+      type: "UPDATED",
+      service: expect.objectContaining({ displayName: "Lunch", enabled: true, defaultOperatingInterval: { startMinute: 720, endMinute: 960 } }),
+    });
+  });
+
+  it("an unknown Service code returns SERVICE_NOT_FOUND even when a defaultDurationMinutes patch is supplied", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    repo.remove("lunch");
+    const result = await service(repo).update("lunch", { defaultDurationMinutes: 90 });
+    expect(result).toEqual({ type: "SERVICE_NOT_FOUND" });
+  });
+
+  it("updatedAt is preserved exactly across a same-value duration no-op, matching the existing no-op contract", async () => {
+    const repo = new FakeServiceDefinitionRepository();
+    const before = await repo.findByCode("dinner");
+    const result = await service(repo).update("dinner", { defaultDurationMinutes: null });
+    expect((result as { service: { updatedAt: Date } }).service.updatedAt).toEqual(before?.updatedAt);
+  });
+});

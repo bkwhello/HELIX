@@ -284,11 +284,115 @@ describe("PATCH /services/:code — structural/domain validation, 422 violations
     expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
   });
 
-  it("R1.6-P3D-1 — defaultDurationMinutes is rejected as an unknown field; PATCH does not gain duration editing in this milestone", async () => {
+  it("R1.6-P3D-2 — a valid defaultDurationMinutes value is accepted (no longer an unknown field)", async () => {
     const agent = await ownerAgentFor(freshCatalog());
     const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 90 });
+    expect(res.status).toBe(200);
+  });
+
+  it("defaultDurationMinutes boundary 15 is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 15 });
+    expect(res.status).toBe(200);
+    expect(res.body.service.defaultDurationMinutes).toBe(15);
+  });
+
+  it("defaultDurationMinutes boundary 480 is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 480 });
+    expect(res.status).toBe(200);
+    expect(res.body.service.defaultDurationMinutes).toBe(480);
+  });
+
+  it("defaultDurationMinutes intermediate quarter-hour value (150) is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 150 });
+    expect(res.status).toBe(200);
+    expect(res.body.service.defaultDurationMinutes).toBe(150);
+  });
+
+  it("defaultDurationMinutes: null (clear) is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: null });
+    expect(res.status).toBe(200);
+    expect(res.body.service.defaultDurationMinutes).toBeNull();
+  });
+
+  it("defaultDurationMinutes below 15 -> 422 R08", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 10 });
     expect(res.status).toBe(422);
-    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R03")).toBe(true);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+  });
+
+  it("defaultDurationMinutes above 480 -> 422 R08", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 481 });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+  });
+
+  it("defaultDurationMinutes not divisible by 15 -> 422 R08", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 100 });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+  });
+
+  it("defaultDurationMinutes non-integer -> 422 R08", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 90.5 });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+  });
+
+  it("defaultDurationMinutes zero -> 422 R08", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 0 });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+  });
+
+  it("defaultDurationMinutes negative -> 422 R08", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: -15 });
+    expect(res.status).toBe(422);
+    expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+  });
+
+  it.each([["string", "90"], ["boolean", true], ["array", [90]], ["object", { minutes: 90 }]])(
+    "defaultDurationMinutes as a %s (not a number or null) -> 422 R08",
+    async (_label, value) => {
+      const agent = await ownerAgentFor(freshCatalog());
+      const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: value });
+      expect(res.status).toBe(422);
+      expect(res.body.violations.some((v: { ruleId: string }) => v.ruleId === "CAP-D02.01-R08")).toBe(true);
+    }
+  );
+
+  it("defaultDurationMinutes-only request (no displayName/enabled/interval) is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/dinner").send({ defaultDurationMinutes: 150 });
+    expect(res.status).toBe(200);
+    expect(res.body.service).toMatchObject({ code: "dinner", displayName: "Dinner", enabled: true, defaultDurationMinutes: 150 });
+  });
+
+  it("combined displayName + enabled + defaultOperatingInterval + defaultDurationMinutes update is accepted", async () => {
+    const agent = await ownerAgentFor(freshCatalog());
+    const res = await patch(agent, "/services/lunch").send({
+      displayName: "Lunchkaart",
+      enabled: false,
+      defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+      defaultDurationMinutes: 90,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.service).toMatchObject({
+      code: "lunch",
+      displayName: "Lunchkaart",
+      enabled: false,
+      defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+      defaultDurationMinutes: 90,
+    });
   });
 
   it("R1.6-P3C-2 — a valid defaultOperatingInterval object is accepted (no longer an unknown field)", async () => {
@@ -520,6 +624,29 @@ describe("PATCH /services/:code — successful mutation", () => {
     const before = await repo.findByCode("dinner");
 
     const res = await patch(agent, "/services/dinner").send({ defaultOperatingInterval: null });
+    expect(res.status).toBe(200);
+    expect(res.body.service.updatedAt).toBe(before?.updatedAt.toISOString());
+  });
+
+  it("R1.6-P3D-2 — a null clear of an already-null duration is idempotent and preserves updatedAt exactly", async () => {
+    const repo = freshCatalog();
+    const app = buildApp(repo);
+    const agent = await loginTo(app, ownerUsername);
+    const before = await repo.findByCode("dinner");
+
+    const res = await patch(agent, "/services/dinner").send({ defaultDurationMinutes: null });
+    expect(res.status).toBe(200);
+    expect(res.body.service.updatedAt).toBe(before?.updatedAt.toISOString());
+  });
+
+  it("R1.6-P3D-2 — a same-value defaultDurationMinutes update is idempotent and preserves updatedAt exactly", async () => {
+    const repo = freshCatalog();
+    repo.setDefaultDurationMinutes("lunch", 90);
+    const app = buildApp(repo);
+    const agent = await loginTo(app, ownerUsername);
+    const before = await repo.findByCode("lunch");
+
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 90 });
     expect(res.status).toBe(200);
     expect(res.body.service.updatedAt).toBe(before?.updatedAt.toISOString());
   });

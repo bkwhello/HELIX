@@ -233,9 +233,9 @@ describe("Diensten — authorization and typed safe messages", () => {
   });
 });
 
-describe("Diensten — no schedule/duration/session/floorplan control", () => {
-  it("this panel's markup has no schedule/duration/capacity/area/Floorplan input or control element", () => {
-    expect(sectionMarkup).not.toMatch(/<input[^>]*(schedule|duration|capacity|area)/i);
+describe("Diensten — no schedule/capacity/area/floorplan control (duration editing itself is R1.6-P3D-2's own authorized addition)", () => {
+  it("this panel's markup has no schedule/capacity/area/Floorplan input or control element (defaultDurationMinutes editing is legitimate and covered by its own describe block above)", () => {
+    expect(sectionMarkup).not.toMatch(/<input[^>]*(schedule|capacity|area)/i);
     expect(sectionMarkup).not.toMatch(/floorplan-/i);
   });
 
@@ -301,18 +301,86 @@ describe("Diensten — R1.6-P3C-2 operating-interval controls", () => {
     expect(renderBlock).toMatch(/intervalClearInput\.disabled = serviceCatalogActionInFlight;/);
   });
 
-  it("required explanatory copy is present: newly-created-sessions-only, existing snapshots retained, and no classification/availability/lifecycle/capacity/duration effect", () => {
-    expect(sectionMarkup).toMatch(/NIEUW aangemaakte servicesessies/);
-    expect(sectionMarkup).toMatch(/Bestaande\s+servicesessies behouden hun eigen vastgelegde tijd/);
-    expect(sectionMarkup).toMatch(/indeling van\s+reserveringen/);
+  it("required explanatory copy is present: newly-created-sessions-only, existing snapshots retained, and no classification/availability/lifecycle effect", () => {
+    expect(sectionMarkup).toMatch(/NIEUW aangemaakte\s+servicesessies/);
+    expect(sectionMarkup).toMatch(/Bestaande servicesessies behouden hun eigen vastgelegde waarden/);
+    expect(sectionMarkup).toMatch(/indeling van reserveringen/);
     expect(sectionMarkup).toMatch(/beschikbaarheid om te boeken/);
-    expect(sectionMarkup).toMatch(/automatisch openen of sluiten van een\s+servicesessie/);
-    expect(sectionMarkup).toMatch(/capaciteit, de zitduur, of de reserveringsduur/);
+    expect(sectionMarkup).toMatch(/automatisch\s+openen of sluiten van een servicesessie/);
+  });
+
+  it("R1.6-P3D-2 — required explanatory copy states duration is planning information only, never a capacity rule or occupancy guarantee", () => {
+    expect(sectionMarkup).toMatch(/standaard reserveringsduur/);
+    expect(sectionMarkup).toMatch(/uitsluitend\s+planningsinformatie/);
+    expect(sectionMarkup).toMatch(/geen capaciteitsregel/);
+    expect(sectionMarkup).toMatch(/garantie voor hoe lang een tafel daadwerkelijk bezet blijft/);
   });
 
   it("dynamic option labels are assigned via textContent, never interpolated into innerHTML", () => {
     expect(renderBlock).toMatch(/option\.textContent = formatOperatingIntervalMinute\(minute\);/);
     expect(renderBlock).not.toMatch(/innerHTML\s*=\s*`[^`]*\$\{[^}]*[Mm]inute/);
+  });
+});
+
+describe("Diensten — R1.6-P3D-2 default-duration controls", () => {
+  it("renders a duration select and an explicit clear checkbox per row, alongside the existing controls", () => {
+    expect(renderBlock).toMatch(/serviceCatalogDurationSelectId\(row\.code\)/);
+    expect(renderBlock).toMatch(/serviceCatalogDurationClearId\(row\.code\)/);
+    expect(renderBlock).toMatch(/Standaard reserveringsduur/);
+    expect(renderBlock).toMatch(/Geen standaard reserveringsduur \(wissen\)/);
+  });
+
+  it("the selector contains exactly the authorized 15-through-480-minute sequence in 15-minute steps — no zero, no value above 480", () => {
+    expect(wholeServiceCatalogScript).toMatch(/for \(let m = 15; m <= 480; m \+= 15\) SERVICE_CATALOG_DURATION_MINUTES\.push\(m\);/);
+    expect(wholeServiceCatalogScript).not.toMatch(/SERVICE_CATALOG_DURATION_MINUTES\.push\(0\)/);
+  });
+
+  it("does not hardcode a duration value for lunch or dinner — the only literal minute constant is the shared, code-independent default offered when re-enabling a cleared row", () => {
+    expect(wholeServiceCatalogScript).not.toMatch(/lunch.{0,40}90|dinner.{0,40}90/i);
+    expect(wholeServiceCatalogScript).toMatch(/const SERVICE_CATALOG_DURATION_DEFAULT_MINUTES = 90;/);
+  });
+
+  it("the value is compared and submitted as one plain scalar via serviceCatalogDurationPatchValue — never sent under a different key name", () => {
+    expect(wholeServiceCatalogScript).toMatch(/function serviceCatalogDurationPatchValue\(pending\)/);
+    expect(saveRowBlock).toMatch(/const pendingDuration = serviceCatalogDurationPatchValue\(pending\);/);
+    expect(saveRowBlock).toMatch(/body\.defaultDurationMinutes = pendingDuration;/);
+  });
+
+  it("the PATCH body includes defaultDurationMinutes only when the value actually differs from the authoritative one (changed-fields-only)", () => {
+    expect(saveRowBlock).toMatch(/if \(pendingDuration !== original\.defaultDurationMinutes\) body\.defaultDurationMinutes = pendingDuration;/);
+  });
+
+  it("clearing sends defaultDurationMinutes: null only through the explicit 'wissen' checkbox state", () => {
+    expect(wholeServiceCatalogScript).toMatch(/return pending\.durationCleared \? null : pending\.durationMinutes;/);
+  });
+
+  it("changing/clearing duration never calls confirm() (structural: no confirm() call inside the duration controls' own event handlers)", () => {
+    const selectHandlerStart = renderBlock.indexOf("durationSelect.addEventListener");
+    const selectHandlerEnd = renderBlock.indexOf("});", selectHandlerStart);
+    const clearHandlerStart = renderBlock.indexOf("durationClearInput.addEventListener");
+    const clearHandlerEnd = renderBlock.indexOf("});", clearHandlerStart);
+    expect(renderBlock.slice(selectHandlerStart, selectHandlerEnd)).not.toMatch(/confirm\(/);
+    expect(renderBlock.slice(clearHandlerStart, clearHandlerEnd)).not.toMatch(/confirm\(/);
+  });
+
+  it("the existing disable confirmation is unaffected — still gated strictly on body.enabled === false, unrelated to duration", () => {
+    expect(saveRowBlock).toMatch(/if \(body\.enabled === false\)/);
+    expect(saveRowBlock).not.toMatch(/body\.defaultDurationMinutes[\s\S]{0,80}confirm\(/);
+  });
+
+  it("duration controls are disabled during an in-flight mutation, same guard as every other control in this panel", () => {
+    expect(renderBlock).toMatch(/durationSelect\.disabled = serviceCatalogActionInFlight \|\| pending\.durationCleared;/);
+    expect(renderBlock).toMatch(/durationClearInput\.disabled = serviceCatalogActionInFlight;/);
+  });
+
+  it("dynamic option labels are assigned via textContent, never interpolated into innerHTML", () => {
+    expect(renderBlock).toMatch(/option\.textContent = `\$\{minute\} minuten`;/);
+  });
+
+  it("reuses the existing in-flight guard, stale-response protection, reload behavior, and success/error messaging — no second implementation introduced", () => {
+    expect(wholeServiceCatalogScript).toMatch(/if \(serviceCatalogActionInFlight\) return;/);
+    expect(wholeServiceCatalogScript).toMatch(/const requestToken = \+\+serviceCatalogRequestToken;/);
+    expect(saveRowBlock).toMatch(/await loadServiceCatalog\(\);/);
   });
 });
 

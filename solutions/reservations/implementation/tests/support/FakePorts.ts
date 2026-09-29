@@ -170,7 +170,12 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
    */
   async update(
     code: ServiceCode,
-    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceDefinition["defaultOperatingInterval"] }
+    patch: {
+      readonly displayName?: string;
+      readonly enabled?: boolean;
+      readonly defaultOperatingInterval?: ServiceDefinition["defaultOperatingInterval"];
+      readonly defaultDurationMinutes?: ServiceDefinition["defaultDurationMinutes"];
+    }
   ): Promise<ServiceDefinition | null> {
     const existing = this.rows.get(code);
     if (!existing) return null;
@@ -179,6 +184,7 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
       ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
       ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
       ...(patch.defaultOperatingInterval !== undefined ? { defaultOperatingInterval: patch.defaultOperatingInterval } : {}),
+      ...(patch.defaultDurationMinutes !== undefined ? { defaultDurationMinutes: patch.defaultDurationMinutes } : {}),
       updatedAt: new Date(),
     };
     this.rows.set(code, updated);

@@ -615,3 +615,53 @@ describe("Servicesessies — R1.6-P3C-1 read-only operating-interval snapshot di
     expect(renderPanelBlock).not.toMatch(/confirm\(/);
   });
 });
+
+describe("Servicesessies — R1.6-P3D-2 read-only duration-snapshot display", () => {
+  it("a formatting helper exists and returns the null-state text for a null/absent duration", () => {
+    expect(source).toMatch(/function formatDurationSnapshot\(minutes\)/);
+    expect(source).toMatch(/if \(minutes === null \|\| minutes === undefined\) return "Geen standaardduur vastgelegd";/);
+  });
+
+  it("a configured value is displayed in minutes", () => {
+    expect(source).toMatch(/return `\$\{minutes\} minuten`;/);
+  });
+
+  it("the render function reads the value from session.durationSnapshotMinutes only — never from a Service catalog fetch, never recomputed, never falling back to the live Service value", () => {
+    expect(renderPanelBlock).toMatch(/formatDurationSnapshot\(session\.durationSnapshotMinutes\)/);
+    expect(renderPanelBlock).not.toMatch(/fetch\(["'`]\/services/);
+    expect(renderPanelBlock).not.toMatch(/defaultDurationMinutes/);
+  });
+
+  it("the duration text is shown only for a real session row (not for 'NotCreated' or still-loading), gated on `if (session)`", () => {
+    expect(renderPanelBlock).toMatch(/if \(session\) \{[\s\S]*?formatDurationSnapshot/);
+  });
+
+  it("dynamic text is assigned via .textContent, never raw interpolated innerHTML", () => {
+    expect(renderPanelBlock).toMatch(/durationSpan\.textContent = formatDurationSnapshot/);
+    expect(renderPanelBlock).not.toMatch(/innerHTML\s*=\s*`[^`]*\$\{[^}]*[Dd]uration/);
+  });
+
+  it("no editor, input, or save control exists for the duration snapshot anywhere in this panel — it is read-only display text only", () => {
+    expect(source).not.toMatch(/service-session-duration-snapshot["'][^>]*<input/);
+    expect(source).not.toMatch(/durationSnapshotMinutes[\s\S]{0,80}\.value\s*=/);
+    expect(source).not.toMatch(/saveDurationSnapshot|editDurationSnapshot/);
+  });
+
+  it("R1.6-P3D-2's duration editor lives in the Diensten panel only — it never crosses into this (Servicesessies) panel's own script", () => {
+    const dienstenStart = source.indexOf("// --- Diensten (R1.6-P3B)");
+    const dienstenEnd = source.indexOf("// --- Sluitingsdagen", dienstenStart);
+    expect(dienstenStart).toBeGreaterThan(-1);
+    expect(dienstenEnd).toBeGreaterThan(dienstenStart);
+    const dienstenScript = source.slice(dienstenStart, dienstenEnd);
+    expect(dienstenScript).toMatch(/defaultDurationMinutes/);
+    expect(renderPanelBlock).not.toMatch(/defaultDurationMinutes/);
+  });
+
+  it("no confirmation dialog was added and the lifecycle action matrix remains unchanged by this addition", () => {
+    expect(renderPanelBlock).toMatch(/"Aanmaken"/);
+    expect(renderPanelBlock).toMatch(/"Openen"/);
+    expect(renderPanelBlock).toMatch(/"Annuleren"/);
+    expect(renderPanelBlock).toMatch(/"Sluiten"/);
+    expect(renderPanelBlock).not.toMatch(/confirm\(/);
+  });
+});

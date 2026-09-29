@@ -24,20 +24,31 @@ export interface ServiceDefinitionRepository {
    * `defaultOperatingInterval` to that same patch: omitted touches neither
    * persisted column, an object atomically sets both in one write, and
    * `null` atomically clears both in one write — no partial-pair write is
-   * ever possible through this method. `patch` carries only the field(s)
-   * the caller actually wants to change — never re-send a field to
-   * "confirm" its current value; ServiceCatalogManagementService's own
-   * same-value idempotency check (comparing intervals by value, not
-   * identity) is what decides whether to call this at all, so an actual
-   * call here always represents a real, intended write. Returns the
-   * updated row, or `null` if `code` has no row (never thrown as a
+   * ever possible through this method. R1.6-P3D-2 adds
+   * `defaultDurationMinutes` alongside it: a single nullable scalar, so
+   * omitted touches nothing, `null` writes SQL NULL, and a configured
+   * value writes that integer — entirely independent of
+   * `defaultOperatingInterval` (no pairing, no cross-validation). Every
+   * supplied field in one call is written in exactly ONE atomic repository
+   * update, never a read-modify-write split. `patch` carries only the
+   * field(s) the caller actually wants to change — never re-send a field
+   * to "confirm" its current value; ServiceCatalogManagementService's own
+   * same-value idempotency check (comparing intervals/duration by value,
+   * not identity) is what decides whether to call this at all, so an
+   * actual call here always represents a real, intended write. Returns
+   * the updated row, or `null` if `code` has no row (never thrown as a
    * not-found error) — a defensive case only, since every caller that can
    * reach this already validated `code` is canonical and looked the row
    * up first.
    */
   update(
     code: ServiceCode,
-    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceOperatingInterval | null },
+    patch: {
+      readonly displayName?: string;
+      readonly enabled?: boolean;
+      readonly defaultOperatingInterval?: ServiceOperatingInterval | null;
+      readonly defaultDurationMinutes?: number | null;
+    },
     tx?: TransactionContext
   ): Promise<ServiceDefinition | null>;
 }

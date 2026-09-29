@@ -360,3 +360,126 @@ describe("PrismaServiceDefinitionRepository — update() defaultOperatingInterva
     expect(row).toBeNull();
   });
 });
+
+/**
+ * R1.6-P3D-2 — real-adapter `update()` coverage for
+ * `defaultDurationMinutes`. Same rollback-contained convention as the
+ * P3C-2 `update()` describe block above.
+ */
+describe("PrismaServiceDefinitionRepository — update() defaultDurationMinutes (R1.6-P3D-2)", () => {
+  class RollbackSentinel extends Error {}
+
+  async function rollbackContained(fn: (ctx: TransactionContext, tx: typeof prisma) => Promise<void>): Promise<void> {
+    await prisma
+      .$transaction(async (tx) => {
+        await fn(tx as TransactionContext, tx as unknown as typeof prisma);
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+  }
+
+  it("rollback-contained: a numeric patch sets the column (both canonical rows start null)", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      const updated = await repository.update("dinner", { defaultDurationMinutes: 90 }, ctx);
+      expect(updated?.defaultDurationMinutes).toBe(90);
+
+      const raw = await tx.$queryRawUnsafe<{ d: number | null }[]>(`SELECT default_duration_minutes AS d FROM services WHERE code = 'dinner'`);
+      expect(raw[0]).toEqual({ d: 90 });
+    });
+
+    const afterRollback = await repository.findByCode("dinner");
+    expect(afterRollback?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("rollback-contained: a replace (different numeric value) overwrites the prior configured value in one write", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      await repository.update("dinner", { defaultDurationMinutes: 90 }, ctx);
+      const replaced = await repository.update("dinner", { defaultDurationMinutes: 480 }, ctx);
+      expect(replaced?.defaultDurationMinutes).toBe(480);
+
+      const raw = await tx.$queryRawUnsafe<{ d: number | null }[]>(`SELECT default_duration_minutes AS d FROM services WHERE code = 'dinner'`);
+      expect(raw[0]).toEqual({ d: 480 });
+    });
+
+    const afterRollback = await repository.findByCode("dinner");
+    expect(afterRollback?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("rollback-contained: a null patch clears the column", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      await repository.update("lunch", { defaultDurationMinutes: 90 }, ctx);
+      const cleared = await repository.update("lunch", { defaultDurationMinutes: null }, ctx);
+      expect(cleared?.defaultDurationMinutes).toBeNull();
+
+      const raw = await tx.$queryRawUnsafe<{ d: number | null }[]>(`SELECT default_duration_minutes AS d FROM services WHERE code = 'lunch'`);
+      expect(raw[0]).toEqual({ d: null });
+    });
+
+    const afterRollback = await repository.findByCode("lunch");
+    expect(afterRollback?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("rollback-contained: omitting defaultDurationMinutes leaves the column unchanged — combined with a displayName change", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      await repository.update("lunch", { defaultDurationMinutes: 90 }, ctx);
+      const updated = await repository.update("lunch", { displayName: "Lunchkaart" }, ctx);
+      expect(updated?.displayName).toBe("Lunchkaart");
+      expect(updated?.defaultDurationMinutes).toBe(90);
+
+      const raw = await tx.$queryRawUnsafe<{ d: number | null }[]>(`SELECT default_duration_minutes AS d FROM services WHERE code = 'lunch'`);
+      expect(raw[0]).toEqual({ d: 90 });
+    });
+
+    const afterRollback = await repository.findByCode("lunch");
+    expect(afterRollback?.displayName).toBe("Lunch");
+    expect(afterRollback?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("rollback-contained: a mixed patch (displayName + interval + duration) is exactly ONE atomic UPDATE statement", async () => {
+    await rollbackContained(async (ctx, tx) => {
+      const updated = await repository.update(
+        "lunch",
+        {
+          displayName: "Lunchkaart",
+          defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+          defaultDurationMinutes: 90,
+        },
+        ctx
+      );
+      expect(updated).toMatchObject({
+        displayName: "Lunchkaart",
+        defaultOperatingInterval: { startMinute: 660, endMinute: 900 },
+        defaultDurationMinutes: 90,
+      });
+
+      const raw = await tx.$queryRawUnsafe<{ n: string; s: number; e: number; d: number }[]>(
+        `SELECT display_name AS n, default_start_minute AS s, default_end_minute AS e, default_duration_minutes AS d FROM services WHERE code = 'lunch'`
+      );
+      expect(raw[0]).toEqual({ n: "Lunchkaart", s: 660, e: 900, d: 90 });
+    });
+
+    const afterRollback = await repository.findByCode("lunch");
+    expect(afterRollback?.displayName).toBe("Lunch");
+    expect(afterRollback?.defaultOperatingInterval).toEqual({ startMinute: 720, endMinute: 960 });
+    expect(afterRollback?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("the database CHECK constraint remains the final protection layer: an invalid direct persistence attempt (bypassing the repository) is rejected, not silently accepted", async () => {
+    await expect(prisma.$executeRawUnsafe(`UPDATE "services" SET "default_duration_minutes" = 10 WHERE "code" = 'dinner'`)).rejects.toThrow(
+      /services_default_duration_minutes_check/
+    );
+
+    const dinner = await repository.findByCode("dinner");
+    expect(dinner?.defaultDurationMinutes).toBeNull();
+  });
+
+  it("P2025 (unknown/non-canonical code) returns null, not an error, when a defaultDurationMinutes patch is supplied", async () => {
+    const fixtureCode = `test-fixture-${Date.now().toString(36)}-duration`;
+    const result = await repository.update(fixtureCode as never, { defaultDurationMinutes: 90 });
+    expect(result).toBeNull();
+    const row = await prisma.service.findUnique({ where: { code: fixtureCode } });
+    expect(row).toBeNull();
+  });
+});

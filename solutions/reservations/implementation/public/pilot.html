@@ -442,10 +442,11 @@
   <section class="full-width">
     <h2>Diensten</h2>
     <p class="hint">
-      De standaard bedieningstijd wordt alleen gekopieerd naar NIEUW aangemaakte servicesessies. Bestaande
-      servicesessies behouden hun eigen vastgelegde tijd. Wijzigen of wissen heeft geen invloed op de indeling van
-      reserveringen (lunch/diner), de beschikbaarheid om te boeken, het automatisch openen of sluiten van een
-      servicesessie, de capaciteit, de zitduur, of de reserveringsduur.
+      De standaard bedieningstijd en de standaard reserveringsduur worden alleen gekopieerd naar NIEUW aangemaakte
+      servicesessies. Bestaande servicesessies behouden hun eigen vastgelegde waarden. Wijzigen of wissen heeft geen
+      invloed op de indeling van reserveringen (lunch/diner), de beschikbaarheid om te boeken, of het automatisch
+      openen of sluiten van een servicesessie. De standaard reserveringsduur is uitsluitend planningsinformatie: het
+      is geen capaciteitsregel en geen garantie voor hoe lang een tafel daadwerkelijk bezet blijft.
     </p>
     <div id="service-catalog-message"></div>
     <div id="service-catalog-refresh-message"></div>
@@ -2081,6 +2082,14 @@
     if (!interval) return "Geen standaardtijd vastgelegd";
     return formatOperatingIntervalMinute(interval.startMinute) + "–" + formatOperatingIntervalMinute(interval.endMinute);
   }
+  // R1.6-P3D-2 — same read-only posture as formatOperatingIntervalSnapshot
+  // above: pure display formatting, sourced exclusively from the
+  // session's OWN `durationSnapshotMinutes` — never re-read or
+  // re-derived from the current Service catalog row.
+  function formatDurationSnapshot(minutes) {
+    if (minutes === null || minutes === undefined) return "Geen standaardduur vastgelegd";
+    return `${minutes} minuten`;
+  }
 
   // Keyed by serviceCode ("lunch"/"dinner"). undefined = not yet loaded
   // for the current list-date; null = loaded and confirmed absent
@@ -2130,6 +2139,12 @@
         intervalSpan.className = "service-session-operating-interval";
         intervalSpan.textContent = formatOperatingIntervalSnapshot(session.operatingIntervalSnapshot);
         label.appendChild(intervalSpan);
+        // R1.6-P3D-2 — same read-only posture, sourced exclusively from
+        // this session's own durationSnapshotMinutes.
+        const durationSpan = document.createElement("span");
+        durationSpan.className = "service-session-duration-snapshot";
+        durationSpan.textContent = formatDurationSnapshot(session.durationSnapshotMinutes);
+        label.appendChild(durationSpan);
       }
       row.appendChild(label);
 
@@ -3072,6 +3087,12 @@
   function serviceCatalogIntervalClearId(code) {
     return `service-catalog-interval-clear-${code}`;
   }
+  function serviceCatalogDurationSelectId(code) {
+    return `service-catalog-duration-${code}`;
+  }
+  function serviceCatalogDurationClearId(code) {
+    return `service-catalog-duration-clear-${code}`;
+  }
 
   // R1.6-P3C-2 — quarter-hour minute values for the start/end selects.
   // Start covers 00:00 through 23:45 (the interval's own domain
@@ -3091,6 +3112,22 @@
   const SERVICE_CATALOG_INTERVAL_DEFAULT_START = 720; // 12:00
   const SERVICE_CATALOG_INTERVAL_DEFAULT_END = 960; // 16:00
 
+  // R1.6-P3D-2 — quarter-hour duration values, 15 through 480 minutes —
+  // the exact same range/step the ServiceDefaultDuration domain
+  // constructor itself enforces; this select can never offer a value
+  // that constructor would reject.
+  const SERVICE_CATALOG_DURATION_MINUTES = [];
+  for (let m = 15; m <= 480; m += 15) SERVICE_CATALOG_DURATION_MINUTES.push(m);
+  // Offered when a staff member turns a cleared duration back on — an
+  // arbitrary but valid starting point, same posture as
+  // SERVICE_CATALOG_INTERVAL_DEFAULT_START/END above; never sent to the
+  // server on its own.
+  const SERVICE_CATALOG_DURATION_DEFAULT_MINUTES = 90;
+
+  function serviceCatalogDurationPatchValue(pending) {
+    return pending.durationCleared ? null : pending.durationMinutes;
+  }
+
   function serviceCatalogIntervalPatchValue(pending) {
     return pending.intervalCleared ? null : { startMinute: pending.intervalStartMinute, endMinute: pending.intervalEndMinute };
   }
@@ -3104,7 +3141,8 @@
     const pending = serviceCatalogPendingEdits.get(code);
     if (!original || !pending) return false;
     const intervalChanged = !serviceCatalogIntervalsEqual(original.defaultOperatingInterval, serviceCatalogIntervalPatchValue(pending));
-    return pending.displayName !== original.displayName || pending.enabled !== original.enabled || intervalChanged;
+    const durationChanged = original.defaultDurationMinutes !== serviceCatalogDurationPatchValue(pending);
+    return pending.displayName !== original.displayName || pending.enabled !== original.enabled || intervalChanged || durationChanged;
   }
 
   // Lightweight refresh — toggles just this row's Save button, without
@@ -3128,6 +3166,17 @@
     const endSelect = document.getElementById(serviceCatalogIntervalEndId(code));
     if (startSelect) startSelect.disabled = serviceCatalogActionInFlight || pending.intervalCleared;
     if (endSelect) endSelect.disabled = serviceCatalogActionInFlight || pending.intervalCleared;
+    refreshServiceCatalogSaveButton(code);
+  }
+
+  // R1.6-P3D-2 — same lightweight-refresh posture as
+  // refreshServiceCatalogIntervalControls: toggling "wissen" for duration
+  // only needs to enable/disable the one select and the Save button.
+  function refreshServiceCatalogDurationControls(code) {
+    const pending = serviceCatalogPendingEdits.get(code);
+    if (!pending) return;
+    const durationSelect = document.getElementById(serviceCatalogDurationSelectId(code));
+    if (durationSelect) durationSelect.disabled = serviceCatalogActionInFlight || pending.durationCleared;
     refreshServiceCatalogSaveButton(code);
   }
 
@@ -3164,6 +3213,8 @@
             intervalCleared: s.defaultOperatingInterval === null,
             intervalStartMinute: s.defaultOperatingInterval ? s.defaultOperatingInterval.startMinute : SERVICE_CATALOG_INTERVAL_DEFAULT_START,
             intervalEndMinute: s.defaultOperatingInterval ? s.defaultOperatingInterval.endMinute : SERVICE_CATALOG_INTERVAL_DEFAULT_END,
+            durationCleared: s.defaultDurationMinutes === null,
+            durationMinutes: s.defaultDurationMinutes !== null ? s.defaultDurationMinutes : SERVICE_CATALOG_DURATION_DEFAULT_MINUTES,
           },
         ])
       );
@@ -3217,6 +3268,12 @@
     // untouched, adds nothing to the body.
     const pendingInterval = serviceCatalogIntervalPatchValue(pending);
     if (!serviceCatalogIntervalsEqual(pendingInterval, original.defaultOperatingInterval)) body.defaultOperatingInterval = pendingInterval;
+    // R1.6-P3D-2 — a plain scalar (a number or null), sent only when it
+    // actually differs from the authoritative value — same "no-op toggle
+    // back to original adds nothing to the body" posture as the interval
+    // above.
+    const pendingDuration = serviceCatalogDurationPatchValue(pending);
+    if (pendingDuration !== original.defaultDurationMinutes) body.defaultDurationMinutes = pendingDuration;
     if (Object.keys(body).length === 0) return;
 
     // Confirmation must occur before the in-flight guard is set and
@@ -3355,6 +3412,46 @@
       intervalClearLabel.appendChild(intervalClearInput);
       intervalClearLabel.appendChild(document.createTextNode(" Geen standaard bedieningstijd (wissen)"));
       label.appendChild(intervalClearLabel);
+      label.appendChild(document.createElement("br"));
+
+      // R1.6-P3D-2 — a single quarter-hour duration select plus an
+      // explicit "wissen" (clear) checkbox — same posture as the
+      // operating-interval controls above: the select stays populated
+      // with the pending value even while cleared is checked (disabled,
+      // not destroyed).
+      label.appendChild(document.createTextNode("Standaard reserveringsduur: "));
+      const durationSelect = document.createElement("select");
+      durationSelect.id = serviceCatalogDurationSelectId(row.code);
+      durationSelect.disabled = serviceCatalogActionInFlight || pending.durationCleared;
+      for (const minute of SERVICE_CATALOG_DURATION_MINUTES) {
+        const option = document.createElement("option");
+        option.value = String(minute);
+        option.textContent = `${minute} minuten`;
+        if (minute === pending.durationMinutes) option.selected = true;
+        durationSelect.appendChild(option);
+      }
+      durationSelect.addEventListener("change", () => {
+        const current = serviceCatalogPendingEdits.get(row.code);
+        serviceCatalogPendingEdits.set(row.code, { ...current, durationMinutes: Number(durationSelect.value) });
+        refreshServiceCatalogSaveButton(row.code);
+      });
+      label.appendChild(durationSelect);
+      label.appendChild(document.createElement("br"));
+
+      const durationClearLabel = document.createElement("label");
+      const durationClearInput = document.createElement("input");
+      durationClearInput.type = "checkbox";
+      durationClearInput.id = serviceCatalogDurationClearId(row.code);
+      durationClearInput.checked = pending.durationCleared;
+      durationClearInput.disabled = serviceCatalogActionInFlight;
+      durationClearInput.addEventListener("change", () => {
+        const current = serviceCatalogPendingEdits.get(row.code);
+        serviceCatalogPendingEdits.set(row.code, { ...current, durationCleared: durationClearInput.checked });
+        refreshServiceCatalogDurationControls(row.code);
+      });
+      durationClearLabel.appendChild(durationClearInput);
+      durationClearLabel.appendChild(document.createTextNode(" Geen standaard reserveringsduur (wissen)"));
+      label.appendChild(durationClearLabel);
 
       item.appendChild(label);
 

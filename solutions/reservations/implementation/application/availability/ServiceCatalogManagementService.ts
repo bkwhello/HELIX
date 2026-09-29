@@ -67,20 +67,41 @@ export class ServiceCatalogManagementService {
    * value, so a same-value object resend and a null-clear-of-an-already-
    * null interval are both no-ops, exactly like unchanged displayName/
    * enabled.
+   *
+   * R1.6-P3D-2 — `defaultDurationMinutes` joins the same same-value
+   * idempotency check, compared as a plain scalar (`===`): omitted means
+   * "no duration change," a number means "set/replace," `null` means
+   * "clear" — written only if it differs from the current value. Any
+   * combination of displayName/enabled/interval/duration changes is
+   * still exactly ONE repository call (one atomic patch, one atomic
+   * UPDATE), never split into per-field writes.
    */
   async update(
     code: string,
-    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceOperatingInterval | null }
+    patch: {
+      readonly displayName?: string;
+      readonly enabled?: boolean;
+      readonly defaultOperatingInterval?: ServiceOperatingInterval | null;
+      readonly defaultDurationMinutes?: number | null;
+    }
   ): Promise<ServiceCatalogUpdateOutcome> {
     if (!isServiceCode(code)) return { type: "SERVICE_NOT_FOUND" };
     const existing = await this.repository.findByCode(code);
     if (!existing) return { type: "SERVICE_NOT_FOUND" };
 
-    const changes: { displayName?: string; enabled?: boolean; defaultOperatingInterval?: ServiceOperatingInterval | null } = {};
+    const changes: {
+      displayName?: string;
+      enabled?: boolean;
+      defaultOperatingInterval?: ServiceOperatingInterval | null;
+      defaultDurationMinutes?: number | null;
+    } = {};
     if (patch.displayName !== undefined && patch.displayName !== existing.displayName) changes.displayName = patch.displayName;
     if (patch.enabled !== undefined && patch.enabled !== existing.enabled) changes.enabled = patch.enabled;
     if (patch.defaultOperatingInterval !== undefined && !intervalsEqual(patch.defaultOperatingInterval, existing.defaultOperatingInterval)) {
       changes.defaultOperatingInterval = patch.defaultOperatingInterval;
+    }
+    if (patch.defaultDurationMinutes !== undefined && patch.defaultDurationMinutes !== existing.defaultDurationMinutes) {
+      changes.defaultDurationMinutes = patch.defaultDurationMinutes;
     }
 
     if (Object.keys(changes).length === 0) {

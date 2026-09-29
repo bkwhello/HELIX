@@ -848,25 +848,27 @@ describe("ServiceSessionService.create — R1.6-P3D-1 durationSnapshotMinutes", 
 });
 
 /**
- * R1.6-P3D-1 — deterministic (barrier-controlled, never timing-only)
+ * R1.6-P3D-2 — deterministic (barrier-controlled, never timing-only)
  * proof for a real Service-catalog duration change racing against a real
- * ServiceSession creation. No write path accepts `defaultDurationMinutes`
- * in this milestone, so the "update" side uses a raw, real, COMMITTED SQL
- * UPDATE against the canonical `lunch` row (restored to `NULL` in
- * `finally`) rather than a repository call — the only way to exercise
- * this race at all before a management API exists, mirroring the exact
- * technique R1.6-P3C-1's own "Service catalog default change" tests
- * already used before P3C-2 added a real update() method.
+ * ServiceSession creation, now exercised through the REAL management
+ * write path (`ServiceDefinitionRepository.update()`, the same one
+ * `PATCH /services/:code` calls in production) rather than the raw SQL
+ * P3D-1 used before this write path existed. Every real write against
+ * the canonical `lunch` row is restored to `null` in `finally`, so no
+ * persistent mutation of the shared canonical row survives this file's
+ * run for any other test file to observe.
  */
-describe("ServiceSessionService.create — R1.6-P3D-1 deterministic race with a concurrent Service duration change", () => {
+describe("ServiceSessionService.create — R1.6-P3D-2 deterministic race with a concurrent Service duration change (real write path)", () => {
+  const durationDefinitionRepo = new PrismaServiceDefinitionRepository(prisma);
+
   async function restoreLunchDuration(): Promise<void> {
-    await prisma.service.update({ where: { code: "lunch" }, data: { defaultDurationMinutes: null } });
+    await durationDefinitionRepo.update("lunch", { defaultDurationMinutes: null });
   }
 
-  it("a session whose duration READ happens before a concurrent Service duration change commits still receives the COMPLETE OLD value, never a mix", async () => {
+  it("a session whose duration READ happens before a concurrent Service.update() commits still receives the COMPLETE OLD value, never a mix", async () => {
     try {
-      const before = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
-      expect(before.defaultDurationMinutes).toBeNull();
+      const before = await durationDefinitionRepo.findByCode("lunch");
+      expect(before?.defaultDurationMinutes).toBeNull();
 
       // Deterministic barrier: the "create" half of the route's own
       // read-then-create flow is held back on an explicit signal — it
@@ -885,14 +887,14 @@ describe("ServiceSessionService.create — R1.6-P3D-1 deterministic race with a 
           serviceCode: "lunch",
           serviceDate: "2026-10-10",
           actor: staffActor,
-          durationSnapshotMinutes: before.defaultDurationMinutes,
+          durationSnapshotMinutes: before?.defaultDurationMinutes ?? null,
         });
       })();
 
-      // Commits WHILE createTask is still blocked on the barrier above.
-      await prisma.service.update({ where: { code: "lunch" }, data: { defaultDurationMinutes: 90 } });
-      const updated = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
-      expect(updated.defaultDurationMinutes).toBe(90);
+      // Commits WHILE createTask is still blocked on the barrier above —
+      // via the real repository update() method.
+      const updated = await durationDefinitionRepo.update("lunch", { defaultDurationMinutes: 90 });
+      expect(updated?.defaultDurationMinutes).toBe(90);
 
       releaseCreate!();
       const created = await createTask;
@@ -903,8 +905,8 @@ describe("ServiceSessionService.create — R1.6-P3D-1 deterministic race with a 
 
       // Both operations remained independently valid: the catalog change
       // itself is visible...
-      const lunchAfter = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
-      expect(lunchAfter.defaultDurationMinutes).toBe(90);
+      const lunchAfter = await durationDefinitionRepo.findByCode("lunch");
+      expect(lunchAfter?.defaultDurationMinutes).toBe(90);
       // ...and it never rewrote the already-created session's own snapshot.
       const reread = await svc.findById(created.session.id);
       expect(reread?.durationSnapshotMinutes).toBeNull();
@@ -913,20 +915,42 @@ describe("ServiceSessionService.create — R1.6-P3D-1 deterministic race with a 
     }
   });
 
-  it("a session created AFTER a Service duration change has committed receives the COMPLETE NEW value", async () => {
+  it("a session created AFTER a Service.update() has committed receives the COMPLETE NEW value", async () => {
     try {
-      await prisma.service.update({ where: { code: "lunch" }, data: { defaultDurationMinutes: 150 } });
-      const current = await prisma.service.findUniqueOrThrow({ where: { code: "lunch" } });
+      const updated = await durationDefinitionRepo.update("lunch", { defaultDurationMinutes: 150 });
+      expect(updated?.defaultDurationMinutes).toBe(150);
+      const current = await durationDefinitionRepo.findByCode("lunch");
 
       const svc = service(prisma);
       const created = await svc.create({
         serviceCode: "lunch",
         serviceDate: "2026-10-11",
         actor: staffActor,
-        durationSnapshotMinutes: current.defaultDurationMinutes,
+        durationSnapshotMinutes: current?.defaultDurationMinutes ?? null,
       });
       if (created.type !== "CREATED") throw new Error("unreachable");
       expect(created.session.durationSnapshotMinutes).toBe(150);
+    } finally {
+      await restoreLunchDuration();
+    }
+  });
+
+  it("clearing a Service's default duration (null) does not clear an already-created ServiceSession's own snapshot", async () => {
+    try {
+      const svc = service(prisma);
+      const created = await svc.create({
+        serviceCode: "lunch",
+        serviceDate: "2026-10-12",
+        actor: staffActor,
+        durationSnapshotMinutes: 90,
+      });
+      if (created.type !== "CREATED") throw new Error("unreachable");
+
+      const cleared = await durationDefinitionRepo.update("lunch", { defaultDurationMinutes: null });
+      expect(cleared?.defaultDurationMinutes).toBeNull();
+
+      const reread = await svc.findById(created.session.id);
+      expect(reread?.durationSnapshotMinutes).toBe(90);
     } finally {
       await restoreLunchDuration();
     }

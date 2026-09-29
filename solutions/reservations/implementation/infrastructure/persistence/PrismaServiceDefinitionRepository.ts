@@ -69,7 +69,12 @@ export class PrismaServiceDefinitionRepository implements ServiceDefinitionRepos
 
   async update(
     code: ServiceCode,
-    patch: { readonly displayName?: string; readonly enabled?: boolean; readonly defaultOperatingInterval?: ServiceOperatingInterval | null },
+    patch: {
+      readonly displayName?: string;
+      readonly enabled?: boolean;
+      readonly defaultOperatingInterval?: ServiceOperatingInterval | null;
+      readonly defaultDurationMinutes?: number | null;
+    },
     tx?: TransactionContext
   ): Promise<ServiceDefinition | null> {
     const client = tx ? asPrismaTx(tx) : this.prisma;
@@ -86,6 +91,13 @@ export class PrismaServiceDefinitionRepository implements ServiceDefinitionRepos
       const interval = patch.defaultOperatingInterval;
       data.defaultStartMinute = interval === null ? null : interval.startMinute;
       data.defaultEndMinute = interval === null ? null : interval.endMinute;
+    }
+    // R1.6-P3D-2 — a single nullable scalar, assigned into this SAME
+    // `data` object alongside any other supplied field, so every field in
+    // one call is still exactly one atomic UPDATE statement, never a
+    // read-modify-write split.
+    if (patch.defaultDurationMinutes !== undefined) {
+      data.defaultDurationMinutes = patch.defaultDurationMinutes;
     }
     try {
       const row = await client.service.update({ where: { code }, data });
