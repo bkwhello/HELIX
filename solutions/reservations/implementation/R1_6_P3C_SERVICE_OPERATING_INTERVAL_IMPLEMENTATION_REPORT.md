@@ -302,3 +302,40 @@ This does not warrant a `Pilot` promotion.
   repository.
 - **Nothing from either milestone has been deployed anywhere.**
 - **P1-B11 remains untouched**, per standing instruction.
+
+## R1-DOC-10 reconciliation — what R1.6-P3D-1/P3D-2 subsequently added
+
+Everything above this section describes R1.6-P3C-1/P3C-2's own operating-
+interval work exactly as it stood at that milestone and is left
+unchanged — it was accurate then and remains an accurate historical
+record. **Duration did not exist in any form at the P3C milestone** — do
+not read anything above as claiming otherwise. This section records,
+without rewriting any of it, what two later, separately authorized
+milestones built as a genuinely SEPARATE concept alongside it.
+
+**R1.6-P3D-1** (commit `9e9041641ac91929ffcb645dd9e235a2b6176cd2`,
+2026-09-29, `feat(service): snapshot default duration`) added
+`domain/availability/ServiceDefaultDuration.ts` (the atomic
+`defaultDurationMinutes` scalar this report's own "next engineering
+gate" and capability-status sections above had explicitly left
+unresolved), two new nullable columns (migration
+`20260928140000_add_service_default_duration`), and the same
+copy-once-at-creation snapshot mechanism this report describes for the
+operating interval — applied to `ServiceSession.durationSnapshotMinutes`
+independently, with no pairing or cross-validation against
+`operatingIntervalSnapshot`.
+
+**R1.6-P3D-2** (commit `376980d76801880fe6f11473a135e9e3187b75c1`,
+2026-09-29, `feat(service): manage default duration`) added, with no
+further schema change: `PATCH /services/:code` acceptance of
+`defaultDurationMinutes` (omitted/object/`null`, same contract shape as
+`defaultOperatingInterval`) under provisional rule id `CAP-D02.01-R08`;
+the "Diensten" panel's quarter-hour duration select and clear checkbox;
+read-only `durationSnapshotMinutes` display in "Servicesessies"; and a
+deterministic race proof using the REAL management write path.
+
+`CAP-D02.01` remains `Designed` after all four milestones together; see
+this capability's own registry entry (`R1-DOC-10` note) for the current
+boundary of what remains undelivered. Full design, evidence, and test
+totals for the duration work are in the dedicated
+`R1_6_P3D_DEFAULT_DURATION_IMPLEMENTATION_REPORT.md`, not repeated here.

@@ -335,8 +335,80 @@ race between a Service update and a session creation — see
 - **Nothing was deployed anywhere.**
 - `CAP-D02.01` remains `Designed` — this is a real but still minimal
   slice of the *default operating times* owned rule (one optional daily
-  interval only, no richer recurring or per-day-of-week schedule); the
-  capability's *default reservation duration* rule and its
+  interval only, no richer recurring or per-day-of-week schedule);
+  **corrected (R1-DOC-10)** — the capability's *default reservation
+  duration* rule is no longer entirely undelivered, see the new "Service
+  Default-Duration status" section immediately below; its
+  `ServiceCreated`/`ServiceDeactivated` owned events remain entirely
+  undelivered.
+
+## Service Default-Duration status (R1.6-P3D-1/P3D-2 — `CAP-D02.01`, remains `Designed`)
+
+The same "Diensten" panel described above now also exposes an optional,
+per-Service default reservation duration — composing the same two routes
+(`GET /services`, `PATCH /services/:code`); no new backend surface. This
+value is a SEPARATE concept from `CapacityPool.durationMinutes` (the
+live, area-keyed Sushi=90min/Teppanyaki=150min capacity/seating-duration
+authority) — it never replaces or influences that value.
+
+**What operators can view and edit:**
+
+- **Duration select** — one quarter-hour select offering `15` through
+  `480` minutes in 15-minute steps.
+- **Explicit clear** — a dedicated checkbox per row ("Geen standaard
+  reserveringsduur"); checking it and saving sends
+  `defaultDurationMinutes: null`, atomically clearing the persisted
+  column. Unchecking it restores whatever the select currently shows.
+- **Changed-fields-only submission** — Save compares the pending value
+  against the authoritative one and includes `defaultDurationMinutes` in
+  the request only when it actually differs; a no-op sends no request,
+  same as every other field in this panel.
+- **No confirmation dialog for duration edits** — setting, replacing, or
+  clearing the duration never prompts. The existing confirmation for
+  disabling a Service (`enabled: false`) is unchanged and unrelated.
+- All the panel's other safety protections (single in-flight guard,
+  monotonic request token, authoritative reload, separate success/refresh
+  messages, safe error handling) are unchanged and apply equally to
+  duration edits.
+
+**Session snapshots remain read-only in "Servicesessies":** that panel
+displays each session's own `durationSnapshotMinutes` as plain text
+(minutes, or an explicit "Geen standaardduur vastgelegd" for `null`),
+alongside the existing operating-interval display — no editor, no
+mutation path, no fallback to the live Service value.
+
+**Later Service edits never rewrite an existing session's snapshot:**
+the duration is copied from the owning Service's CURRENT value exactly
+once, at the moment a ServiceSession is created. Changing — or fully
+clearing — a Service's default afterward has no effect on any
+ServiceSession already created for that Service. Proven with a real,
+barrier-controlled (not timing-only) concurrent race between a Service
+update (through the real management write path) and a session creation
+— see `R1_6_P3D_DEFAULT_DURATION_IMPLEMENTATION_REPORT.md`.
+
+**The value is planning information only** — it does not change any
+`Reservation` field or end time, `CapacityPool.durationMinutes`,
+`CapacityCommitment` behavior, availability/simultaneous-occupancy
+evaluation, seating timing, `FloorReadModel`'s own end-time derivation,
+booking-window eligibility, ServiceSession lifecycle transitions, or
+`defaultOperatingInterval` validation.
+
+**Development activation (facts, verified read-only):**
+
+- Migration `20260928140000_add_service_default_duration` is applied in
+  `helix_reservations_dev`.
+- `lunch` and `dinner` both hold `default_duration_minutes = NULL` — no
+  accepted product duration exists for either; none was invented.
+- `ServiceSessions = 0` in development, unaffected by this milestone.
+- **No authenticated human browser workflow or smoke test was
+  performed** — no staff member has logged in and set, changed, or
+  cleared a duration through this panel against a running server, and no
+  development route was called.
+- **Nothing was deployed anywhere.**
+- `CAP-D02.01` remains `Designed` — a real but still minimal slice of the
+  *default reservation duration* owned rule (neither canonical Service
+  has an actual configured value in development); service naming remains
+  only partially delivered, and the capability's
   `ServiceCreated`/`ServiceDeactivated` owned events remain entirely
   undelivered.
 

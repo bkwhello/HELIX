@@ -293,9 +293,61 @@ top of the three above:
     deployed anywhere.**
   - `CAP-D02.01` remains `Designed` — this is a real but still minimal
     slice of the *default operating times* owned rule (one optional daily
-    interval; no richer recurring/per-day-of-week schedule), and *default
-    reservation duration* plus the `ServiceCreated`/`ServiceDeactivated`
-    owned events remain entirely undelivered.
+    interval; no richer recurring/per-day-of-week schedule). **Corrected
+    (R1-DOC-10).** "*default reservation duration*... remain[s] entirely
+    undelivered" is no longer accurate — see the bullet immediately below
+    for what R1.6-P3D-1/P3D-2 subsequently added. The
+    `ServiceCreated`/`ServiceDeactivated` owned events remain entirely
+    undelivered.
+- **Persisted Service default-duration snapshot and management**
+  (`9e90416`, `376980d`, R1.6-P3D-1/P3D-2 — `CAP-D02.01`, remains
+  `Designed`; R1-DOC-10): `Service` gained an optional
+  `defaultDurationMinutes` (integer minutes, `[15,480]`, a multiple of
+  15; `null` = not configured) — a value **entirely separate** from
+  `CapacityPool.durationMinutes` (the live, area-keyed Sushi=90min/
+  Teppanyaki=150min capacity/seating-duration authority owned by
+  `CAP-D02.03`, unaffected by any of this). `ServiceSession` gained a
+  matching `durationSnapshotMinutes`, copied from the owning Service's
+  CURRENT duration exactly once at creation — later Service edits,
+  including a full clear, never rewrite an already-created session's own
+  snapshot (proven with a barrier-controlled, non-timing-only concurrent
+  update-vs-create race using the real management write path).
+  `PATCH /services/:code` (the same existing route/permission) now also
+  accepts `defaultDurationMinutes`: omitted means no change, an integer
+  atomically sets/replaces it, `null` atomically clears it, and a
+  same-value/same-null request is a no-op preserving `updatedAt`. An
+  invalid shape or value returns the established `422 { violations }`
+  envelope under rule id `CAP-D02.01-R08`. The "Diensten" pilot panel
+  exposes a quarter-hour duration select (15–480 minutes) and an
+  explicit clear checkbox, submitted atomically with no confirmation
+  prompt; "Servicesessies" displays each session's own
+  `durationSnapshotMinutes` read-only, alongside the existing
+  operating-interval display. Migration
+  `20260928140000_add_service_default_duration` is applied in
+  `helix_reservations_dev`: both `lunch` and `dinner` remain
+  `defaultDurationMinutes = null` (no accepted product value exists for
+  either; none was invented), `ServiceSessions = 0`. Automated
+  verification: 492 changed/new tests, full isolated suite
+  103 files / 1978 passed / 0 failed / 0 skipped. See
+  `R1_6_P3D_DEFAULT_DURATION_IMPLEMENTATION_REPORT.md` for full design,
+  evidence, and totals.
+  - **This is a planning default only** — it does not change any
+    `Reservation` field or end time, `CapacityPool.durationMinutes`,
+    `CapacityCommitment` behavior, availability/simultaneous-occupancy
+    evaluation, seating timing, `FloorReadModel`'s own end-time
+    derivation, booking-window eligibility, ServiceSession lifecycle
+    transitions, or `defaultOperatingInterval` validation (the two
+    values are entirely independent).
+  - **No authenticated human browser workflow, development route call,
+    development Service edit, or development ServiceSession creation has
+    occurred** for either milestone — automated tests and one authorized,
+    read-only-verified schema activation are the only evidence to date.
+    **Nothing has been deployed anywhere.**
+  - `CAP-D02.01` remains `Designed` — a real but still minimal slice of
+    the *default reservation duration* owned rule (neither canonical
+    Service has an actual configured value in development); service
+    naming remains only partially delivered, and
+    `ServiceCreated`/`ServiceDeactivated` remain entirely undelivered.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -423,10 +475,21 @@ top of the three above:
     immutable ServiceSession snapshot, plus management-API/pilot editing
     for it — see the R1.6-P3C-1/P3C-2 Status-section bullet above and
     `R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md`. Still
+    genuinely undelivered at that milestone: any Create/Delete Service
+    operation, `code` renaming, default reservation duration, and any
+    richer recurring/per-day-of-week schedule beyond one optional daily
+    interval. `CAP-D02.01` remains `Designed`.
+    **Corrected further (R1-DOC-10).** The "default reservation
+    duration... [undelivered]" clause immediately above is no longer
+    accurate: R1.6-P3D-1/P3D-2 (`9e90416`, `376980d`) added a real,
+    persisted, optional `defaultDurationMinutes` per Service and a
+    matching immutable ServiceSession snapshot, plus management-API/pilot
+    editing for it — see the R1.6-P3D-1/P3D-2 Status-section bullet above
+    and `R1_6_P3D_DEFAULT_DURATION_IMPLEMENTATION_REPORT.md`. Still
     genuinely undelivered: any Create/Delete Service operation, `code`
-    renaming, default reservation duration, and any richer recurring/
-    per-day-of-week schedule beyond one optional daily interval.
-    `CAP-D02.01` remains `Designed`.
+    renaming, and any richer recurring/per-day-of-week schedule for
+    either the operating interval or the duration. `CAP-D02.01` remains
+    `Designed`.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side
@@ -582,9 +645,12 @@ per-date `lunch`/`dinner` operational session lifecycle, with a matching
 status column on the daily list, a "Floorplannen" panel (R1.5-P2E-2,
 same permission for mutations) exposing Floorplan/version administration
 and Draft Table-membership editing, and a "Diensten" panel (R1.6-P3B,
-extended R1.6-P3C-2, same permission for mutations) exposing read/edit
-access to the two persisted, canonical `lunch`/`dinner` Service rows —
-`displayName`, `enabled`, and an optional quarter-hour default operating
-interval (set/change/clear, submitted atomically) — no create/delete,
-`code` never editable. See `PILOT.md` for scope, known limitations, and
-success criteria before using it with real bookings.
+extended R1.6-P3C-2 and R1.6-P3D-2, same permission for mutations)
+exposing read/edit access to the two persisted, canonical `lunch`/`dinner`
+Service rows — `displayName`, `enabled`, an optional quarter-hour default
+operating interval, and an optional quarter-hour default reservation
+duration (each independently set/change/clear, submitted atomically) —
+no create/delete, `code` never editable. "Servicesessies" additionally
+displays each session's own immutable operating-interval and duration
+snapshots read-only (R1.6-P3C-1/P3D-1). See `PILOT.md` for scope, known
+limitations, and success criteria before using it with real bookings.

@@ -472,13 +472,86 @@ capabilities:
     # (now a real but MINIMAL slice: one optional daily interval, planning-
     # default/snapshot semantics only — not yet any richer recurring or
     # per-day-of-week schedule), and **default reservation duration**
-    # (still entirely absent, no field or concept exists for it anywhere)
-    # — remain short of the full registered rule set, as do two of this
-    # capability's three registered `owns.events`
-    # (`ServiceCreated`/`ServiceDeactivated`; the catalog is still fixed
-    # at exactly two rows by migration seed data, never created or
-    # deactivated through any code path — this milestone adds a bounded
-    # `ServiceModified`-shaped edit only, same as R1.6-P3B before it).
+    # (see the R1-DOC-10 note immediately below — no longer entirely
+    # absent, but still short of the full rule) — remain short of the
+    # full registered rule set, as do two of this capability's three
+    # registered `owns.events` (`ServiceCreated`/`ServiceDeactivated`;
+    # the catalog is still fixed at exactly two rows by migration seed
+    # data, never created or deactivated through any code path — this
+    # milestone adds a bounded `ServiceModified`-shaped edit only, same
+    # as R1.6-P3B before it).
+    #
+    # R1-DOC-10 — R1.6-P3D-1 (commit `9e9041641ac91929ffcb645dd9e235a2b6176cd2`,
+    # 2026-09-29, "feat(service): snapshot default duration") and
+    # R1.6-P3D-2 (commit `376980d76801880fe6f11473a135e9e3187b75c1`,
+    # 2026-09-29, "feat(service): manage default duration") together
+    # deliver the first real, non-inert slice of this capability's
+    # **default reservation duration** owned rule — a SEPARATE concept
+    # from `CapacityPool.durationMinutes` (the live, area-keyed
+    # Sushi=90min/Teppanyaki=150min capacity/seating-duration authority
+    # owned by CAP-D02.03, entirely unaffected by any of this):
+    #   - `Service` gained an optional `defaultDurationMinutes` (integer
+    #     minutes, `[15,480]`, a multiple of 15; `null` = "not
+    #     configured"), enforced both by the domain constructor
+    #     (`domain/availability/ServiceDefaultDuration.ts`,
+    #     `createServiceDefaultDuration`) and a database `CHECK`
+    #     constraint — migration `20260928140000_add_service_default_duration`,
+    #     applied in `helix_reservations_dev`. Development seeds NEITHER
+    #     canonical row with a value: both `lunch` and `dinner` remain
+    #     `null` — no accepted product duration exists for either, and
+    #     this pair of milestones does not invent one.
+    #   - `ServiceSession` gained a matching optional
+    #     `durationSnapshotMinutes`, copied from the owning Service's
+    #     CURRENT duration exactly once, at session creation (resolved by
+    #     the `POST /service-sessions` route handler, in the same single
+    #     `findByCode` read already resolving `defaultOperatingInterval`
+    #     — no second catalog read). Immutable thereafter: idempotent
+    #     repeats, `open()`/`close()`/`cancel()`, and any LATER Service
+    #     edit (including a full clear) never rewrite an already-created
+    #     session's own stored value — proven with a barrier-controlled
+    #     (not timing-only) concurrent update-vs-create race using the
+    #     REAL management write path.
+    #   - `PATCH /services/:code` (the same existing route/permission —
+    #     no new route, no new permission) now also accepts an optional
+    #     `defaultDurationMinutes`: omitted means no change, an integer
+    #     atomically sets/replaces it, literal `null` atomically clears
+    #     it. A same-value or same-null request is a no-op preserving
+    #     `updatedAt`, identical to every other field's contract. Every
+    #     numeric rule is enforced by ONE place,
+    #     `createServiceDefaultDuration` — the route never duplicates it
+    #     — and an invalid shape or value returns the established
+    #     `422 { violations }` envelope (same status as R02–R07) under
+    #     one new, still-provisional rule id, `CAP-D02.01-R08`.
+    #   - The "Diensten" pilot panel exposes a quarter-hour duration
+    #     select (15 through 480 minutes) and an explicit clear checkbox
+    #     per row, submitted atomically, changed-fields-only, no
+    #     confirmation prompt (the pre-existing disable-a-Service
+    #     confirmation is unchanged). The "Servicesessies" panel displays
+    #     each session's own `durationSnapshotMinutes` read-only,
+    #     alongside the existing operating-interval display — no editor,
+    #     no mutation path, no fallback to the live Service value.
+    # `helix_reservations_dev` has this migration applied; both canonical
+    # Services remain `defaultDurationMinutes = null`; `ServiceSessions = 0`;
+    # no development Service row has been edited through the API or UI
+    # since activation, and no authenticated human browser workflow has
+    # exercised either panel — automated tests (492 changed/new,
+    # 103 files / 1978 total) are the only evidence to date (see
+    # `R1_6_P3D_DEFAULT_DURATION_IMPLEMENTATION_REPORT.md`).
+    # This does NOT change: any `Reservation` field or end time (no
+    # duration/end-time field was added to `Reservation`),
+    # `CapacityPool.durationMinutes`, `CapacityCommitment` behavior,
+    # availability/simultaneous-occupancy evaluation, seating timing,
+    # `FloorReadModel`'s own end-time derivation, booking-window
+    # eligibility, ServiceSession lifecycle transitions, or
+    # `defaultOperatingInterval` validation (the two values are entirely
+    # independent, no pairing or cross-validation exists between them).
+    # `delivery_status` remains `Designed` after this pair of milestones
+    # too: no actual lunch or dinner duration is configured in
+    # development (both remain `null` by design — no value was invented),
+    # service naming remains only partially delivered (still just
+    # `displayName`), `ServiceCreated`/`ServiceDeactivated` remain
+    # entirely absent, and no authenticated human workflow or deployed
+    # production use has been demonstrated for either milestone.
     delivery_status: Designed
     operational_maturity: M1
     mvp: true
