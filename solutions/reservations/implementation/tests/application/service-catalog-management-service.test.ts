@@ -1,15 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { ServiceCatalogManagementService } from "../../application/availability/ServiceCatalogManagementService.js";
-import { FakeServiceDefinitionRepository } from "../support/FakePorts.js";
+import { FakeServiceDefinitionRepository, FakeTransactionManager, FakeSecurityEventRecorder } from "../support/FakePorts.js";
 
 /**
  * R1.6-P3B — application-layer coverage for ServiceCatalogManagementService,
  * against the in-memory fake only (never a real database) — real-adapter
  * mutation coverage lives in tests/infrastructure/prisma-service-definition-repository.test.ts,
  * using throwaway non-canonical rows, never the shared lunch/dinner rows.
+ *
+ * R1.6-P3G — `service()` now wires a FakeTransactionManager and a
+ * FakeSecurityEventRecorder underneath, and its returned `update()`
+ * supplies a default `actingStaffUserId` so every one of this file's
+ * pre-existing two-argument `.update(code, patch)` call sites keeps
+ * working unchanged — only the tests that actually care about the audit
+ * trail (see the dedicated describe block below) pass an explicit actor
+ * id or their own recorder.
  */
-function service(repo: FakeServiceDefinitionRepository = new FakeServiceDefinitionRepository()) {
-  return new ServiceCatalogManagementService(repo);
+const DEFAULT_ACTOR_ID = "staff-test-actor";
+
+function service(repo: FakeServiceDefinitionRepository = new FakeServiceDefinitionRepository(), recorder: FakeSecurityEventRecorder = new FakeSecurityEventRecorder()) {
+  const svc = new ServiceCatalogManagementService(repo, new FakeTransactionManager(), recorder);
+  return {
+    list: () => svc.list(),
+    update: (code: string, patch: Parameters<typeof svc.update>[1], actingStaffUserId: string = DEFAULT_ACTOR_ID) => svc.update(code, patch, actingStaffUserId),
+  };
 }
 
 describe("ServiceCatalogManagementService.list — deterministic lunch-then-dinner order", () => {
@@ -347,5 +361,145 @@ describe("ServiceCatalogManagementService.update — R1.6-P3D-2 defaultDurationM
     const before = await repo.findByCode("dinner");
     const result = await service(repo).update("dinner", { defaultDurationMinutes: null });
     expect((result as { service: { updatedAt: Date } }).service.updatedAt).toEqual(before?.updatedAt);
+  });
+});
+
+describe("ServiceCatalogManagementService.update — R1.6-P3G audit-event selection", () => {
+  it("displayName-only change emits exactly one ServiceModified with only that field", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { displayName: "Lunchkaart" }, "staff-a");
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0]).toMatchObject({
+      type: "ServiceModified",
+      actingStaffUserId: "staff-a",
+      metadata: { serviceCode: "lunch", changes: { displayName: { old: "Lunch", new: "Lunchkaart" } } },
+    });
+  });
+
+  it("defaultOperatingInterval-only change emits exactly one ServiceModified with only that field, as nested {startMinute,endMinute} old/new", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { defaultOperatingInterval: { startMinute: 0, endMinute: 60 } }, "staff-a");
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0]).toMatchObject({
+      type: "ServiceModified",
+      metadata: {
+        serviceCode: "lunch",
+        changes: { defaultOperatingInterval: { old: { startMinute: 720, endMinute: 960 }, new: { startMinute: 0, endMinute: 60 } } },
+      },
+    });
+  });
+
+  it("defaultOperatingInterval clear-to-null emits ServiceModified with new: null, old preserved", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { defaultOperatingInterval: null }, "staff-a");
+    expect(recorder.calls[0]).toMatchObject({
+      metadata: { changes: { defaultOperatingInterval: { old: { startMinute: 720, endMinute: 960 }, new: null } } },
+    });
+  });
+
+  it("defaultDurationMinutes-only change emits exactly one ServiceModified with only that field", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { defaultDurationMinutes: 90 }, "staff-a");
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0]).toMatchObject({
+      type: "ServiceModified",
+      metadata: { serviceCode: "lunch", changes: { defaultDurationMinutes: { old: null, new: 90 } } },
+    });
+  });
+
+  it("a multi-field non-activation update emits ONE ServiceModified containing all and only the changed fields, in deterministic order", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update(
+      "lunch",
+      { displayName: "Lunchkaart", defaultOperatingInterval: { startMinute: 660, endMinute: 900 }, defaultDurationMinutes: 90 },
+      "staff-a"
+    );
+    expect(recorder.calls).toHaveLength(1);
+    const call = recorder.calls[0];
+    expect(call?.type).toBe("ServiceModified");
+    expect(call && "metadata" in call ? Object.keys(call.metadata.changes) : []).toEqual(["displayName", "defaultOperatingInterval", "defaultDurationMinutes"]);
+  });
+
+  it("enabled true->false emits exactly one ServiceDeactivated, never ServiceModified", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { enabled: false }, "staff-a");
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0]).toMatchObject({
+      type: "ServiceDeactivated",
+      metadata: { serviceCode: "lunch", changes: { enabled: { old: true, new: false } } },
+    });
+  });
+
+  it("enabled false->true emits exactly one ServiceReactivated, never ServiceModified", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    repo.setEnabled("lunch", false);
+    await service(repo, recorder).update("lunch", { enabled: true }, "staff-a");
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0]).toMatchObject({
+      type: "ServiceReactivated",
+      metadata: { serviceCode: "lunch", changes: { enabled: { old: false, new: true } } },
+    });
+  });
+
+  it("an activation transition combined with other field changes emits ONE activation-state event containing every changed field, not a separate ServiceModified", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { displayName: "Lunchkaart", enabled: false, defaultDurationMinutes: 90 }, "staff-a");
+    expect(recorder.calls).toHaveLength(1);
+    const call = recorder.calls[0];
+    expect(call?.type).toBe("ServiceDeactivated");
+    expect(call && "metadata" in call ? Object.keys(call.metadata.changes).sort() : []).toEqual(["defaultDurationMinutes", "displayName", "enabled"].sort());
+  });
+
+  it("a same-value update (no real change) emits no event at all", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { displayName: "Lunch", enabled: true }, "staff-a");
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("a same-null defaultOperatingInterval/defaultDurationMinutes patch emits no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("dinner", { defaultOperatingInterval: null, defaultDurationMinutes: null }, "staff-a");
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("SERVICE_NOT_FOUND (unknown code) emits no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    repo.remove("lunch");
+    const result = await service(repo, recorder).update("lunch", { displayName: "X" }, "staff-a");
+    expect(result).toEqual({ type: "SERVICE_NOT_FOUND" });
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("SERVICE_NOT_FOUND (non-canonical code string) emits no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    const result = await service(repo, recorder).update("brunch", { displayName: "X" }, "staff-a");
+    expect(result).toEqual({ type: "SERVICE_NOT_FOUND" });
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("actingStaffUserId flows through unchanged to whichever event type is emitted", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = new FakeServiceDefinitionRepository();
+    await service(repo, recorder).update("lunch", { displayName: "X" }, "staff-specific-id");
+    expect(recorder.calls[0]).toMatchObject({ actingStaffUserId: "staff-specific-id" });
+  });
+
+  it("a forced SecurityEvent insertion failure propagates (rejects) rather than being swallowed — real rollback-under-a-shared-transaction proof lives in the real-Postgres integration suite", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    recorder.failNextServiceEventWith = new Error("forced audit failure");
+    const repo = new FakeServiceDefinitionRepository();
+    await expect(service(repo, recorder).update("lunch", { displayName: "X" }, "staff-a")).rejects.toThrow("forced audit failure");
   });
 });

@@ -17,7 +17,8 @@ import { PrismaTransactionManager } from "../../infrastructure/persistence/Prism
 import { UnvalidatedServicePeriodReader } from "../../infrastructure/UnvalidatedServicePeriodReader.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
-import { FakeServiceDefinitionRepository } from "../support/FakePorts.js";
+import { FakeServiceDefinitionRepository, FakeTransactionManager, FakeSecurityEventRecorder } from "../support/FakePorts.js";
+import { SecurityEventRecorder } from "../../application/ports/SecurityEventRecorder.js";
 
 /**
  * R1.6-P3B — HTTP-level coverage for GET /services and PATCH /services/:code.
@@ -38,7 +39,7 @@ const RUN_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 
 const PASSWORD = "SuperSecret123!";
 const prisma = createTestPrismaClient();
 
-function baseDeps(serviceCatalog?: AppDependencies["serviceCatalog"]): AppDependencies {
+function baseDeps(serviceCatalog?: AppDependencies["serviceCatalog"], securityEventRecorder?: SecurityEventRecorder): AppDependencies {
   return {
     repository: new PrismaReservationRepository(prisma),
     duplicateChecker: new PrismaDuplicateReservationChecker(prisma),
@@ -57,6 +58,7 @@ function baseDeps(serviceCatalog?: AppDependencies["serviceCatalog"]): AppDepend
       cookieSecure: false,
       expectedOrigin: null,
       loginAttemptTracker: new PrismaLoginAttemptTracker(prisma),
+      ...(securityEventRecorder ? { securityEventRecorder } : {}),
     },
     ...(serviceCatalog ? { serviceCatalog } : {}),
   };
@@ -66,8 +68,17 @@ function freshCatalog(): FakeServiceDefinitionRepository {
   return new FakeServiceDefinitionRepository();
 }
 
-function buildApp(repo?: FakeServiceDefinitionRepository): Express {
-  return createApp(baseDeps(repo ? { repository: repo } : undefined));
+/**
+ * R1.6-P3G — `serviceCatalog.transactionManager` is now required by
+ * AppDependencies; every test in this file goes through this one helper,
+ * so a FakeTransactionManager (no real Postgres, matching the fake
+ * repository these tests already use) is supplied here exactly once
+ * rather than at each of this file's many call sites. `recorder`, when
+ * supplied, lets a test assert on exactly which SecurityEvents (if any)
+ * a given request produced.
+ */
+function buildApp(repo?: FakeServiceDefinitionRepository, recorder?: SecurityEventRecorder): Express {
+  return createApp(baseDeps(repo ? { repository: repo, transactionManager: new FakeTransactionManager() } : undefined, recorder));
 }
 
 function post(agent: ReturnType<typeof request.agent>, url: string) {
@@ -663,6 +674,86 @@ describe("PATCH /services/:code — successful mutation", () => {
     expect(res.body.service).not.toHaveProperty("default_start_minute");
     expect(res.body.service).not.toHaveProperty("default_end_minute");
     expect(res.body.service).not.toHaveProperty("default_duration_minutes");
+  });
+});
+
+describe("PATCH /services/:code — R1.6-P3G Service audit events", () => {
+  it("a real change records exactly one event with actingStaffUserId from the authenticated session, never from the request body", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = buildApp(freshCatalog(), recorder);
+    const agent = await loginTo(app, ownerUsername);
+    const res = await patch(agent, "/services/lunch").send({ displayName: "Lunchkaart" });
+    expect(res.status).toBe(200);
+    expect(recorder.calls).toHaveLength(1);
+    const call = recorder.calls[0];
+    expect(call?.type).toBe("ServiceModified");
+    expect(call && "actingStaffUserId" in call ? call.actingStaffUserId : null).toBe(`svc-id-owner-${RUN_ID}`);
+  });
+
+  it("enabling/disabling records ServiceDeactivated/ServiceReactivated, not ServiceModified", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = buildApp(freshCatalog(), recorder);
+    const agent = await loginTo(app, ownerUsername);
+    await patch(agent, "/services/lunch").send({ enabled: false });
+    expect(recorder.calls.map((c) => c.type)).toEqual(["ServiceDeactivated"]);
+    await patch(agent, "/services/lunch").send({ enabled: true });
+    expect(recorder.calls.map((c) => c.type)).toEqual(["ServiceDeactivated", "ServiceReactivated"]);
+  });
+
+  it("a 422 validation failure produces no Service mutation and no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const repo = freshCatalog();
+    const app = buildApp(repo, recorder);
+    const agent = await loginTo(app, ownerUsername);
+    const before = await repo.findByCode("lunch");
+    const res = await patch(agent, "/services/lunch").send({ defaultDurationMinutes: 10 });
+    expect(res.status).toBe(422);
+    expect(recorder.calls).toHaveLength(0);
+    expect(await repo.findByCode("lunch")).toEqual(before);
+  });
+
+  it("a 404 SERVICE_NOT_FOUND (unknown code) produces no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = buildApp(freshCatalog(), recorder);
+    const agent = await loginTo(app, ownerUsername);
+    const res = await patch(agent, "/services/brunch").send({ displayName: "X" });
+    expect(res.status).toBe(404);
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("an unauthenticated (401) request produces no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = buildApp(freshCatalog(), recorder);
+    const res = await request(app).patch("/services/lunch").set(CSRF_HEADER_NAME, "1").send({ displayName: "X" });
+    expect(res.status).toBe(401);
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("a forbidden (403 — Reception lacks CapacitySettingsManage) request produces no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = buildApp(freshCatalog(), recorder);
+    const receptionAgent = await loginTo(app, receptionUsername);
+    const res = await patch(receptionAgent, "/services/lunch").send({ displayName: "X" });
+    expect(res.status).toBe(403);
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("a same-value (no-op) request produces no event", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = buildApp(freshCatalog(), recorder);
+    const agent = await loginTo(app, ownerUsername);
+    const res = await patch(agent, "/services/lunch").send({ displayName: "Lunch", enabled: true });
+    expect(res.status).toBe(200);
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it("when serviceCatalog is omitted entirely, no SecurityEventRecorder wiring is even reachable — omission itself proves no event path exists for a 404 deployment posture", async () => {
+    const recorder = new FakeSecurityEventRecorder();
+    const app = createApp(baseDeps(undefined, recorder));
+    const agent = await loginTo(app, ownerUsername);
+    const res = await patch(agent, "/services/lunch").send({ displayName: "X" });
+    expect(res.status).toBe(404);
+    expect(recorder.calls).toHaveLength(0);
   });
 });
 

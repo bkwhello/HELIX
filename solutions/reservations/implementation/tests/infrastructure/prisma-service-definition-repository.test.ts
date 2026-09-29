@@ -483,3 +483,76 @@ describe("PrismaServiceDefinitionRepository — update() defaultDurationMinutes 
     expect(row).toBeNull();
   });
 });
+
+/**
+ * R1.6-P3G — real-adapter `lockAndFindByCode()` coverage. Correctness
+ * (same mapped shape as findByCode, unknown code -> null) is proven
+ * rollback-contained, same convention as every other `update()` describe
+ * block above. The row-lock itself is proven against a SECOND, real
+ * connection using `FOR UPDATE NOWAIT` (never a timing-based wait): NOWAIT
+ * makes Postgres fail immediately with 55P03 if the row is already
+ * locked, rather than blocking — a deterministic, database-state-based
+ * proof, not a bounded-poll one.
+ */
+describe("PrismaServiceDefinitionRepository — lockAndFindByCode() (R1.6-P3G)", () => {
+  class RollbackSentinel extends Error {}
+  const prismaB = createTestPrismaClient();
+  afterAll(async () => {
+    await prismaB.$disconnect();
+  });
+
+  it("rollback-contained: returns the same mapped ServiceDefinition shape as findByCode for a known code", async () => {
+    await prisma
+      .$transaction(async (tx) => {
+        const locked = await repository.lockAndFindByCode("lunch", tx as TransactionContext);
+        expect(locked).toEqual(await repository.findByCode("lunch"));
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+  });
+
+  it("returns null for an unknown/non-canonical code, not an error", async () => {
+    const fixtureCode = `test-fixture-${Date.now().toString(36)}-lock`;
+    await prisma
+      .$transaction(async (tx) => {
+        const result = await repository.lockAndFindByCode(fixtureCode as never, tx as TransactionContext);
+        expect(result).toBeNull();
+        throw new RollbackSentinel();
+      })
+      .catch((err) => {
+        if (!(err instanceof RollbackSentinel)) throw err;
+      });
+  });
+
+  it("genuinely takes a real row lock: a second connection's FOR UPDATE NOWAIT on the same row fails with 55P03 while the first transaction still holds it open, and succeeds once the first commits", async () => {
+    let releaseA: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    let lockedA = false;
+
+    const txA = prisma.$transaction(async (tx) => {
+      await repository.lockAndFindByCode("dinner", tx as TransactionContext);
+      lockedA = true;
+      await gate;
+    });
+
+    // Bounded poll only waits for the fact "A has taken its lock" to
+    // become true in THIS process — not for any database-visible timing.
+    for (let i = 0; i < 100 && !lockedA; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(lockedA).toBe(true);
+
+    await expect(prismaB.$queryRawUnsafe(`SELECT code FROM services WHERE code = 'dinner' FOR UPDATE NOWAIT`)).rejects.toThrow(/could not obtain lock/);
+
+    releaseA!();
+    await txA;
+
+    // Now that A has committed (a no-op update, so 'dinner' is unchanged), B can acquire it.
+    const afterCommit = await prismaB.$queryRawUnsafe<{ code: string }[]>(`SELECT code FROM services WHERE code = 'dinner' FOR UPDATE NOWAIT`);
+    expect(afterCommit).toEqual([{ code: "dinner" }]);
+  });
+});

@@ -173,6 +173,9 @@ const app = createApp({
   // has run, mirroring R1.6-P3C-1's own precedent.
   serviceCatalog: {
     repository: serviceDefinitionRepository,
+    // R1.6-P3G — a fresh stateless wrapper over the SAME shared `prisma`
+    // client, same pattern as every other transactionManager below.
+    transactionManager: new PrismaTransactionManager(prisma),
   },
   // R1.6-B — mounts confirmation/reminder enqueue and the staff resend
   // route. Real EmailDeliveryPort/provider selection remains a separate,

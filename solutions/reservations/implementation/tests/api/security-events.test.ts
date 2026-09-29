@@ -19,6 +19,7 @@ import { PrismaSecurityEventRecorder } from "../../infrastructure/persistence/Pr
 import { PrismaSecurityEventReader } from "../../infrastructure/persistence/PrismaSecurityEventReader.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
+import { FakeServiceDefinitionRepository, FakeTransactionManager } from "../support/FakePorts.js";
 
 /**
  * R1.7-P1 — HTTP-level coverage for GET /security-events.
@@ -71,11 +72,25 @@ function buildApp(): Express {
       securityEventRecorder: new PrismaSecurityEventRecorder(prisma),
       securityEventReader: new PrismaSecurityEventReader(prisma),
     },
+    // R1.6-P3G — an in-memory Service catalog (never the shared, real
+    // lunch/dinner rows — same isolation convention as tests/api/services.test.ts's
+    // own header comment) wired ONLY so this file can exercise the REAL
+    // PrismaSecurityEventRecorder/PrismaSecurityEventReader path end to
+    // end for the three new Service audit event types, exactly like its
+    // existing "real failed-login recording, then retrieval" coverage
+    // does for LoginFailed.
+    serviceCatalog: {
+      repository: new FakeServiceDefinitionRepository(),
+      transactionManager: new FakeTransactionManager(),
+    },
   });
 }
 
 function post(agent: ReturnType<typeof request.agent>, url: string) {
   return agent.post(url).set(CSRF_HEADER_NAME, "1");
+}
+function patch(agent: ReturnType<typeof request.agent>, url: string) {
+  return agent.patch(url).set(CSRF_HEADER_NAME, "1");
 }
 
 let app: Express;
@@ -357,8 +372,12 @@ describe("GET /security-events — projection and safety", () => {
     await createSecurityEvent({ type: "LoginFailed", occurredAt: windowStart, metadata: JSON.stringify({ reason: "ACCOUNT_DISABLED", extraSecretKey: "should-never-appear" }) });
     const res = await ownerAgent.get(`/security-events?since=${windowStart.toISOString()}`);
     for (const event of res.body.events) {
+      // R1.6-P3G — serviceChange joins this allowlist (always present,
+      // null for anything that isn't a Service audit event, exactly
+      // mirroring reason's own "always present, null when not
+      // applicable" convention above).
       expect(Object.keys(event).sort()).toEqual(
-        ["actingStaffUserId", "actingStaffUsername", "id", "occurredAt", "reason", "targetStaffUserId", "targetStaffUsername", "type"].sort()
+        ["actingStaffUserId", "actingStaffUsername", "id", "occurredAt", "reason", "serviceChange", "targetStaffUserId", "targetStaffUsername", "type"].sort()
       );
     }
     expect(JSON.stringify(res.body)).not.toContain("extraSecretKey");
@@ -391,6 +410,107 @@ describe("GET /security-events — projection and safety", () => {
     expect(event.targetStaffUserId).toBeNull();
     expect(event.targetStaffUsername).toBeNull();
     expect(event.reason).toBe("UNKNOWN_USERNAME");
+  });
+});
+
+describe("GET /security-events — R1.6-P3G Service audit event projection", () => {
+  it("ServiceModified projects serviceChange with the exact serviceCode/changes shape, and reason stays null", async () => {
+    const windowStart = nextIsolationWindow();
+    const id = await createSecurityEvent({
+      type: "ServiceModified",
+      occurredAt: windowStart,
+      actingStaffUserId: null,
+      metadata: JSON.stringify({ serviceCode: "lunch", changes: { displayName: { old: "Lunch", new: "Lunchkaart" } } }),
+    });
+    const res = await ownerAgent.get(`/security-events?since=${windowStart.toISOString()}`);
+    const event = res.body.events.find((e: { id: string }) => e.id === id);
+    expect(event).toBeDefined();
+    expect(event.reason).toBeNull();
+    expect(event.serviceChange).toEqual({ serviceCode: "lunch", changes: { displayName: { old: "Lunch", new: "Lunchkaart" } } });
+  });
+
+  it("ServiceDeactivated/ServiceReactivated both project serviceChange the same way", async () => {
+    const windowStart = nextIsolationWindow();
+    const deactivatedId = await createSecurityEvent({
+      type: "ServiceDeactivated",
+      occurredAt: windowStart,
+      metadata: JSON.stringify({ serviceCode: "dinner", changes: { enabled: { old: true, new: false } } }),
+    });
+    const reactivatedId = await createSecurityEvent({
+      type: "ServiceReactivated",
+      occurredAt: new Date(windowStart.getTime() + 1000),
+      metadata: JSON.stringify({ serviceCode: "dinner", changes: { enabled: { old: false, new: true } } }),
+    });
+    const res = await ownerAgent.get(`/security-events?since=${windowStart.toISOString()}`);
+    const deactivated = res.body.events.find((e: { id: string }) => e.id === deactivatedId);
+    const reactivated = res.body.events.find((e: { id: string }) => e.id === reactivatedId);
+    expect(deactivated.serviceChange.changes.enabled).toEqual({ old: true, new: false });
+    expect(reactivated.serviceChange.changes.enabled).toEqual({ old: false, new: true });
+  });
+
+  it("a LoginFailed/OwnerBootstrapped/unknown event always projects serviceChange: null, never attempting to parse its metadata as a Service change", async () => {
+    const windowStart = nextIsolationWindow();
+    const loginId = await createSecurityEvent({ type: "LoginFailed", occurredAt: windowStart, metadata: JSON.stringify({ reason: "UNKNOWN_USERNAME" }) });
+    const bootstrapId = await createSecurityEvent({ type: "OwnerBootstrapped", occurredAt: new Date(windowStart.getTime() + 1000), metadata: null });
+    const res = await ownerAgent.get(`/security-events?since=${windowStart.toISOString()}`);
+    expect(res.body.events.find((e: { id: string }) => e.id === loginId).serviceChange).toBeNull();
+    expect(res.body.events.find((e: { id: string }) => e.id === bootstrapId).serviceChange).toBeNull();
+  });
+
+  it("malformed/legacy ServiceModified metadata degrades to serviceChange: null without failing the response or leaking raw content", async () => {
+    const windowStart = nextIsolationWindow();
+    const notJsonId = await createSecurityEvent({ type: "ServiceModified", occurredAt: windowStart, metadata: "not-json-at-all" });
+    const wrongShapeId = await createSecurityEvent({
+      type: "ServiceModified",
+      occurredAt: new Date(windowStart.getTime() + 1000),
+      metadata: JSON.stringify({ someOtherField: true }),
+    });
+    const missingOldNewId = await createSecurityEvent({
+      type: "ServiceModified",
+      occurredAt: new Date(windowStart.getTime() + 2000),
+      metadata: JSON.stringify({ serviceCode: "lunch", changes: { displayName: "Lunchkaart" } }),
+    });
+    const okId = await createSecurityEvent({
+      type: "ServiceModified",
+      occurredAt: new Date(windowStart.getTime() + 3000),
+      metadata: JSON.stringify({ serviceCode: "lunch", changes: { displayName: { old: "Lunch", new: "Lunchkaart" } } }),
+    });
+    const res = await ownerAgent.get(`/security-events?since=${windowStart.toISOString()}`);
+    expect(res.status).toBe(200);
+    const byId = (id: string) => res.body.events.find((e: { id: string }) => e.id === id);
+    expect(byId(notJsonId).serviceChange).toBeNull();
+    expect(byId(wrongShapeId).serviceChange).toBeNull();
+    expect(byId(missingOldNewId).serviceChange).toBeNull();
+    expect(byId(okId).serviceChange).not.toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain("not-json-at-all");
+  });
+
+  it("AuditView (Owner) can read Service audit events; Reception (no AuditView) still gets 403 for the same underlying data", async () => {
+    const windowStart = nextIsolationWindow();
+    await createSecurityEvent({ type: "ServiceModified", occurredAt: windowStart, metadata: JSON.stringify({ serviceCode: "lunch", changes: { displayName: { old: "Lunch", new: "X" } } }) });
+    const ownerRes = await ownerAgent.get(`/security-events?since=${windowStart.toISOString()}`);
+    expect(ownerRes.status).toBe(200);
+    const receptionRes = await receptionAgent.get(`/security-events?since=${windowStart.toISOString()}`);
+    expect(receptionRes.status).toBe(403);
+  });
+});
+
+describe("PATCH /services/:code -> GET /security-events — R1.6-P3G real end-to-end audit trail", () => {
+  it("a real PATCH that disables a Service produces a real, readable ServiceDeactivated event with the acting Owner's identity and no credential leakage", async () => {
+    const justBefore = new Date();
+    const patchRes = await patch(ownerAgent, "/services/lunch").send({ enabled: false });
+    expect(patchRes.status).toBe(200);
+
+    const res = await ownerAgent.get(`/security-events?since=${justBefore.toISOString()}&limit=200`);
+    expect(res.status).toBe(200);
+    const event = res.body.events.find((e: { type: string }) => e.type === "ServiceDeactivated");
+    expect(event).toBeDefined();
+    expect(event.actingStaffUsername).toBe(`sec-evt-owner-${RUN_ID}`);
+    expect(event.targetStaffUserId).toBeNull();
+    expect(event.serviceChange).toEqual({ serviceCode: "lunch", changes: { enabled: { old: true, new: false } } });
+
+    const raw = JSON.stringify(res.body);
+    expect(raw).not.toContain(PASSWORD);
   });
 });
 

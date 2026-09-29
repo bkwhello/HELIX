@@ -8,11 +8,59 @@ import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDefinitionRepository.js";
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode } from "../../domain/availability/Service.js";
+import { SecurityEventRecorder, LoginFailureReason, ServiceChangeMetadata } from "../../application/ports/SecurityEventRecorder.js";
 
 /** No real database in unit-level tests — the "transaction" is just the callback invoked with no tx, consistent with how InMemoryReservationRepository ignores `tx` entirely. */
 export class FakeTransactionManager implements TransactionManager {
   async runInTransaction<T>(work: (tx: TransactionContext) => Promise<T>): Promise<T> {
     return work(undefined);
+  }
+}
+
+export type FakeSecurityEventCall =
+  | { readonly type: "LoginFailed"; readonly reason: LoginFailureReason; readonly targetStaffUserId: string | null }
+  | { readonly type: "ServiceModified" | "ServiceDeactivated" | "ServiceReactivated"; readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata };
+
+/**
+ * R1.6-P3G — in-memory SecurityEventRecorder fake: records every call
+ * (never writes anywhere real) so a test can assert exactly what was — or
+ * was not — recorded. `failNextServiceEventWith`, when set, makes the
+ * NEXT Service audit call throw that error instead of recording anything
+ * — used to prove the caller's own transaction rolls back on an audit
+ * write failure, mirroring how a real forced-CHECK-constraint failure
+ * behaves against Postgres, without needing a real database for a pure
+ * application-layer unit test.
+ */
+export class FakeSecurityEventRecorder implements SecurityEventRecorder {
+  readonly calls: FakeSecurityEventCall[] = [];
+  failNextServiceEventWith: Error | null = null;
+
+  async recordLoginFailure(input: { readonly reason: LoginFailureReason; readonly targetStaffUserId: string | null }): Promise<void> {
+    this.calls.push({ type: "LoginFailed", reason: input.reason, targetStaffUserId: input.targetStaffUserId });
+  }
+
+  async recordServiceModified(input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }): Promise<void> {
+    this.recordServiceEvent("ServiceModified", input);
+  }
+
+  async recordServiceDeactivated(input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }): Promise<void> {
+    this.recordServiceEvent("ServiceDeactivated", input);
+  }
+
+  async recordServiceReactivated(input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }): Promise<void> {
+    this.recordServiceEvent("ServiceReactivated", input);
+  }
+
+  private recordServiceEvent(
+    type: "ServiceModified" | "ServiceDeactivated" | "ServiceReactivated",
+    input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }
+  ): void {
+    if (this.failNextServiceEventWith) {
+      const err = this.failNextServiceEventWith;
+      this.failNextServiceEventWith = null;
+      throw err;
+    }
+    this.calls.push({ type, actingStaffUserId: input.actingStaffUserId, metadata: input.metadata });
   }
 }
 
@@ -152,6 +200,11 @@ export class FakeServiceDefinitionRepository implements ServiceDefinitionReposit
 
   async findByCode(code: ServiceCode): Promise<ServiceDefinition | null> {
     return this.rows.get(code) ?? null;
+  }
+
+  /** R1.6-P3G — no real concurrency in-memory, so this simply ignores `tx` and delegates to findByCode, same "tx is a no-op" posture as FakeTransactionManager itself. */
+  async lockAndFindByCode(code: ServiceCode, _tx: TransactionContext): Promise<ServiceDefinition | null> {
+    return this.findByCode(code);
   }
 
   async list(): Promise<readonly ServiceDefinition[]> {

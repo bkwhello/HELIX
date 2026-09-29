@@ -15,6 +15,20 @@ import { TransactionContext } from "../shared/TransactionContext.js";
 export interface ServiceDefinitionRepository {
   findByCode(code: ServiceCode, tx?: TransactionContext): Promise<ServiceDefinition | null>;
 
+  /**
+   * R1.6-P3G — same shape as `findByCode`, but takes a database row lock
+   * (`SELECT ... FOR UPDATE`) on the returned row, serializing concurrent
+   * callers against each other for this one `code`. `tx` is REQUIRED
+   * (unlike every other method here): a row lock taken outside an
+   * explicit, still-open transaction is released the instant the single
+   * SELECT statement completes, which would make the lock meaningless —
+   * this method exists specifically for the "lock, read authoritative
+   * state, compare, then write" pattern
+   * `ServiceCatalogManagementService.update()` uses, never for a plain
+   * read. Returns `null` for an unknown code, exactly like `findByCode`.
+   */
+  lockAndFindByCode(code: ServiceCode, tx: TransactionContext): Promise<ServiceDefinition | null>;
+
   /** Deterministic order (by code) — used by tests and the P3B management service; the management service itself re-orders to the canonical lunch/dinner sequence rather than trusting this order for its own API response. */
   list(tx?: TransactionContext): Promise<readonly ServiceDefinition[]>;
 

@@ -316,6 +316,9 @@ describe("R1.2-P2 — LoginFailed SecurityEvent recording", () => {
       async recordLoginFailure(): Promise<void> {
         throw new Error(secretExceptionMessage);
       },
+      async recordServiceModified(): Promise<void> {},
+      async recordServiceDeactivated(): Promise<void> {},
+      async recordServiceReactivated(): Promise<void> {},
     };
     const handler = new LoginHandler(deps.staffUserRepository, deps.sessionRepository, deps.passwordHasher, deps.sessionTokenGenerator, new FixedClock(), 60_000, throwingRecorder);
 

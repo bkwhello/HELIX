@@ -99,6 +99,7 @@ function buildAppWithCatalog(): Express {
     },
     serviceCatalog: {
       repository: new PrismaServiceDefinitionRepository(prisma),
+      transactionManager: new PrismaTransactionManager(prisma),
     },
     auth: {
       staffUserRepository: new PrismaStaffUserRepository(prisma),

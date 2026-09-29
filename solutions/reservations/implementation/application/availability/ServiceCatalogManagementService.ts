@@ -2,6 +2,8 @@ import { ServiceDefinitionRepository } from "../../domain/repositories/ServiceDe
 import { ServiceDefinition } from "../../domain/availability/ServiceDefinition.js";
 import { ServiceCode, isServiceCode } from "../../domain/availability/Service.js";
 import { ServiceOperatingInterval } from "../../domain/availability/ServiceOperatingInterval.js";
+import { TransactionManager } from "../ports/TransactionManager.js";
+import { SecurityEventRecorder, ServiceChangeMetadata } from "../ports/SecurityEventRecorder.js";
 
 export type ServiceCatalogUpdateOutcome =
   | { readonly type: "UPDATED"; readonly service: ServiceDefinition }
@@ -13,6 +15,44 @@ const CANONICAL_ORDER: readonly ServiceCode[] = ["lunch", "dinner"];
 function intervalsEqual(a: ServiceOperatingInterval | null, b: ServiceOperatingInterval | null): boolean {
   if (a === null || b === null) return a === b;
   return a.startMinute === b.startMinute && a.endMinute === b.endMinute;
+}
+
+type ServiceChanges = {
+  displayName?: string;
+  enabled?: boolean;
+  defaultOperatingInterval?: ServiceOperatingInterval | null;
+  defaultDurationMinutes?: number | null;
+};
+
+/**
+ * R1.6-P3G — builds the one allowlisted metadata shape (see
+ * SecurityEventRecorder.ts's own `ServiceChangeMetadata` doc comment):
+ * only the public domain field names that actually changed, each as an
+ * explicit `{ old, new }` pair, `null` preserved rather than omitted,
+ * field order fixed (displayName, enabled, defaultOperatingInterval,
+ * defaultDurationMinutes) so the serialized JSON is deterministic —
+ * never a spread of `existing`/`changes`, never a database column name.
+ */
+function buildServiceChangeMetadata(code: ServiceCode, existing: ServiceDefinition, changes: ServiceChanges): ServiceChangeMetadata {
+  const fields: Record<string, { old: unknown; new: unknown }> = {};
+  if (changes.displayName !== undefined) {
+    fields["displayName"] = { old: existing.displayName, new: changes.displayName };
+  }
+  if (changes.enabled !== undefined) {
+    fields["enabled"] = { old: existing.enabled, new: changes.enabled };
+  }
+  if (changes.defaultOperatingInterval !== undefined) {
+    fields["defaultOperatingInterval"] = {
+      old: existing.defaultOperatingInterval
+        ? { startMinute: existing.defaultOperatingInterval.startMinute, endMinute: existing.defaultOperatingInterval.endMinute }
+        : null,
+      new: changes.defaultOperatingInterval ? { startMinute: changes.defaultOperatingInterval.startMinute, endMinute: changes.defaultOperatingInterval.endMinute } : null,
+    };
+  }
+  if (changes.defaultDurationMinutes !== undefined) {
+    fields["defaultDurationMinutes"] = { old: existing.defaultDurationMinutes, new: changes.defaultDurationMinutes };
+  }
+  return { serviceCode: code, changes: fields };
 }
 
 /**
@@ -29,9 +69,27 @@ function intervalsEqual(a: ServiceOperatingInterval | null, b: ServiceOperatingI
  * CanonicalServicePeriodReader.validateReservation() calls (CAP-D02.01-R01);
  * it never rewrites or invalidates an existing Reservation and never blocks
  * ServiceSession lifecycle.
+ *
+ * R1.6-P3G — `update()` now runs its entire read-compare-write-audit
+ * sequence inside one transaction, locking the target row first (see
+ * ServiceDefinitionRepository.lockAndFindByCode's own doc comment) so
+ * concurrent PATCH requests for the SAME code serialize at that lock
+ * rather than racing an unlocked read against a later write. Every real
+ * (non-no-op) update emits exactly one SecurityEvent — ServiceDeactivated
+ * on a true->false transition, ServiceReactivated on false->true, and
+ * ServiceModified for anything else — via the SAME transaction, so a
+ * failure on either the Service write or the audit write rolls both
+ * back (Chief Engineer directive: fail-closed, no new public failure
+ * contract — an unhandled rejection reaches Express 5's existing
+ * catch-all error middleware exactly like any other infrastructure
+ * fault).
  */
 export class ServiceCatalogManagementService {
-  constructor(private readonly repository: ServiceDefinitionRepository) {}
+  constructor(
+    private readonly repository: ServiceDefinitionRepository,
+    private readonly transactionManager: TransactionManager,
+    private readonly securityEventRecorder: SecurityEventRecorder
+  ) {}
 
   /** Deterministic lunch-then-dinner order — enforced here, never assumed from repository row order (Postgres gives no ordering guarantee without an explicit ORDER BY, and this method does not trust the adapter's own default either). */
   async list(): Promise<readonly ServiceDefinition[]> {
@@ -75,6 +133,15 @@ export class ServiceCatalogManagementService {
    * combination of displayName/enabled/interval/duration changes is
    * still exactly ONE repository call (one atomic patch, one atomic
    * UPDATE), never split into per-field writes.
+   *
+   * R1.6-P3G — `actingStaffUserId` is the authenticated staff member
+   * issuing this PATCH (threaded from the route's own session identity,
+   * never trusted from the request body) and is used ONLY to attribute
+   * the one SecurityEvent a real update emits; it plays no role in the
+   * comparison/validation logic above. The old/new comparison itself now
+   * runs against `lockAndFindByCode`'s locked read (never a pre-
+   * transaction/unlocked one), inside the same transaction as the
+   * eventual write(s) — see this class's own header comment.
    */
   async update(
     code: string,
@@ -83,31 +150,42 @@ export class ServiceCatalogManagementService {
       readonly enabled?: boolean;
       readonly defaultOperatingInterval?: ServiceOperatingInterval | null;
       readonly defaultDurationMinutes?: number | null;
-    }
+    },
+    actingStaffUserId: string
   ): Promise<ServiceCatalogUpdateOutcome> {
     if (!isServiceCode(code)) return { type: "SERVICE_NOT_FOUND" };
-    const existing = await this.repository.findByCode(code);
-    if (!existing) return { type: "SERVICE_NOT_FOUND" };
 
-    const changes: {
-      displayName?: string;
-      enabled?: boolean;
-      defaultOperatingInterval?: ServiceOperatingInterval | null;
-      defaultDurationMinutes?: number | null;
-    } = {};
-    if (patch.displayName !== undefined && patch.displayName !== existing.displayName) changes.displayName = patch.displayName;
-    if (patch.enabled !== undefined && patch.enabled !== existing.enabled) changes.enabled = patch.enabled;
-    if (patch.defaultOperatingInterval !== undefined && !intervalsEqual(patch.defaultOperatingInterval, existing.defaultOperatingInterval)) {
-      changes.defaultOperatingInterval = patch.defaultOperatingInterval;
-    }
-    if (patch.defaultDurationMinutes !== undefined && patch.defaultDurationMinutes !== existing.defaultDurationMinutes) {
-      changes.defaultDurationMinutes = patch.defaultDurationMinutes;
-    }
+    return this.transactionManager.runInTransaction(async (tx) => {
+      const existing = await this.repository.lockAndFindByCode(code, tx);
+      if (!existing) return { type: "SERVICE_NOT_FOUND" };
 
-    if (Object.keys(changes).length === 0) {
-      return { type: "UPDATED", service: existing };
-    }
-    const updated = await this.repository.update(code, changes);
-    return { type: "UPDATED", service: updated ?? existing };
+      const changes: ServiceChanges = {};
+      if (patch.displayName !== undefined && patch.displayName !== existing.displayName) changes.displayName = patch.displayName;
+      if (patch.enabled !== undefined && patch.enabled !== existing.enabled) changes.enabled = patch.enabled;
+      if (patch.defaultOperatingInterval !== undefined && !intervalsEqual(patch.defaultOperatingInterval, existing.defaultOperatingInterval)) {
+        changes.defaultOperatingInterval = patch.defaultOperatingInterval;
+      }
+      if (patch.defaultDurationMinutes !== undefined && patch.defaultDurationMinutes !== existing.defaultDurationMinutes) {
+        changes.defaultDurationMinutes = patch.defaultDurationMinutes;
+      }
+
+      if (Object.keys(changes).length === 0) {
+        return { type: "UPDATED", service: existing };
+      }
+
+      const updated = await this.repository.update(code, changes, tx);
+      const service = updated ?? existing;
+      const metadata = buildServiceChangeMetadata(code, existing, changes);
+
+      if (changes.enabled === true) {
+        await this.securityEventRecorder.recordServiceReactivated({ actingStaffUserId, metadata }, tx);
+      } else if (changes.enabled === false) {
+        await this.securityEventRecorder.recordServiceDeactivated({ actingStaffUserId, metadata }, tx);
+      } else {
+        await this.securityEventRecorder.recordServiceModified({ actingStaffUserId, metadata }, tx);
+      }
+
+      return { type: "UPDATED", service };
+    });
   }
 }

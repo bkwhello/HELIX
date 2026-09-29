@@ -2,10 +2,15 @@ import { describe, it, expect } from "vitest";
 import { ServiceCatalogManagementService } from "../../application/availability/ServiceCatalogManagementService.js";
 import { CanonicalServicePeriodReader } from "../../infrastructure/CanonicalServicePeriodReader.js";
 import { ServiceSessionService } from "../../application/availability/ServiceSessionService.js";
-import { FakeServiceDefinitionRepository } from "../support/FakePorts.js";
+import { FakeServiceDefinitionRepository, FakeTransactionManager, FakeSecurityEventRecorder } from "../support/FakePorts.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const ACTOR_ID = "staff-canonical-integration";
+function managementService(repo: FakeServiceDefinitionRepository) {
+  return new ServiceCatalogManagementService(repo, new FakeTransactionManager(), new FakeSecurityEventRecorder());
+}
 
 /**
  * R1.6-P3B — proves the management service and CanonicalServicePeriodReader
@@ -27,13 +32,13 @@ function sharedRepo() {
 describe("Management update and canonical validation share one repository instance", () => {
   it("disabling 'dinner' through the management service causes a subsequent canonical validation to fail closed with CAP-D02.01-R01", async () => {
     const repo = sharedRepo();
-    const management = new ServiceCatalogManagementService(repo);
+    const management = managementService(repo);
     const reader = new CanonicalServicePeriodReader(repo);
 
     const before = await reader.validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 });
     expect(before.isValid).toBe(true);
 
-    const update = await management.update("dinner", { enabled: false });
+    const update = await management.update("dinner", { enabled: false }, ACTOR_ID);
     expect(update.type).toBe("UPDATED");
 
     const after = await reader.validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 });
@@ -43,13 +48,13 @@ describe("Management update and canonical validation share one repository instan
 
   it("re-enabling through the management service restores canonical validation", async () => {
     const repo = sharedRepo();
-    const management = new ServiceCatalogManagementService(repo);
+    const management = managementService(repo);
     const reader = new CanonicalServicePeriodReader(repo);
 
-    await management.update("dinner", { enabled: false });
+    await management.update("dinner", { enabled: false }, ACTOR_ID);
     expect((await reader.validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 })).isValid).toBe(false);
 
-    const reEnabled = await management.update("dinner", { enabled: true });
+    const reEnabled = await management.update("dinner", { enabled: true }, ACTOR_ID);
     expect(reEnabled).toMatchObject({ type: "UPDATED", service: { enabled: true } });
 
     const after = await reader.validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 });
@@ -58,13 +63,13 @@ describe("Management update and canonical validation share one repository instan
 
   it("renaming displayName through the management service does not affect code classification or validation outcome", async () => {
     const repo = sharedRepo();
-    const management = new ServiceCatalogManagementService(repo);
+    const management = managementService(repo);
     const reader = new CanonicalServicePeriodReader(repo);
 
     const before = await reader.validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 });
     expect(before.isValid).toBe(true);
 
-    await management.update("dinner", { displayName: "Avondmenu" });
+    await management.update("dinner", { displayName: "Avondmenu" }, ACTOR_ID);
 
     // deriveServiceCode's own time-based classification is untouched — a
     // dinner-time instant is still classified "dinner", and validation
@@ -82,10 +87,10 @@ describe("Management update and canonical validation share one repository instan
 
   it("disabling 'lunch' does not affect 'dinner' validation, even through the same shared repository instance", async () => {
     const repo = sharedRepo();
-    const management = new ServiceCatalogManagementService(repo);
+    const management = managementService(repo);
     const reader = new CanonicalServicePeriodReader(repo);
 
-    await management.update("lunch", { enabled: false });
+    await management.update("lunch", { enabled: false }, ACTOR_ID);
     const result = await reader.validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 });
     expect(result.isValid).toBe(true);
   });
@@ -127,7 +132,14 @@ describe("R1.6-P3C-1 — production still uses exactly one shared PrismaServiceD
     expect(instantiations).toHaveLength(1);
     expect(serverSource).toMatch(/const serviceDefinitionRepository = new PrismaServiceDefinitionRepository\(prisma\);/);
     expect(serverSource).toMatch(/new CanonicalServicePeriodReader\(serviceDefinitionRepository\)/);
-    expect(serverSource).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
+    // R1.6-P3G — the block now also carries a transactionManager (required
+    // for the row-locked, audit-emitting update path); this assertion only
+    // pins that `repository` still points at the ONE shared instance,
+    // never that the block contains nothing else.
+    const serviceCatalogBlock = serverSource.match(/serviceCatalog:\s*\{([\s\S]*?)\n {2}\},/);
+    expect(serviceCatalogBlock).not.toBeNull();
+    expect(serviceCatalogBlock![1]).toMatch(/repository:\s*serviceDefinitionRepository,?/);
+    expect(serviceCatalogBlock![1]).toMatch(/transactionManager:\s*new PrismaTransactionManager\(prisma\)/);
   });
 });
 

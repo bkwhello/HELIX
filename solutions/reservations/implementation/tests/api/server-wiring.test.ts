@@ -223,7 +223,14 @@ describe("api/server.ts — R1.6-P3C-1 Service operating-interval snapshot produ
     const instantiations = source.match(/new PrismaServiceDefinitionRepository\(/g) ?? [];
     expect(instantiations).toHaveLength(1);
     expect(source).toMatch(/new CanonicalServicePeriodReader\(serviceDefinitionRepository\)/);
-    expect(source).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
+    // R1.6-P3G — the block also carries a transactionManager now (required
+    // for the row-locked, audit-emitting update path); this only pins that
+    // `repository` still points at the ONE shared instance, never that the
+    // block contains nothing else.
+    const serviceCatalogBlock = source.match(/serviceCatalog:\s*\{([\s\S]*?)\n {2}\},/);
+    expect(serviceCatalogBlock).not.toBeNull();
+    expect(serviceCatalogBlock![1]).toMatch(/repository:\s*serviceDefinitionRepository,?/);
+    expect(serviceCatalogBlock![1]).toMatch(/transactionManager:\s*new PrismaTransactionManager\(prisma\)/);
     const clientMatches = source.match(/new PrismaClient\(\)/g) || [];
     expect(clientMatches).toHaveLength(1);
   });
@@ -265,7 +272,14 @@ describe("api/server.ts — R1.6-P3D-1 Service default-duration snapshot product
     expect(instantiations).toHaveLength(1);
     const clientMatches = source.match(/new PrismaClient\(\)/g) || [];
     expect(clientMatches).toHaveLength(1);
-    expect(source).toMatch(/serviceCatalog:\s*\{\s*repository:\s*serviceDefinitionRepository,?\s*\}/);
+    // R1.6-P3G — the block also carries a transactionManager now (required
+    // for the row-locked, audit-emitting update path); this only pins that
+    // `repository` still points at the ONE shared instance, never that the
+    // block contains nothing else.
+    const serviceCatalogBlock = source.match(/serviceCatalog:\s*\{([\s\S]*?)\n {2}\},/);
+    expect(serviceCatalogBlock).not.toBeNull();
+    expect(serviceCatalogBlock![1]).toMatch(/repository:\s*serviceDefinitionRepository,?/);
+    expect(serviceCatalogBlock![1]).toMatch(/transactionManager:\s*new PrismaTransactionManager\(prisma\)/);
   });
 
   it("existing ServiceSession, Floorplan, capacity, communications, and authentication wiring remains intact, unaffected by this addition", () => {

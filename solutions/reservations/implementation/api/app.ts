@@ -205,13 +205,19 @@ export interface AppDependencies {
    * `ServiceDefinitionRepository` instance a real deployment already
    * builds for `servicePeriodReader` (CanonicalServicePeriodReader) is
    * reused here — see api/server.ts — never a second instance, and never
-   * a second PrismaClient. No transactionManager/idGenerator/clock is
-   * needed: ServiceCatalogManagementService performs a single-row,
-   * last-write-wins update with no lock tier (P3B product decision — no
-   * ETag/version precondition in this increment).
+   * a second PrismaClient. No idGenerator/clock is needed.
+   *
+   * R1.6-P3G — `transactionManager` is now required: `update()` locks
+   * the target row and, on a real change, writes the Service mutation
+   * and its one SecurityEvent atomically (Chief Engineer directive — no
+   * ETag/version precondition, still last-write-wins for the Service
+   * columns themselves, but the audit write must never partially
+   * commit). The Service audit events reuse `auth.securityEventRecorder`
+   * (or its no-op fallback) below — never a second recorder instance.
    */
   serviceCatalog?: {
     readonly repository: ServiceDefinitionRepository;
+    readonly transactionManager: TransactionManager;
   };
   /**
    * R1.6-B — optional, same "not available in this deployment" posture as
@@ -431,7 +437,12 @@ export function createApp(deps: AppDependencies): Express {
   // R1.2-P2 — see AppDependencies.auth.securityEventRecorder's own doc
   // comment: a deployment/test that doesn't supply one still works
   // identically, it just never logs a LoginFailed SecurityEvent.
-  const NOOP_SECURITY_EVENT_RECORDER: SecurityEventRecorder = { async recordLoginFailure() {} };
+  const NOOP_SECURITY_EVENT_RECORDER: SecurityEventRecorder = {
+    async recordLoginFailure() {},
+    async recordServiceModified() {},
+    async recordServiceDeactivated() {},
+    async recordServiceReactivated() {},
+  };
   const securityEventRecorder = deps.auth.securityEventRecorder ?? NOOP_SECURITY_EVENT_RECORDER;
   const loginHandler = new LoginHandler(
     deps.auth.staffUserRepository,
@@ -1209,7 +1220,11 @@ export function createApp(deps: AppDependencies): Express {
   // deployment (/service-sessions, /floorplans, /closing-days). No
   // Create/Delete route: the catalog is fixed by migration seed data.
   if (deps.serviceCatalog) {
-    const serviceCatalogService = new ServiceCatalogManagementService(deps.serviceCatalog.repository);
+    const serviceCatalogService = new ServiceCatalogManagementService(
+      deps.serviceCatalog.repository,
+      deps.serviceCatalog.transactionManager,
+      securityEventRecorder
+    );
 
     function serializeServiceDefinition(service: Awaited<ReturnType<typeof serviceCatalogService.list>>[number]) {
       return {
@@ -1356,7 +1371,8 @@ export function createApp(deps: AppDependencies): Express {
         if (intervalPatch !== undefined) patch.defaultOperatingInterval = intervalPatch;
         if (durationPatch !== undefined) patch.defaultDurationMinutes = durationPatch;
 
-        const result = await serviceCatalogService.update(routeParam(req, "code"), patch);
+        if (!req.staffPrincipal) return;
+        const result = await serviceCatalogService.update(routeParam(req, "code"), patch, req.staffPrincipal.staffUserId);
         switch (result.type) {
           case "UPDATED":
             res.status(200).json({ type: "UPDATED", service: serializeServiceDefinition(result.service) });

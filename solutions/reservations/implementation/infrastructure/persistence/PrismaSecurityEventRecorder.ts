@@ -1,5 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import { SecurityEventRecorder, LoginFailureReason } from "../../application/ports/SecurityEventRecorder.js";
+import { SecurityEventRecorder, LoginFailureReason, ServiceChangeMetadata } from "../../application/ports/SecurityEventRecorder.js";
+import { TransactionContext } from "../../domain/shared/TransactionContext.js";
+import { asPrismaTx } from "./PrismaTransactionManager.js";
 
 /**
  * R1.2-P2 — writes via the SAME shared PrismaClient every other adapter
@@ -21,6 +23,45 @@ export class PrismaSecurityEventRecorder implements SecurityEventRecorder {
         type: "LoginFailed",
         targetStaffUserId: input.targetStaffUserId,
         metadata: JSON.stringify({ reason: input.reason }),
+      },
+    });
+  }
+
+  async recordServiceModified(input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }, tx?: TransactionContext): Promise<void> {
+    await this.writeServiceEvent("ServiceModified", input, tx);
+  }
+
+  async recordServiceDeactivated(input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }, tx?: TransactionContext): Promise<void> {
+    await this.writeServiceEvent("ServiceDeactivated", input, tx);
+  }
+
+  async recordServiceReactivated(input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata }, tx?: TransactionContext): Promise<void> {
+    await this.writeServiceEvent("ServiceReactivated", input, tx);
+  }
+
+  /**
+   * R1.6-P3G — the port's three Service methods share this one private
+   * write, per the Chief Engineer directive ("methods may share private
+   * adapter implementation, but the application-facing port must keep
+   * the operations explicit"). `targetStaffUserId` is always null — a
+   * Service is not a StaffUser. When `tx` is supplied, this write
+   * participates in the SAME transaction as the caller's Service row
+   * mutation (via the shared Prisma transaction client), so a failure
+   * here rolls back that mutation too — never a second, independent
+   * connection.
+   */
+  private async writeServiceEvent(
+    type: "ServiceModified" | "ServiceDeactivated" | "ServiceReactivated",
+    input: { readonly actingStaffUserId: string; readonly metadata: ServiceChangeMetadata },
+    tx?: TransactionContext
+  ): Promise<void> {
+    const client = tx ? asPrismaTx(tx) : this.prisma;
+    await client.securityEvent.create({
+      data: {
+        type,
+        actingStaffUserId: input.actingStaffUserId,
+        targetStaffUserId: null,
+        metadata: JSON.stringify(input.metadata),
       },
     });
   }

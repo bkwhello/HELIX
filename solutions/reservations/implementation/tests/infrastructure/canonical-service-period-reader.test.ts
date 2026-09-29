@@ -133,6 +133,9 @@ describe("CanonicalServicePeriodReader — a repository failure does not silentl
       async update(): Promise<ServiceDefinition | null> {
         throw new Error("simulated repository failure");
       }
+      async lockAndFindByCode(): Promise<ServiceDefinition | null> {
+        throw new Error("simulated repository failure");
+      }
     }
     await expect(
       reader(new ThrowingServiceDefinitionRepository()).validateReservation({ servicePeriodId: "dinner", reservationDate: DINNER_INSTANT, partySize: 2 })

@@ -3645,6 +3645,13 @@
   const SECURITY_EVENT_TYPE_LABELS = {
     LoginFailed: "Mislukte inlogpoging",
     OwnerBootstrapped: "Eigenaar aangemaakt",
+    // R1.6-P3G — the existing generic rendering already handles these
+    // safely (falls back to the raw type string for anything not
+    // listed, never touches the new structured serviceChange field), so
+    // this is a narrowly-scoped label addition only, not a panel redesign.
+    ServiceModified: "Dienst gewijzigd",
+    ServiceDeactivated: "Dienst gedeactiveerd",
+    ServiceReactivated: "Dienst gereactiveerd",
   };
   const LOGIN_FAILURE_REASON_LABELS = {
     UNKNOWN_USERNAME: "Onbekende gebruikersnaam",

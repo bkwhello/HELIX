@@ -61,6 +61,34 @@ export class PrismaServiceDefinitionRepository implements ServiceDefinitionRepos
     return row ? toDomainServiceDefinition(row) : null;
   }
 
+  /**
+   * R1.6-P3G — `tx` is required (see the port's own doc comment): a raw
+   * `SELECT ... FOR UPDATE` outside an explicit transaction releases its
+   * lock the instant the statement finishes, which would not serialize
+   * anything. Column list/aliases mirror `ServiceRow` exactly so the
+   * existing `toDomainServiceDefinition` mapper (and its own
+   * defense-in-depth re-validation) applies unchanged.
+   */
+  async lockAndFindByCode(code: ServiceCode, tx: TransactionContext): Promise<ServiceDefinition | null> {
+    const client = asPrismaTx(tx);
+    const rows = await client.$queryRaw<ServiceRow[]>`
+      SELECT
+        code,
+        display_name AS "displayName",
+        enabled,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt",
+        default_start_minute AS "defaultStartMinute",
+        default_end_minute AS "defaultEndMinute",
+        default_duration_minutes AS "defaultDurationMinutes"
+      FROM services
+      WHERE code = ${code}
+      FOR UPDATE
+    `;
+    const row = rows[0];
+    return row ? toDomainServiceDefinition(row) : null;
+  }
+
   async list(tx?: TransactionContext): Promise<readonly ServiceDefinition[]> {
     const client = tx ? asPrismaTx(tx) : this.prisma;
     const rows = await client.service.findMany({ orderBy: { code: "asc" } });
