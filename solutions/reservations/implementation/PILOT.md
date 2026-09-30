@@ -118,6 +118,39 @@ action), and `tests/pilot/service-session-ui.test.ts` (68 source-text
 and live-executed tests). See
 `R1_6_P2C_SERVICE_SESSION_IMPLEMENTATION_REPORT.md` for the full design.
 
+**Updated (R1-DOC-12) — `CAP-D02.02` (Service Period Management) promoted
+`Designed` → `Pilot`.** The panel above supports the complete, delivered
+lifecycle action matrix (Create / Open + Cancel / Close / none, exactly
+as described). **Active-floorplan selection** — one of this capability's
+four registered owned rules — happens inside Open itself: it selects the
+Floorplan's current default version, requires it `Published`, and
+atomically snapshots it onto the session (immutably; never re-read on a
+later idempotent repeat) — see "Floorplan Management status" below for
+the full snapshot/validation/enforcement behavior, which is the same
+code, unchanged by this promotion. **The Reservation status join remains
+derived** — a Reservation's own service code and date matched against
+the unique ServiceSession identity `(serviceCode, serviceDate)` at read
+time, never a stored foreign key — this is an accepted decision, not an
+oversight: it is sufficient for all four of this capability's registered
+rules and for every current formal consumer acceptance criterion. A
+persisted `Reservation.serviceSessionId` FK remains outside the current
+Pilot contract; it stays possible later if a concrete
+historical-provenance use case is approved. Current, directly-confirmed
+test totals for the five files most relevant to this capability:
+`tests/api/service-sessions.test.ts` (48 tests),
+`tests/integration/service-session-lifecycle.test.ts` (47 tests),
+`tests/integration/service-session-enforcement.test.ts` (29 tests),
+`tests/integration/floor-seating-floorplan-membership.test.ts` (32
+tests), and `tests/pilot/service-session-ui.test.ts` (83 tests) — 239
+tests total, all real-PostgreSQL/genuine-concurrency where applicable,
+confirmed passing. Development still holds zero `ServiceSession` rows,
+unchanged by this promotion (a read-only audit; no code or database
+change). No authenticated human browser workflow or smoke test has been
+performed, and nothing has been deployed anywhere — the same accepted
+`Pilot → Active` posture as `CAP-D03.02`'s and `CAP-D02.01`'s own
+promotions. See `R1_6_P2E_SERVICE_PERIOD_COMPLETION_REPORT.md` for the
+full audit and decision record.
+
 ## Floorplan Management status (R1.5-P2D / P2E-1 / P2E-2 — `CAP-D03.02`, now `Pilot`)
 
 **Corrected (R1-DOC-7).** This section used to say "there is no Floorplan
@@ -493,6 +526,9 @@ capability.
   `Pilot` this registry already used for `CAP-D03.02`'s own R1-DOC-7
   promotion: automated-tested and code/UI-exposed, not necessarily
   human-exercised or deployed.
+  **Corrected (R1-DOC-12).** "`CAP-D02.02` remains `Designed`, unaffected"
+  is no longer accurate — see the "Service Session status" section above
+  for `CAP-D02.02`'s own subsequent `Pilot` promotion.
 
 ## Before starting
 
@@ -589,6 +625,21 @@ permission) — there is no self-service sign-up.
   relationship still does not exist and remains `Designed`, unaffected by
   this promotion. See
   `R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+- **Reconciled (R1-DOC-12).** `CAP-D02.02` is no longer `Designed`. With
+  both of its registered dependencies (`CAP-D02.01`, `CAP-D03.02`) now
+  `Pilot`, a read-only completion audit (R1.6-P2E) re-verified all four
+  of `CAP-D02.02`'s registered owned rules — service period creation,
+  opening, closing, and active floorplan selection — directly against
+  current code and tests, and found them already delivered and
+  automated-tested (see "Service Session status" above). The persisted
+  reservation-to-session relationship every earlier note above describes
+  as "still does not exist" was explicitly decided NOT to be part of this
+  capability's Pilot contract: the derived `(serviceCode, serviceDate)`
+  join already satisfies every registered rule and every current formal
+  consumer acceptance criterion. `CAP-D02.02` was promoted `Designed` →
+  `Pilot` on that basis. A persisted FK remains possible later, if a
+  concrete provenance use case is approved — this decision does not
+  foreclose one. See `R1_6_P2E_SERVICE_PERIOD_COMPLETION_REPORT.md`.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

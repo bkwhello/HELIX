@@ -302,3 +302,61 @@ reconciliation.
 
 See `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md` for the
 full design, evidence, and explicit boundary of this later work.
+
+## R1-DOC-12 reconciliation (2026-09-30) — `CAP-D02.02` promoted `Designed` → `Pilot`
+
+Everything above this section, including the R1-DOC-6 reconciliation
+immediately above, describes this report's own subject exactly as it was
+true at each point it was written, and is preserved unchanged. This
+section records what a later, separate, read-only completion audit
+(R1.6-P2E) subsequently determined, without rewriting any of the history
+above.
+
+**Which earlier limitations were subsequently resolved:**
+
+- **"CAP-D02.01, CAP-D02.02, and CAP-D03.02 all remain `Designed`"**
+  (line 299 above, R1-DOC-6, 2026-09-22) is no longer accurate for any of
+  the three. `CAP-D03.02` (Floorplan Management) was promoted
+  `Designed` → `Pilot` on 2026-09-22 itself (R1-DOC-7, commits `72ab91d`
+  and `ffbb68b` — the Table-inventory read API and Floorplan
+  administration pilot UI; see
+  `R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md`'s own
+  R1-DOC-7 addendum). `CAP-D02.01` (Service Management) was promoted
+  `Designed` → `Pilot` on 2026-09-29/30 (R1-DOC-11), following R1.6-P3A
+  through P3G's persisted-catalog, operating-interval,
+  default-duration, and audit-trail work — see
+  `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md` and
+  `R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+- **"No persisted `Service` definition (`CAP-D02.01`)"** (line 296 above)
+  is resolved by the same R1.6-P3A-through-P3G work just cited.
+- **"No persisted reservation-to-session relationship"** (lines 242,
+  294–295, 300 above) — this was NOT resolved by building the
+  relationship. R1.6-P2E's own decision gate determined it is not
+  required: the derived `(serviceCode, serviceDate)` join already
+  satisfies all four of `CAP-D02.02`'s registered owned rules and every
+  current formal consumer acceptance criterion (`CAP-D01.01`'s own
+  `acceptance.md`/`capability.md`/`event-model.md`/
+  `interaction-model.md`/`rule-model.md`/`state-model.md` make zero
+  mention of `ServiceSession`, confirmed by direct inspection). A
+  persisted FK remains possible later if a concrete
+  historical-provenance use case is approved; this decision does not
+  foreclose one, it only keeps it outside the current Pilot contract.
+
+**Why `CAP-D02.02` is now `Pilot`:** with both of its registered
+dependencies (`CAP-D02.01`, `CAP-D03.02`) now `Pilot`, R1.6-P2E
+re-verified all four of this capability's registered owned rules —
+service period creation, opening, closing, and active floorplan
+selection — directly against the current codebase and test suite (not
+against this report's own now-superseded "still not delivered" language
+above) and found them delivered and automated-tested, at the same bar
+this registry's own `Pilot` precedents (`CAP-D04.05`, `CAP-D03.02`,
+`CAP-D02.01`) were already held to. No code, schema, or test changed as
+part of this determination — it is a documentation-only promotion.
+
+**Distinguishing historical truth from current state, precisely:** every
+statement in this report above the R1-DOC-6 section, and the R1-DOC-6
+section itself, remains an accurate historical record of what was true
+when each was written. Only this section, and the capability registry's
+own `R1-DOC-12` note under `CAP-D02.02`, describe the CURRENT state as of
+2026-09-30. See `R1_6_P2E_SERVICE_PERIOD_COMPLETION_REPORT.md` for the
+full audit, evidence, and decision record.

@@ -728,7 +728,99 @@ capabilities:
     # relationship (still derivation-only, at read time).
     # delivery_status intentionally unchanged — see
     # R1_5_FLOORPLAN_SNAPSHOT_MEMBERSHIP_IMPLEMENTATION_REPORT.md.
-    delivery_status: Designed
+    #
+    # R1-DOC-12 — supersedes the present-tense conclusions of the R1-DOC-5
+    # and R1-DOC-6 comments above (their historical text is preserved
+    # unchanged; it was accurate when written). Both comments' stated
+    # reasons for "still missing"/"still NOT the complete capability" no
+    # longer hold: `CAP-D02.01` (Service Management) and `CAP-D03.02`
+    # (Floorplan Management) — this capability's own two `depends_on`
+    # entries — are both now `Pilot`. R1.6-P2E (2026-09-30, read-only
+    # completion audit) re-verified all four registered owned rules
+    # directly against current code and tests, not against these older
+    # comments:
+    #   - service period creation: `ServiceSessionService.create()` —
+    #     lock-then-check-then-insert, idempotent duplicate handling, a
+    #     `@@unique(serviceCode, serviceDate)` database backstop.
+    #   - service period opening: `ServiceSessionService.open()`.
+    #   - service period closing: `ServiceSessionService.close()`/
+    #     `cancel()` via the shared `transition()` method.
+    #   - active floorplan selection: this occurs inside `open()` itself —
+    #     it resolves the Floorplan's current default version, requires it
+    #     Published, validates every currently-active seating assignment
+    #     for that service/date against that version's membership, and
+    #     only then atomically snapshots `floorplanVersionId` onto the
+    #     session (immutably — never re-read on a later idempotent
+    #     repeat). This is the same code R1-DOC-6 already described; only
+    #     `CAP-D03.02`'s own dependency status has changed since.
+    # All four rules are delivered and automated-tested: real-PostgreSQL
+    # genuine-concurrency evidence across
+    # `tests/integration/service-session-lifecycle.test.ts`,
+    # `tests/integration/service-session-enforcement.test.ts`, and
+    # `tests/integration/floor-seating-floorplan-membership.test.ts`
+    # (concurrent Close-vs-Move/assign/pre-assign/mark-seated/walk-in
+    # races, Open-vs-default-change, pre-assign-vs-Open), plus API
+    # (`tests/api/service-sessions.test.ts`) and pilot
+    # (`tests/pilot/service-session-ui.test.ts`) coverage — 239 tests
+    # across these five files alone, confirmed passing directly, not
+    # assumed from an older total.
+    #
+    # Reservation relationship (R1.6-P2E's own primary decision gate,
+    # Chief-Engineer-accepted): the operational relationship between a
+    # Reservation and a ServiceSession remains DERIVED — a Reservation's
+    # own service code and date matched against the unique ServiceSession
+    # identity `(serviceCode, serviceDate)` at read time — never a
+    # persisted `Reservation.serviceSessionId` foreign key. This derived
+    # relationship is sufficient for all four rules above and for every
+    # current formal consumer acceptance criterion (`CAP-D01.01`'s own
+    # `acceptance.md`/`capability.md`/`event-model.md`/
+    # `interaction-model.md`/`rule-model.md`/`state-model.md` make zero
+    # mention of `ServiceSession` — confirmed by direct inspection, not
+    # inferred). A persisted FK is explicitly OUTSIDE this capability's
+    # current Pilot contract, not rejected forever: immutable historical
+    # provenance between a Reservation and the specific ServiceSession row
+    # it was created against is a possible FUTURE requirement, not a
+    # current owned rule — no capability is assigned ownership of that
+    # hypothetical relationship now; this registry's own `ownership_rule`
+    # applies once (if) it becomes an accepted business concept or
+    # requirement, per a concrete, approved provenance use case. This
+    # decision does not prevent a future nullable FK, migration, or
+    # backfill at that time.
+    #
+    # The four R1.6-P2A product-owner decisions (see
+    # `R1_6_P2B_CANONICAL_SERVICE_CODE_IMPLEMENTATION_REPORT.md`'s own
+    # "Next gate" section) are CLOSED: Service identity is meal-based
+    # (`lunch`/`dinner`, no area dimension — Sushi/Teppanyaki remain
+    # `CapacityPool`/`CAP-D02.03` concepts, confirmed structurally);
+    # Service definitions are persisted (`CAP-D02.01`, `Pilot`); area is
+    # not part of Service identity (same evidence); the `ServiceSession`
+    # lifecycle has real, demonstrated operational value — it is not
+    # "operationally inert," it gates every live assign/pre-assign/
+    # mark-seated/walk-in/Move path in this codebase — and is fully
+    # delivered. The "still-open R1.6-P2A design addendum" phrase in the
+    # R1-DOC-4 comment above is accordingly superseded; that comment's
+    # historical text is left unchanged.
+    #
+    # No literal `ServicePeriodCreated`/`ServicePeriodOpened`/
+    # `ServicePeriodClosed`/`FloorplanVersionApplied` domain-event objects
+    # are emitted anywhere — `domain/availability/ServiceSession.ts` is a
+    # plain `status` enum (`Created`/`Opened`/`Closed`/`Cancelled`) plus a
+    # transition table; the underlying business facts are fully
+    # reconstructable from persisted state (`status`, `openedAt`,
+    # `closedAt`, `cancelledAt`, `floorplanVersionId`) instead — the same
+    # posture this registry's own `CAP-D03.02` promotion already accepted
+    # (no literal Floorplan events either).
+    #
+    # Consistent with this registry's own established meaning of `Pilot`
+    # (the `CAP-D04.05`/`CAP-D03.02`/`CAP-D02.01` precedents): no
+    # authenticated human browser workflow has exercised any
+    # ServiceSession action through the pilot, and nothing here has been
+    # deployed anywhere. These are accepted `Pilot -> Active` concerns,
+    # not blockers to reaching `Pilot` itself. `helix_reservations_dev`
+    # holds zero `ServiceSession` rows, unaffected by this promotion. See
+    # `R1_6_P2E_SERVICE_PERIOD_COMPLETION_REPORT.md` for the full audit,
+    # evidence, and decision record.
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical

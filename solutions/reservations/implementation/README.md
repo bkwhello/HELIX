@@ -396,6 +396,62 @@ top of the three above:
   - **No authenticated human browser workflow or smoke test has been
     performed, and nothing has been deployed anywhere** — same accepted
     `Pilot → Active` posture as `CAP-D03.02`'s own R1-DOC-7 promotion.
+- **Service Period Management (`CAP-D02.02`) promoted `Designed` → `Pilot`**
+  (R1.6-P2E, 2026-09-30, read-only completion audit — no new code; see
+  `R1_6_P2E_SERVICE_PERIOD_COMPLETION_REPORT.md`): with `CAP-D02.01` and
+  `CAP-D03.02` — this capability's own two `depends_on` entries — both
+  now `Pilot`, this audit re-verified all four of `CAP-D02.02`'s
+  registered owned rules directly against current code and tests:
+  **service period creation, opening, and closing** (`ServiceSessionService.create()`/
+  `open()`/`close()`/`cancel()`, each its own locked transaction) and
+  **active floorplan selection** — which happens inside `open()` itself:
+  it resolves the Floorplan's current default version, requires it
+  `Published`, validates every currently-active seating assignment for
+  that service/date against that version's membership, and only then
+  atomically snapshots `floorplanVersionId` onto the session, immutably
+  (never re-read on a later idempotent repeat). Seating/availability
+  enforcement (`SeatabilityEvaluator`, `SeatingAvailabilityService`)
+  honors that snapshot, or the current eligible Published default when
+  absent/`Created`, for every live resource-selection write. All four
+  rules are automated-tested with real-PostgreSQL genuine-concurrency
+  evidence: 239 tests across
+  `tests/integration/service-session-lifecycle.test.ts`,
+  `tests/integration/service-session-enforcement.test.ts`,
+  `tests/integration/floor-seating-floorplan-membership.test.ts`,
+  `tests/api/service-sessions.test.ts`, and
+  `tests/pilot/service-session-ui.test.ts`, confirmed passing directly.
+  - **The Reservation ↔ ServiceSession relationship remains derived, by
+    accepted decision** — a Reservation's own service code and date
+    matched against the unique ServiceSession identity `(serviceCode,
+    serviceDate)` at read time, never a persisted
+    `Reservation.serviceSessionId` foreign key. This is sufficient for
+    all four rules above and for every current formal consumer
+    acceptance criterion; no capability owns that hypothetical FK
+    relationship today. A persisted FK remains possible in the future if
+    a concrete historical-provenance use case is approved — this
+    decision does not forbid one, it only keeps it outside the current
+    Pilot contract.
+  - **The four R1.6-P2A product-owner decisions are closed**: Service
+    identity is meal-based with no area dimension (Sushi/Teppanyaki
+    remain `CAP-D02.03` `CapacityPool` concepts); Service definitions are
+    persisted (`CAP-D02.01`, `Pilot`); the `ServiceSession` lifecycle has
+    real, demonstrated operational value (it gates every live
+    assign/pre-assign/mark-seated/walk-in/Move path) and is fully
+    delivered.
+  - **No literal `ServicePeriodCreated`/`ServicePeriodOpened`/
+    `ServicePeriodClosed`/`FloorplanVersionApplied` domain-event objects
+    are emitted** — `ServiceSession` is a plain `status` enum
+    (`Created`/`Opened`/`Closed`/`Cancelled`) plus timestamps; the
+    underlying facts are fully reconstructable from that persisted state,
+    the same posture `CAP-D03.02`'s own `Pilot` promotion already
+    accepted.
+  - **Development is unaffected**: `helix_reservations_dev` holds zero
+    `ServiceSession` rows, unchanged by this audit (which made no code or
+    database change of any kind).
+  - **No authenticated human browser workflow or smoke test has been
+    performed, and nothing has been deployed anywhere** — the same
+    accepted `Pilot → Active` posture as `CAP-D03.02`'s and `CAP-D02.01`'s
+    own promotions.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -558,6 +614,24 @@ top of the three above:
     schedule for either the operating interval or the duration — none of
     these are registered `owns.rules` for this capability. No
     authenticated human workflow or deployment has occurred.
+    **Corrected further (R1-DOC-12).** "`CAP-D02.02` remains `Designed`"
+    immediately above is no longer accurate, and every earlier "`CAP-D02.01`,
+    `CAP-D02.02`, and/or `CAP-D03.02` remain `Designed`" clause in this
+    list (the R1-DOC-5/R1-DOC-6/R1-DOC-7/R1-DOC-8 bullets above) is now
+    stale with respect to `CAP-D02.02` specifically: R1.6-P2E (a read-only
+    completion audit, no new code) found all four of `CAP-D02.02`'s
+    registered owned rules already delivered and automated-tested once
+    both its dependencies (`CAP-D02.01`, `CAP-D03.02`) reached `Pilot` —
+    see the new R1.6-P2E Status-section bullet above and
+    `R1_6_P2E_SERVICE_PERIOD_COMPLETION_REPORT.md`. `CAP-D02.02` is now
+    `Pilot`. The persisted Reservation ↔ ServiceSession relationship these
+    earlier bullets and the registry's own R1-DOC-5/R1-DOC-6 comments
+    repeatedly flagged as "still missing" was explicitly decided NOT to
+    be part of this capability's Pilot contract — the derived
+    `(serviceCode, serviceDate)` join already satisfies every registered
+    rule and every current formal consumer acceptance criterion; a
+    persisted FK remains possible later if a concrete provenance need is
+    approved, but nothing here forecloses or commits to that.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side
