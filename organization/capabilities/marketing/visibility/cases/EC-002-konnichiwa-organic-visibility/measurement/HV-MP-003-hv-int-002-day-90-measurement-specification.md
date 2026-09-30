@@ -1,9 +1,11 @@
 # HV-MP-003 — HV-INT-002 Day-90 Measurement Specification
 ---
 
-**Status: Designed — Case Owner Decisions CO-M1 to CO-M8 Resolved — Not Authorized for Execution.** Date prepared: 29 September 2026; revised the same day to incorporate the Case Owner review decisions ("EC-002 — HV-MP-003 Case Owner review decisions", 29 September 2026). Author: Claude, acting as HELIX Measurement Designer for EC-002, under the Case Owner's instruction "EC-002 — HV-INT-002 Day-90 Measurement Specification" (29 September 2026, design only).
+**Status: Designed — Case Owner Decisions CO-M1 to CO-M10 Resolved — Not Authorized for Execution.** Date prepared: 29 September 2026; revised the same day to incorporate the Case Owner review decisions ("EC-002 — HV-MP-003 Case Owner review decisions", 29 September 2026). Author: Claude, acting as HELIX Measurement Designer for EC-002, under the Case Owner's instruction "EC-002 — HV-INT-002 Day-90 Measurement Specification" (29 September 2026, design only).
 
-**Specification design is complete, and all eight Case Owner decisions are resolved (section M).** **Measurement execution is NOT AUTHORIZED.** No measurement may start merely because this specification is complete. Execution requires a separate readiness/authorization decision (section L, state 3).
+**Amendment, 30 September 2026 (prospective):** Case Owner decisions **CO-M9** (day-90 AI scoring reference) and **CO-M10** (remaining scoring rules) are added in sections C, J and M, together with HARD STOP K-12. They replace the earlier correctness reference to evidence/HV-IV-002.md for day-90 scoring only. Scenarios, prompts, runs, CR-003, CR-004, H-1, the Candidate D separation, dates and all historical round-0 results are unchanged.
+
+**Specification design is complete, and all Case Owner decisions are resolved (section M).** **Measurement execution is NOT AUTHORIZED.** No measurement may start merely because this specification is complete. Execution requires a separate readiness/authorization decision (section L, state 3).
 
 **This document specifies a future measurement. It does not perform or authorize it.** No search query, AI prompt, Search Console view or export, or production check was run in preparing it. It was prepared from committed repository records only, at `87edacabd0ee9c2741c6dbb666d83eec9629db25`. It does not change transformation/HV-IR-001.md, measurement/HV-MP-001.md, evidence/HV-TS-001.md or any other historical record.
 
@@ -95,9 +97,32 @@ Round-0 AI Factual Accuracy Score (opening-hours scenario only): **25/100**. Rou
 
 **What to record — search scenarios:** whether Konnichiwa appears; position or prominence (organic rank, local-pack rank, which platforms); location context (section E); date and time; confidence.
 
-**What to record — AI scenarios:** whether Konnichiwa is mentioned; factual correctness, classified per HV-MP-001 §9 (Fully correct 100 / Partially correct 50 / Incorrect 0) against evidence/HV-IV-002.md, the canonical facts current at measurement time; whether a source is cited and which; the AI Factual Accuracy Score, reported with the underlying state counts; confidence; the system and model name as displayed; whether live web search was used.
+**What to record — AI scenarios:** whether Konnichiwa is mentioned; factual correctness, classified per HV-MP-001 §9 (Fully correct 100 / Partially correct 50 / Incorrect 0) **against the scoring reference and rules of CO-M9 and CO-M10 below** (amended 30 September 2026; the earlier reference to evidence/HV-IV-002.md no longer applies to day-90 scoring); whether a source is cited and which; the AI Factual Accuracy Score, reported with the underlying state counts; confidence; the system and model name as displayed; whether live web search was used.
 
 **CR-003 (binding).** The governed AI comparison stays scoped to what round 0 actually scored: the **opening-hours** facts in HV-TS-AI-02 to 05, and mention/recommendation in HV-TS-AI-01. HV-INT-002's expected effect "AI's citeren prijs/gangen correct" has **no round-0 scored baseline**. Price and course correctness may be **recorded descriptively only** and may **not** receive a governed before/after verdict. The round-0 omakase note (3/4 confirm omakase when asked directly) may be compared descriptively, not as a scored metric. The scope limitation must be restated in the result record.
+
+**Day-90 AI scoring reference (CO-M9, Case Owner decision, 30 September 2026).** Day-90 AI answers are scored against the canonical-hours model in `design/HV-CHM-001-canonical-hours-model.md` at commit `c61448b88a2a251e44a3b6bff75ed4436610b651`, and **not** against evidence/HV-IV-002.md.
+
+- **Public opening and closing:** Mon–Thu 16:00–22:00; Fri–Sun 12:00–22:00; public close = 22:00.
+- **Last reservation:** Teppanyaki 21:00; Sushi/Izakaya 21:00.
+- **Last Sushi/Izakaya order:** 21:30.
+- **Teppanyaki continuing after 22:00:** operational only; never treated as later public opening hours.
+- These concepts are **never substituted** for one another. A statement such as "Konnichiwa closes at 21:30" is a public-closing claim and is **not** silently reinterpreted as "last order".
+- **Round 0 is unchanged and not rescored.** evidence/HV-TS-001.md, HV-IV-004.md and diagnosis/DQ-005-investigation.md remain historical records, scored against 21:30.
+- **Gemini's round-0 answer** (Mon–Thu 16:00–22:00, Fri–Sun 12:00–22:00) may be **described** as corresponding to the canonical 22:00 public close established later. It is **not** retrospectively rescored.
+
+**Remaining scoring rules (CO-M10, Case Owner decision, 30 September 2026).**
+
+- **A — Other concepts.** Claims about lunch, takeaway, delivery, Teppanyaki start time, last reservation, last order, omakase facts, or temporary/holiday hours are checked against the appropriate available canonical or evidence source and recorded **descriptively**. They enter the scored day-90 result **only** if they are themselves explicit public-opening-hours claims. CR-003 remains binding: the scored comparison dimension is public opening hours.
+- **B — Single-run classification.** Each scored AI run is classified from its **public-opening-hours claims only**:
+  - **Fully correct:** every public opening and closing time the answer states is correct; no incorrect public-hours claim is present; and the answer covers the question sufficiently to give the applicable regular public hours.
+  - **Partially correct:** at least one correct public-hours claim, but incomplete for relevant days or day groups; **or** a mixture of correct and incorrect public-hours claims.
+  - **Incorrect:** no public-hours claim is correct; **or** the answer gives no public opening hours at all in response to the opening-hours question. A non-answer, or an answer that discusses Konnichiwa or omakase without giving public opening hours, is scored **Incorrect**. It is not excluded.
+  - No weighted or composite score is introduced. Each of the three fresh-chat runs is kept separately, and disagreement between runs remains uncertainty (section D).
+- **C — Labelled and unlabelled service times.**
+  - A time the answer explicitly labels as kitchen hours, last order, last reservation, takeaway, delivery or lunch is evaluated against that corresponding concept and recorded descriptively, unless it also makes an explicit public-hours claim.
+  - An **unlabelled** service window given in response to the opening-hours question (for example "16:00–21:30") is treated as a **public-opening-hours claim**. It is not silently reinterpreted as kitchen hours or last order.
+  - Ambiguous terminology in the website or another source (for example the Sushi EN page's "Kitchen opens … 21:30") is recorded under the CR-004 confounder assessment (section F). It is not automatically converted into an AI error or into a different concept.
 
 **Scenario scope (CO-M3, approved).** HV-TS-001 says both "dezelfde 9 scenario's" (Volgende ronde) and "Volgende ronde volgt het volledige protocol" (the 30-scenario set of HV-MP-001 §9, which has not been built). The day-90 round keeps the **governed nine-scenario scope** named by HV-IR-001 and HV-TS-001's "Volgende ronde" section. It is **not** expanded to the planned 30-scenario set.
 
@@ -235,6 +260,7 @@ Options considered:
 - Only the repository-defined verdicts apply (HV-MP-001): **Earned, Provisionally Earned, Inconclusive, Not Earned, Harmful**. No verdict is pre-selected.
 - A verdict may be issued only after M1 (identity), M2 (confounders), the scenarios and the H-1 Search Console component are all complete and no HARD STOP is active (lifecycle state 7). **No final verdict is issued before the Search Console component is complete** (CO-M8).
 - Every comparison with round 0 carries its limitation label: **"method-limited comparison — Round-0 search tool not retained."** for search, and **"prompt-limited comparison — original Round-0 prompt text not retained."** for HV-TS-AI-02 to 05. Round 0 used one run per system, and day 90 uses three.
+- Any round-0 versus day-90 **closing-time** comparison also carries (CO-M9): **"definition-limited comparison — closing-time reference changed (Round 0: 21:30, EV-001 sushi-kitchen hours; Day 90: 22:00 canonical public close, HV-CHM-001 at c61448b, effective 2026-09-29)."** For HV-TS-AI-02 to 05 this label is **in addition to** the prompt-limited label. Historical, prospective, descriptive and method-limited or definition-limited statements are kept separate in the result record.
 - **The missed day-7, 28 and 56 rounds materially weaken the assessment of progression and attribution.** Day 90 compares against round 0 only and **does not recreate a missing trend series**. This statement must appear in the result record.
 - Per CR-003, AI results feed the verdict only within the round-0 scored scope (opening hours; mention/recommendation). Price and course correctness is descriptive.
 - Per HV-MP-P-006, a positive change is an observed association unless the confounders in section F are ruled out.
@@ -256,6 +282,7 @@ Options considered:
 | K-9 | Any settings, production, WordPress, GTM, GA4 or Search Console change would be required | Stop |
 | K-10 | A causal attribution would exceed the evidence (HV-MP-P-006) | Restate as an association or withhold the claim |
 | K-11 | Any step would reconstruct day 7, 28 or 56 | Stop; missed rounds stay missed |
+| K-12 | Scoring-reference or classification drift: a scored day-90 run is evaluated against a reference or classification rule other than CO-M9/CO-M10 | STOP the verdict |
 
 **Evidence retention (for K-5).** Retain raw evidence under `evidence/raw/hv-int-002-day-90-<execution date>/` with `SHA256SUMS`, redacting personal data following EV-043's method (observations/O-032.md) and the account-context rule of decisions/DD-041 R-4. The result is recorded in a new observation.
 
@@ -278,7 +305,7 @@ Reaching one state never implies the next.
 
 ---
 
-## M. Case Owner decisions (resolved, 29 September 2026)
+## M. Case Owner decisions (resolved, 29–30 September 2026)
 
 | ID | Decision | Encoded in |
 |---|---|---|
@@ -290,6 +317,8 @@ Reaching one state never implies the next.
 | CO-M6 | **SELECTED H-1:** 2026-09-23 through 2026-10-20. H-2 not used while Candidate D is governed separately. No Candidate D R1 data inspected or exported through HV-INT-002. G-S1, G-S2 and G-S4 binding. | G; H; K-8 |
 | CO-M7 | **APPROVED (limited).** EV-014 only as descriptive pre-launch context. Not a substitute day-90 baseline, and no causal or exact like-for-like claim where methods differ. | H |
 | CO-M8 | **APPROVED.** Scheduled day 90 2026-10-20. Non-Search Console window 2026-10-20 to 2026-10-23; nothing before 20 October; later execution is a documented deviation. No final verdict until the Search Console component is complete. | I; J |
+| CO-M9 | **APPROVED (30 September 2026).** Day-90 AI answers are scored against HV-CHM-001 at `c61448b88a2a251e44a3b6bff75ed4436610b651`, not HV-IV-002. Public close 22:00; last reservation 21:00 (Teppanyaki and Sushi/Izakaya); Sushi/Izakaya last order 21:30; the Teppanyaki overrun is operational only; concepts are never substituted. Round 0 is not rescored. Closing-time comparisons are labelled definition-limited. Gemini's round-0 answer is descriptive only. | C; J; K-12 |
+| CO-M10 | **APPROVED (30 September 2026).** A: other-concept claims are descriptive unless they are explicit public-hours claims (CR-003 binding). B: single-run classification from public-hours claims only; a non-answer is Incorrect; no composite score; three runs kept separately. C: labelled times go to their own concept (descriptive); unlabelled service windows are public-hours claims; source terminology ambiguity goes to CR-004. | C; K-12 |
 | Maturation | The ≈31-day buffer is a **Case Owner governance buffer adopted conservatively from case precedent**, not an established processing lag or an inherited technical requirement. Provisional earliest H-1 export 2026-11-20. Readiness checks are authoritative. | H; K-7 |
 
 ---
