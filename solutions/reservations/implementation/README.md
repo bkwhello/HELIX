@@ -348,6 +348,54 @@ top of the three above:
     Service has an actual configured value in development); service
     naming remains only partially delivered, and
     `ServiceCreated`/`ServiceDeactivated` remain entirely undelivered.
+- **Service audit trail and `CAP-D02.01` promotion to `Pilot`**
+  (`221e452`, 2026-09-29, R1.6-P3G — `CAP-D02.01` now `Pilot`; R1-DOC-11):
+  every real (non-no-op) `PATCH /services/:code` mutation now writes
+  exactly one `SecurityEvent` — `ServiceDeactivated` on a true→false
+  `enabled` transition, `ServiceReactivated` on false→true,
+  `ServiceModified` for any other real change (an activation transition
+  combined with other field changes still produces exactly ONE
+  activation-state event, carrying every changed field) — atomically, in
+  the SAME transaction as the Service row write: the target row is
+  locked (`SELECT ... FOR UPDATE`) before the authoritative read, and a
+  failure on either write rolls both back. A same-value/same-null
+  request remains a no-op: no Service write, no `updatedAt` change, no
+  SecurityEvent. Metadata is an explicit allowlist
+  (`serviceCode`, and only the changed public field names as
+  `{old,new}` pairs, `null` preserved) — never a raw request body,
+  database column name, credential, header, exception message, or
+  permission name. Acting identity comes from the authenticated session
+  only; `targetStaffUserId` is always null. `GET /security-events`
+  (`Permission.AuditView`, the existing permission — no new route or
+  permission) now projects these three types through a defensive
+  allowlist that degrades malformed/legacy metadata to a safe `null`
+  rather than leaking raw content. `ServiceCreated` is deliberately not
+  an owned runtime event: no code path creates a Service row at runtime,
+  so there is no lifecycle moment for it to represent.
+  - **Real-PostgreSQL concurrency and failure evidence**: a forced
+    audit-insert failure rolls back the Service mutation; a forced
+    Service-write failure leaves no audit row; two concurrent updates to
+    the SAME Service genuinely serialize at the real row lock (`pg_locks`
+    contention observed directly, and the second call's recorded "old"
+    value proven to be the first call's COMMITTED write, never a stale
+    pre-lock read); concurrent updates to DIFFERENT Services remain fully
+    independent. Full isolated suite: 104 files / 2013 passed / 0 failed
+    / 0 skipped. See `R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+  - **`CAP-D02.01` promoted `Designed` → `Pilot`**: every rule this
+    capability actually owns is now delivered and automated-tested —
+    service naming (within the fixed catalog), default operating times,
+    default reservation duration, and the lifecycle-audit surface — and
+    the management API/pilot UI expose all of it, consistent with this
+    registry's own established meaning of `Pilot` (see the `CAP-D03.02`/
+    R1-DOC-7 precedent above — automated-tested and code/UI-exposed, not
+    necessarily human-exercised or deployed).
+  - **Development is unchanged by this milestone**: no development
+    Service row was mutated, no development ServiceSession was created,
+    and no development SecurityEvent was written — every write path
+    exercised in testing ran against `helix_reservations_test` only.
+  - **No authenticated human browser workflow or smoke test has been
+    performed, and nothing has been deployed anywhere** — same accepted
+    `Pilot → Active` posture as `CAP-D03.02`'s own R1-DOC-7 promotion.
 
 ## Known limitations (before wider rollout, not blocking a controlled pilot)
 
@@ -490,6 +538,26 @@ top of the three above:
     renaming, and any richer recurring/per-day-of-week schedule for
     either the operating interval or the duration. `CAP-D02.01` remains
     `Designed`.
+    **Corrected further (R1-DOC-11).** Every "`CAP-D02.01` remains
+    `Designed`" clause above (this bullet and the Status-section bullets
+    for R1.6-P3A/P3B, P3C-1/P3C-2, and P3D-1/P3D-2) is no longer accurate,
+    and every "`ServiceCreated`/`ServiceDeactivated` remain entirely
+    undelivered" clause above is also stale: R1.6-P3G (`221e452`) added
+    atomic `ServiceModified`/`ServiceDeactivated`/`ServiceReactivated`
+    SecurityEvent audit records for every real Service mutation — see the
+    new R1.6-P3G Status-section bullet above and
+    `R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+    `ServiceCreated` was deliberately never delivered and is no longer a
+    registered owned event — no runtime Service-creation path exists, the
+    catalog remains fixed by migration seed data (an accepted product
+    decision, not a gap). `CAP-D02.01` is now `Pilot` in the capability
+    registry; `CAP-D02.02` remains `Designed`, unaffected by this
+    promotion. Still genuinely undelivered, and not required for `Pilot`
+    at this capability's accepted scope: any Create/Delete Service
+    operation, `code` renaming, and any richer recurring/per-day-of-week
+    schedule for either the operating interval or the duration — none of
+    these are registered `owns.rules` for this capability. No
+    authenticated human workflow or deployment has occurred.
 - **Resolved (R1.2 — Identity & Access).** This bullet used to say the API
   trusted `x-actor-*` request headers for identity — that is no longer
   true. Real `StaffUser` accounts, password authentication, server-side
@@ -530,7 +598,9 @@ top of the three above:
   no new permission introduced) now exposes them through an explicit
   8-field allowlist projection (`application/security/SecurityEventProjection.ts`)
   that never returns raw `metadata`, an attempted username/password, or
-  any other non-allowlisted data; `since`/`limit` query filtering
+  any other non-allowlisted data — **corrected (R1-DOC-11): this
+  projection now has 9 fields**, having gained `serviceChange` (see the
+  R1.6-P3G Status-section bullet above); `since`/`limit` query filtering
   (`since` requires a complete RFC 3339 timestamp with an explicit
   timezone — a date-only or timezone-less value is rejected, as is a
   syntactically-shaped but impossible calendar/time value); a read-only

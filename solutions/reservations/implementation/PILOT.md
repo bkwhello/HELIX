@@ -73,6 +73,18 @@ tests); no human smoke test has been performed, same as Floor & Seating
 above. See `R1_7_SECURITY_EVENT_VISIBILITY_IMPLEMENTATION_REPORT.md` for
 the full design.
 
+**Corrected (R1-DOC-11).** This section originally described only two
+event types. R1.6-P3G added three more — `ServiceModified`,
+`ServiceDeactivated`, `ServiceReactivated` (see "Service Audit-Trail
+status" below) — projected through this SAME `GET /security-events`
+route and panel, no new route/permission/UI added. The panel's existing
+generic type-label lookup already rendered any unlisted type safely (raw
+type-string fallback), so only three Dutch labels were added to that
+lookup; nothing else in this section's behavior changed. Test file
+coverage grew accordingly: `tests/api/security-events.test.ts` now has
+41 tests. See
+`R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+
 ## Service Session status (R1.6-P2C)
 
 A "Servicesessies" panel shows both canonical slots (`lunch`/`dinner`)
@@ -411,6 +423,76 @@ booking-window eligibility, ServiceSession lifecycle transitions, or
   only partially delivered, and the capability's
   `ServiceCreated`/`ServiceDeactivated` owned events remain entirely
   undelivered.
+  **Corrected (R1-DOC-11).** The clause immediately above is no longer
+  accurate — see "Service Audit-Trail status" below for what R1.6-P3G
+  subsequently added, and for why `CAP-D02.01` is now `Pilot`.
+
+## Service Audit-Trail status (R1.6-P3G — `CAP-D02.01`, now `Pilot`)
+
+No new pilot panel was added for this milestone. The existing "Diensten"
+panel is unchanged; the existing "Beveiligingsgebeurtenissen" (Security
+Events) panel described above now also displays the three new event
+types it projects — see the correction note in "Security Events status"
+above.
+
+**What changed, server-side only:** every real (non-no-op)
+`PATCH /services/:code` mutation now writes exactly one `SecurityEvent`:
+
+- **`ServiceDeactivated`** — an `enabled` transition from `true` to
+  `false`.
+- **`ServiceReactivated`** — an `enabled` transition from `false` to
+  `true`.
+- **`ServiceModified`** — any other real change (a rename, an interval
+  edit, a duration edit, or any combination of those without an
+  activation transition). If an activation transition happens alongside
+  other field changes in the same request, exactly ONE activation-state
+  event (`ServiceDeactivated`/`ServiceReactivated`) is written, carrying
+  every changed field — never a separate `ServiceModified` on top of it.
+- A same-value or same-null request (no field actually changes) remains
+  a no-op exactly as before: no Service write, no `updatedAt` change, and
+  now also no SecurityEvent.
+
+**Atomicity:** the Service row is locked (`SELECT ... FOR UPDATE`)
+before the authoritative comparison read, and the Service write and its
+one SecurityEvent commit or roll back together, in one transaction — a
+failure on either side leaves neither committed. Proven against real
+PostgreSQL with forced-failure and genuine-concurrency tests (see
+`R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`).
+
+**Metadata is an explicit allowlist**, never a database column name, the
+raw request body, a credential, a header, an exception message, or a
+permission name — only `serviceCode` and the changed public field names,
+each as an explicit `{old, new}` pair with `null` preserved. The acting
+staff identity is read from the authenticated session only, never from
+the request body; `targetStaffUserId` is always `null` (a Service is not
+a StaffUser).
+
+**No new route or permission** — the existing `PATCH /services/:code`
+(`Permission.CapacitySettingsManage`) and `GET /security-events`
+(`Permission.AuditView`) are unchanged.
+
+**`ServiceCreated` was never delivered and is not planned** — no code
+path creates a Service row at runtime (the catalog remains fixed by
+migration seed data), so there is no lifecycle moment such an event
+could represent. It is no longer a registered owned event for this
+capability.
+
+**Development activation (facts, verified read-only):**
+
+- No schema or migration change accompanied this milestone.
+- No development Service row was mutated, no development ServiceSession
+  was created, and no development SecurityEvent was written by this
+  milestone's own implementation or verification work — every write path
+  exercised in testing ran against `helix_reservations_test` only.
+- **No authenticated human browser workflow or smoke test was
+  performed**, and **nothing was deployed anywhere.**
+- `CAP-D02.01` is now `Pilot` in the capability registry (`CAP-D02.02`
+  remains `Designed`, unaffected) — every rule this capability actually
+  owns is delivered and automated-tested, and the management API/pilot
+  UI expose all of it. This follows the same established meaning of
+  `Pilot` this registry already used for `CAP-D03.02`'s own R1-DOC-7
+  promotion: automated-tested and code/UI-exposed, not necessarily
+  human-exercised or deployed.
 
 ## Before starting
 
@@ -494,6 +576,19 @@ permission) — there is no self-service sign-up.
   `CAP-D02.01` remains `Designed`. `CAP-D02.02`'s own persisted
   reservation-to-session relationship still does not exist, unaffected by
   this change. See `R1_6_P3_SERVICE_CATALOG_IMPLEMENTATION_REPORT.md`.
+- **Reconciled (R1-DOC-11).** `CAP-D02.01` is no longer `Designed`: R1.6-
+  P3G delivered atomic `ServiceModified`/`ServiceDeactivated`/
+  `ServiceReactivated` SecurityEvent audit records for every real Service
+  mutation (see "Service Audit-Trail status" above), completing every
+  rule this capability actually owns. `CAP-D02.01` was promoted
+  `Designed` → `Pilot` on that basis, per this registry's own established
+  meaning of `Pilot` (same precedent as `CAP-D03.02`'s R1-DOC-7
+  promotion). `ServiceCreated` was deliberately never delivered and is no
+  longer a registered owned event — no runtime Service-creation path
+  exists. `CAP-D02.02`'s own persisted reservation-to-session
+  relationship still does not exist and remains `Designed`, unaffected by
+  this promotion. See
+  `R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
 - **PostgreSQL, single local instance, single machine.** (Corrected during
   CAP-D02.03 implementation — this used to say SQLite/`prisma/dev.db`;
   the datasource switched to PostgreSQL because CAP-D02.03's concurrency

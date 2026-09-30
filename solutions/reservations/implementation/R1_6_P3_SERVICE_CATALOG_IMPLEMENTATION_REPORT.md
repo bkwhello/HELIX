@@ -387,3 +387,78 @@ current boundary of what remains undelivered. Full design, evidence, and
 test totals for both milestones are in the dedicated
 `R1_6_P3C_SERVICE_OPERATING_INTERVAL_IMPLEMENTATION_REPORT.md`, not
 repeated here.
+
+## R1-DOC-11 reconciliation — P3C, P3D, and P3G summarized; why `CAP-D02.01` now meets the registry's `Pilot` threshold
+
+Appended 2026-09-29, as part of R1-DOC-11 (Service Management Capability
+Completion and Pilot Promotion). This section is additive only — nothing
+above in this report is rewritten. Every hash/date/subject below was
+verified directly against `git log`/`git show` before being written here.
+
+**P3C — default operating times** (already detailed in the R1-DOC-9
+section immediately above; summarized here only for a single, complete
+narrative arc): R1.6-P3C-1 (`be5926fbb61383141e5fbcd780e98e918c422e40`,
+2026-09-25) and R1.6-P3C-2 (`c93f6576e512bc75b84ab7105ace494e86b20746`,
+2026-09-28) delivered a persisted, optional, atomically-paired
+`defaultOperatingInterval` per Service, an immutable `ServiceSession`
+snapshot taken once at creation, and `PATCH /services/:code` editing
+under rule id `CAP-D02.01-R07`.
+
+**P3D — default reservation duration** (not previously covered in this
+report; commits verified directly):
+
+| Milestone | Commit | Date | Subject |
+|---|---|---|---|
+| R1.6-P3D-1 | `9e9041641ac91929ffcb645dd9e235a2b6176cd2` | 2026-09-29 | `feat(service): snapshot default duration` |
+| R1.6-P3D-2 | `376980d76801880fe6f11473a135e9e3187b75c1` | 2026-09-29 | `feat(service): manage default duration` |
+
+R1.6-P3D-1 added an optional `Service.defaultDurationMinutes` (integer
+minutes, `[15,480]`, a multiple of 15; `null` = not configured) — a
+concept entirely separate from `CapacityPool.durationMinutes` (the live,
+area-keyed Sushi/Teppanyaki capacity-duration authority owned by
+`CAP-D02.03`) — plus a matching immutable `ServiceSession.durationSnapshotMinutes`,
+copied from the owning Service's current duration exactly once at
+session creation. R1.6-P3D-2 extended `PATCH /services/:code` to accept
+`defaultDurationMinutes` (omitted/set/clear, same no-op idempotency
+contract as every other field) under rule id `CAP-D02.01-R08`, and gave
+the "Diensten" panel a matching quarter-hour select and clear checkbox.
+Both milestones' evidence: a barrier-controlled, non-timing-only
+concurrent race proving an already-created session's snapshot is never
+rewritten by a later Service edit; `helix_reservations_dev` has the
+migration applied, both canonical Services hold
+`defaultDurationMinutes = null` (no accepted product value exists for
+either), `ServiceSessions = 0`. Full design and evidence:
+`R1_6_P3D_DEFAULT_DURATION_IMPLEMENTATION_REPORT.md`.
+
+**P3G — Service audit trail** (commit `221e452955887dc8e96c524fd1a9f0c2413eafd7`,
+2026-09-29, `feat(service): audit catalog changes`): delivered this
+capability's remaining owned surface — every real (non-no-op)
+`PATCH /services/:code` mutation now writes exactly one `SecurityEvent`
+(`ServiceModified`, `ServiceDeactivated` on a true→false `enabled`
+transition, or `ServiceReactivated` on false→true), atomically with the
+Service row write via a real row lock (`SELECT ... FOR UPDATE`) and one
+shared transaction — a failure on either write rolls both back. Full
+detail, evidence, and test totals:
+`R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+
+**Why `CAP-D02.01` now meets the registry's `Pilot` threshold.** This
+registry's own established meaning of `Pilot` — set by the `CAP-D03.02`/
+R1-DOC-7 precedent and `CAP-D04.05` before it — is "delivered and
+automated-tested, exposed through code/UI," not "human-exercised" or
+"deployed" (those remain accepted `Pilot → Active` concerns). Measured
+against that bar, every rule `CAP-D02.01` actually owns is now delivered:
+service naming (within the fixed, migration-seeded `lunch`/`dinner`
+catalog — the capability was never meant to support runtime Service
+creation, so this is the complete rule, not a partial slice of a larger
+one), default operating times (P3C), default reservation duration (P3D),
+and the lifecycle-audit surface (P3G) — and the management API and pilot
+UI expose all of it. `ServiceCreated` is not counted against this
+threshold: it was removed from this capability's registered
+`owns.events` (see the registry's own R1-DOC-11 note) because no runtime
+Service-creation path exists or is planned — there is no lifecycle
+moment for it to represent, the same reasoning `CAP-D03.02`'s own
+R1-DOC-7 promotion already established for events representable purely
+through reconstructed state. `CAP-D02.01` was promoted `Designed` →
+`Pilot` on this basis. `CAP-D02.02` remains `Designed`, unaffected by
+this promotion — its own persisted reservation-to-session relationship
+still does not exist.

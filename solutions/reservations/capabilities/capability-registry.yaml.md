@@ -552,15 +552,95 @@ capabilities:
     # `displayName`), `ServiceCreated`/`ServiceDeactivated` remain
     # entirely absent, and no authenticated human workflow or deployed
     # production use has been demonstrated for either milestone.
-    delivery_status: Designed
+    #
+    # R1-DOC-11 — R1.6-P3G (commit `221e452955887dc8e96c524fd1a9f0c2413eafd7`,
+    # 2026-09-29, "feat(service): audit catalog changes") delivers this
+    # capability's remaining owned lifecycle-audit surface and completes
+    # the accepted, final scope for this milestone chain:
+    #   - The catalog itself is confirmed FIXED: exactly the two canonical
+    #     `lunch`/`dinner` rows, seeded by migration, with no runtime
+    #     Create/Delete route and `code` immutable everywhere — this was
+    #     always the accepted product decision (R1.6-P3B), not a gap this
+    #     milestone closes. Service naming is satisfied within that fixed
+    #     catalog by the existing `displayName` edit path.
+    #   - Enabled/disabled validation continues to fail closed at
+    #     Reservation/Walk-in creation and date-changing modification
+    #     (`CAP-D02.01-R01`, `CanonicalServicePeriodReader`), unchanged by
+    #     this milestone.
+    #   - Default operating intervals and default reservation durations
+    #     (R1.6-P3C-1/P3C-2, R1.6-P3D-1/P3D-2 above) remain exactly as
+    #     delivered — one optional daily interval and one optional
+    #     duration per Service, snapshotted immutably onto each
+    #     ServiceSession at creation — unaffected by this milestone.
+    #   - New: every real (non-no-op) `PATCH /services/:code` mutation now
+    #     writes exactly one `SecurityEvent` — `ServiceDeactivated` on a
+    #     true->false `enabled` transition, `ServiceReactivated` on
+    #     false->true, `ServiceModified` for any other real change (an
+    #     activation transition combined with other field changes still
+    #     produces exactly ONE activation-state event, carrying every
+    #     changed field) — atomically, in the SAME transaction as the
+    #     Service row write itself: the target row is locked
+    #     (`SELECT ... FOR UPDATE`) before the authoritative read, and a
+    #     failure on either the Service write or the audit write rolls
+    #     both back. A same-value/same-null request remains a no-op: no
+    #     Service write, no `updatedAt` change, no SecurityEvent. Metadata
+    #     is an explicit allowlist (`serviceCode`, and only the changed
+    #     public field names as `{old,new}` pairs, `null` preserved) —
+    #     never a database column name, request body, credential, header,
+    #     exception message, or permission name. The acting staff identity
+    #     comes from the authenticated session only, never the request
+    #     body; `targetStaffUserId` is always null (a Service is not a
+    #     StaffUser). `GET /security-events` (`Permission.AuditView`, the
+    #     existing permission) now projects these three types through a
+    #     defensive, explicit allowlist that degrades any malformed or
+    #     legacy metadata to a safe `null` rather than throwing or leaking
+    #     raw content — no new route or permission was added.
+    #   - `ServiceCreated` is deliberately NOT an owned runtime event: no
+    #     code path creates a Service row at runtime (the catalog is fixed
+    #     by migration seed data, per the first bullet above), so there is
+    #     no lifecycle moment for such an event to represent. It is
+    #     removed from this capability's own `owns.events` list below,
+    #     replacing it with the newly-delivered `ServiceReactivated`.
+    #   - Automated verification: real-PostgreSQL evidence that a forced
+    #     audit-insert failure rolls back the Service mutation, that a
+    #     forced Service-write failure leaves no audit row, that two
+    #     concurrent updates to the SAME Service genuinely serialize at
+    #     the real row lock (observed via `pg_locks`, with the second
+    #     call's recorded "old" value proven to be the first call's
+    #     COMMITTED write, never a stale pre-lock read), and that
+    #     concurrent updates to DIFFERENT Services remain fully
+    #     independent — plus full application/API/projection coverage.
+    #     Full isolated suite: 104 files / 2013 passed / 0 failed /
+    #     0 skipped. See
+    #     `R1_6_P3G_SERVICE_CATALOG_AUDIT_IMPLEMENTATION_REPORT.md`.
+    #   - `helix_reservations_dev`: unchanged by this milestone — no
+    #     development Service row was mutated, no development
+    #     ServiceSession was created, and no development SecurityEvent was
+    #     written; every write path exercised in testing ran against
+    #     `helix_reservations_test` only.
+    #   - Promotion evidence for `delivery_status: Pilot` (this registry's
+    #     own established meaning, per the `CAP-D03.02`/R1-DOC-7 and
+    #     `CAP-D04.05` precedents — automated-tested and code/UI-exposed,
+    #     not necessarily human-exercised or deployed): every rule this
+    #     capability actually owns and can own at this product scope is
+    #     now delivered and automated-tested — service naming (within the
+    #     fixed catalog), default operating times, default reservation
+    #     duration, and the lifecycle-audit surface (`ServiceModified`,
+    #     `ServiceDeactivated`, `ServiceReactivated`) — and the management
+    #     API/pilot UI expose all of it.
+    #   - Accepted `Pilot -> Active` limitations, not blockers to `Pilot`
+    #     itself: no authenticated human browser workflow or smoke test
+    #     has been performed against a running server, and nothing has
+    #     been deployed anywhere.
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: High
     differentiation: Low
 
     purpose: >
-      Define reusable restaurant service configurations such as lunch,
-      dinner, sushi service, or teppan service.
+      Define and manage the canonical lunch and dinner service
+      configurations used by reservation and ServiceSession workflows.
 
     owns:
       concepts:
@@ -571,9 +651,9 @@ capabilities:
         - default operating times
         - default reservation duration
       events:
-        - ServiceCreated
         - ServiceModified
         - ServiceDeactivated
+        - ServiceReactivated
 
     depends_on: []
 
