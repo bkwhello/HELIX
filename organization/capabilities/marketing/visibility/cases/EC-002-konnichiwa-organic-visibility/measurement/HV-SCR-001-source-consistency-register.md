@@ -13,7 +13,7 @@ Do not correct any external source from this register. Do not infer that a liste
 
 | Source | Canonical name observed | Address | Telephone | Opening-hours representation | Category | Owner Controlled? | Correction mechanism | Last checked | Evidence reference | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Konnichiwa website (konnichiwa.nl) | Konnichiwa | Not separately re-verified this round | Not separately re-verified this round | Plain text on site; no schema.org markup yet (HV-INT-001, Blocked). **Update 30 sep 2026 (live read-only observation):** footer hours Match; footer label, Catering NL and Catering EN Mismatch; live JSON-LD opening hours Match. See "Update — 30 September 2026" | Restaurant / Japans, teppanyaki, sushi, izakaya, omakase | **Owner Controlled** | Direct site edit (Kelvin/webbeheerder) | 22 juli 2026 (HV-IV-001) | claims/OC-004…md; evidence/HV-IV-001.md | Recorded |
+| Konnichiwa website (konnichiwa.nl) | Konnichiwa | Not separately re-verified this round | Not separately re-verified this round | Plain text on site; no schema.org markup yet (HV-INT-001, Blocked). **Update 30 sep 2026 (live read-only observation):** footer hours Match; footer label, Catering NL and Catering EN Mismatch; live JSON-LD opening hours Match. See "Update — 30 September 2026". **Update 1 oct 2026 (production verification):** website hours alignment A1–A4b deployed from Konnichiwa commit `070703a` and PRODUCTION VERIFIED; Catering NL, Catering EN and footer label now Match. See "Update — 1 October 2026" | Restaurant / Japans, teppanyaki, sushi, izakaya, omakase | **Owner Controlled** | Direct site edit (Kelvin/webbeheerder) | 22 juli 2026 (HV-IV-001) | claims/OC-004…md; evidence/HV-IV-001.md | Recorded |
 | Google Business Profile | Konnichiwa | Mariaplaats-adres, niet opnieuw gecheckt deze ronde (24 juli 2026). **Update 22 sep 2026 (owner manual verification):** Match — Mariaplaats 9, 3511 LH Utrecht | Niet opnieuw gecheckt deze ronde (24 juli 2026). **Update 22 sep 2026:** Match — 030 241 6388 | Reguliere uren ingesteld; special-hours-status niet deze ronde herverifieerd (24 juli 2026). **Update 22 sep 2026 (owner manual verification):** Mon–Thu 16:00–22:00, Fri–Sun 12:00–22:00 — **Match, no remediation required** | Japans restaurant | **Owner Controlled** | Direct via GBP-dashboard (Kelvin) | 24 juli 2026 (O-013, EV-021); **22 sep 2026 (owner manual verification — name/address/phone/hours all Match)** | observations/O-013.md; measurement/HV-DB-001.md v6; this reconciliation (Priority 2 citation audit, 22 sep 2026) | Recorded — **Match, No Remediation Required (22 sep 2026)** |
 | TripAdvisor — listing name | Konnichiwa | Not separately re-verified this round | Not separately re-verified this round | Not separately re-verified this round | Restaurant | **Third Party** (owner-editable via TripAdvisor Management Center, not yet confirmed) | Unknown — not yet assessed | 22 juli 2026 (EV-001/HV-IV-001); **re-verification attempted 22 sep 2026 — Not Verifiable (public access blocked)** | claims/OC-004…md; this reconciliation (Priority 2 citation audit, 22 sep 2026) | Recorded — **Re-verification Attempted 22 sep 2026, Not Verifiable** |
 | TripAdvisor — page title (separate field) | Konichiwa (single n) | — | — | — | — | **Third Party** | Unknown — not yet assessed | 22 juli 2026 (EV-004/HV-IV-003) | diagnosis/OD-003…md, Contributing Conditions | Recorded — **kept separate from the listing-name field above; not treated as the same fact** |
@@ -98,6 +98,59 @@ Google Business Profile, TheFork (Diner service), Apple Maps and Bing were **not
 
 **Unchanged by this update:** the historical round-0 scores; measurement/HV-MP-003 (including CO-M9 and CO-M10); design/HV-CHM-001; and every other artifact. No correction is performed or authorized. **No consistency percentage is calculated**, because material fields remain UNKNOWN.
 
+## Update — 1 October 2026 (production verification)
+
+*Production verification of the website hours alignment A1–A4b, 1 October 2026. This is a new, prospective record. The 30 September 2026 findings above are preserved unchanged as the state **before** the correction. The deployment (manual FileZilla upload) and the post-deploy downloads were performed by the Case Owner. The byte verification and the live smoke test (public GET requests only, ≈03:13 UTC) were performed by Claude. No form was submitted, and no analytics event was intentionally triggered.*
+
+**Deployment source:** Konnichiwa repository (`bkwhello/konnichiwa`), commit `070703a2bcf4b25a68f4c9c016ce6bad6f80b5a8` ("feat: align website opening hours"), parent `2fe23791947d83b995be1d51104cea145a81b442`. Exactly three theme files were deployed to `wp-content/themes/konnichiwa/`:
+
+- A1: `page-catering.php` (Catering NL hours line);
+- A2: `template-catering-eng.php` (Catering EN hours line);
+- A3: `footer.php` (footer label);
+- A4b: `footer.php` (fallback hours, language-aware, with `esc_html()`).
+
+**Pre-deploy production baseline.** Before upload, the three production files were downloaded read-only and found byte-identical to parent `2fe2379`:
+
+- `footer.php` `31b312f9dda5d255521ab9548edfba59f42cf2e022ba09d807ca9edf0433634d`
+- `page-catering.php` `68aa02cbb4037c88283baa5d09a54af5aa71a088e3faa199a5c7d09bbdd9007b`
+- `template-catering-eng.php` `e12cb469ab21d81351df4793d87ef794617c20d4843dac2ada81b7fd93f3a930`
+
+There was therefore no unknown production drift.
+
+**Post-deploy byte verification.** The three production files were downloaded again after upload:
+
+| File | Size | SHA-256 | Result |
+|---|---|---|---|
+| `footer.php` | 5548 | `74f42fc5dfcd9ececf1b478860d1a84811dfee5572b27ca488c3c7a808afaa62` | **EXACT MATCH TO 070703a** |
+| `page-catering.php` | 18324 | `d0692bb2d7d02e3258f96c4e2b0f48b66cd582e5308b48c0b7b50b6e5df9d1a5` | **EXACT MATCH TO 070703a** |
+| `template-catering-eng.php` | 18203 | `84731f89867d388c22477b0eb2f46d86550ce5efc358a706eb4b055772232316` | **EXACT MATCH TO 070703a** |
+
+**A1–A4b: PRODUCTION VERIFIED (2026-10-01).**
+
+### Status progression (own website)
+
+| Surface | 30 September 2026 | 1 October 2026 | Evidence |
+|---|---|---|---|
+| Catering NL, `/catering-utrecht/` | MISMATCH ("Ma – do: 17:30 – 22:00"; Fri–Sun absent) | **MATCH** | HTTP 200; "Ma – do: 16:00 – 22:00 · Vr – zo: 12:00 – 22:00"; "17:30" absent |
+| Catering EN, `/en/catering/` | MISMATCH ("Mon – Thu: 17:30 – 22:00"; Fri–Sun absent) | **MATCH** | HTTP 200; "Mon – Thu: 16:00 – 22:00 · Fri – Sun: 12:00 – 22:00"; "17:30" absent |
+| Footer label | MISMATCH (semantic: "Keuken Geopend" / "Kitchen Hours" above public hours) | **MATCH** | NL heading "Openingstijden" (on `/`, `/private-dining/`, `/catering-utrecht/`), "Keuken Geopend" absent; EN heading "Opening hours" (on `/en/home/`, `/en/catering/`), "Kitchen Hours" absent |
+| Footer fallback (theme code) | MISMATCH / latent risk | **CODE ALIGNED / VERIFIED BY BYTES** | Deployed `footer.php` byte-identical to `070703a`, whose fallback gives Mon–Thu 16:00–22:00, Fri–Sun 12:00–22:00 (NL and EN day labels). **Still latent and not live-rendered:** the WordPress `footer-hours` menu is active and supplies the displayed hours. No claim is made that the fallback was rendered live. |
+| Live footer hours (menu) | MATCH | **MATCH (unchanged)** | NL "ma-don 16:00-22:00 / vr-zon 12:00-22:00"; EN "mon-thu 16:00 – 22:00 / fri-sun 12:00 – 22:00" |
+| Live JSON-LD | MATCH | **MATCH (unchanged)** | `"openingHours":["Mo,Tu,We,Th 16:00-22:00","Fr,Sa,Su 12:00-22:00"]` on all checked pages |
+
+### Smoke-test observations (1 October 2026)
+
+- **HTTP:** `/catering-utrecht/`, `/en/catering/`, `/` and `/private-dining/` returned 200. `/en/` returned **301 → `/en/home/`**, which returned 200. The redirect lies outside the deployed files, which do no routing.
+- **Unchanged integrations:** Guestplan is present and the GTM snippet (`GTM-WXH5P6SN`) is present on all checked pages. The catering form is present on NL and EN, with `admin-post.php`, action `konnichiwa_catering_inquiry`, the nonce field and `data-track="catering_enquiry"`.
+- **Errors:** no PHP error strings (Fatal, Parse, Warning, Notice, Deprecated, Uncaught) in the page text.
+- **Not done:** no form was submitted, and no analytics event was intentionally triggered.
+
+### Unchanged by this update
+
+- The UNKNOWN items in the 30 September 2026 update remain UNKNOWN: Ecwid takeaway configuration; GBP service-specific hours; TheFork lunch; TripAdvisor; Yelp; Guestplan last reservation; Thuisbezorgd.
+- No listing was changed. No consistency percentage is calculated.
+- design/HV-CHM-001, measurement/HV-MP-003, historical round-0 artifacts, current.md and HV-DB-001 are not modified.
+
 ## Traceability
 
-Source claims: claims/OC-004…md. Source diagnosis: diagnosis/OD-003…md (decisions/DD-021, DD-022). Weekly review: measurement/2026-W34-visibility-brief.md. **30 Sep 2026 update:** canonical reference design/HV-CHM-001-canonical-hours-model.md at `c61448b`; channel alignment audit (read-only, 30 sep 2026); Konnichiwa theme source at `2fe2379` (`footer.php`, `page-catering.php`, `template-catering-eng.php`, `page-sushi-eng.php`).
+Source claims: claims/OC-004…md. Source diagnosis: diagnosis/OD-003…md (decisions/DD-021, DD-022). Weekly review: measurement/2026-W34-visibility-brief.md. **30 Sep 2026 update:** canonical reference design/HV-CHM-001-canonical-hours-model.md at `c61448b`; channel alignment audit (read-only, 30 sep 2026); Konnichiwa theme source at `2fe2379` (`footer.php`, `page-catering.php`, `template-catering-eng.php`, `page-sushi-eng.php`). **1 Oct 2026 update:** Konnichiwa commit `070703a2bcf4b25a68f4c9c016ce6bad6f80b5a8`; pre-deploy and post-deploy production downloads (Case Owner, FileZilla) with SHA-256 byte verification; live smoke test (read-only, 1 oct 2026).
