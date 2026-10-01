@@ -128,6 +128,20 @@ These are to be treated as OWNER DECLARED canonical operating hours. **Public op
 
 ---
 
+## Case Owner Decision — Lunch semantics (clarification, 1 October 2026)
+
+*Decided by Kelvin Wong, Case Owner, 1 October 2026. Effective clarification date: **2026-10-01**. Classification: **OWNER DECLARED** (semantic clarification). This decision is additive and prospective. It clarifies the meaning of the lunch hours declared on 29 September 2026 (Fri–Sun 12:00–17:00) and does not change any declared value.*
+
+**Meaning.** Lunch is the normal dine-in restaurant service for guests at Konnichiwa, Friday–Sunday, 12:00–17:00, with a dedicated (special) lunch menu.
+
+- It is a **dine-in restaurant service period**.
+- It is **not** the Bento lunch product. Bento remains a **separate product** with its own ordering and delivery semantics.
+- Lunch is a service period **inside** the public opening hours. Public opening hours remain **Fri–Sun 12:00–22:00**, unchanged.
+- Lunch hours must **not** be substituted for public opening hours, and public opening hours must not be substituted for lunch hours.
+- **No claim is made here** about the current lunch representation on Google Business Profile, TheFork, the website, Ecwid or any delivery platform. Those channel states remain subject to separate verification.
+
+---
+
 ## Populated canonical model (internal representation only — do not publish externally)
 
 The original field list above has no place for last reservation or last order. The declaration requires them to be kept distinct, so the model is **extended** with two fields per service: `last_reservation` and `last_order`. The original fields are unchanged.
