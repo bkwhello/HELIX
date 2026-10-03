@@ -146,7 +146,29 @@ capabilities:
     slug: reservation-management
     domain: CAP-D01
     type: Core
-    delivery_status: Designed
+    # R1-DOC-14 (2026-10-04) — promoted Designed -> Pilot. Commit
+    # 5d55227eddfb8da943c2c41d1486fb0fd1a69228 ("feat(reservations): add
+    # critical note management") closed this capability's one previously
+    # open Critical acceptance gap, CAP-D01.01-AC31 ("Do Not Own Allergy
+    # Meaning"): CAP-D05.02's validated, Reservation-scoped
+    # `reservation_critical_notes` structure (see that capability's own
+    # R1-DOC-13 entry below) means allergy information is no longer
+    # reducible to the plain `notes` field. The capability-contract
+    # approval this capability's own `acceptance.md` §17 names as a
+    # precondition ("the capability contract is approved") is satisfied
+    # by the explicit human governance approval recorded in
+    # `active/CAP-D01.01-reservation-management/
+    # DECISION-E-capability-contract-approval.md`. Consistent with this
+    # registry's own established meaning of `Pilot` (see CAP-D04.05's own
+    # evidence note, reaffirmed at every subsequent promotion in this
+    # file): implemented and automated-tested — the complete isolated
+    # suite (109 files / 2112 tests) passes twice with zero failures —
+    # and exposed for a controlled human pilot to begin. No authenticated
+    # human browser workflow has been completed, and nothing has been
+    # deployed anywhere; these are accepted Pilot -> Active concerns, not
+    # blockers to reaching Pilot itself. This promotion does not claim
+    # Active status or production-operational maturity.
+    delivery_status: Pilot
     operational_maturity: M0
     mvp: true
     strategic_importance: Critical
@@ -1572,7 +1594,29 @@ capabilities:
     slug: allergy-critical-note-management
     domain: CAP-D05
     type: Core
-    delivery_status: Designed
+    # R1-DOC-15 (2026-10-04) — promoted Designed -> Pilot. R1.3-I3
+    # (commit 5d55227eddfb8da943c2c41d1486fb0fd1a69228) delivered the
+    # Reservation-scoped `reservation_critical_notes` structure; R1.3-I4
+    # validated the pending migration read-only; R1.3-I5 applied it to
+    # `helix_reservations_dev` (bounded, additive, no existing data
+    # touched); R1.3-I6 functionally validated the real application path
+    # (create/resolve/validation-rejection/read-contract behavior)
+    # directly against that development schema, 32/32 checks passing.
+    # Event governance is reconciled per this entry's own R1-DOC-13
+    # comment below (no delivery_status implication from that note —
+    # repeated here only for promotion traceability). The capability's
+    # own minimal engineering artifact exists at
+    # `active/CAP-D05.02-allergy-critical-note-management/rule-model.md`
+    # (CAP-D05.02-R01..R04). Consistent with this registry's own
+    # established meaning of `Pilot`: implemented, automated-tested (13
+    # focused files / 260 tests, plus the full 2112-test isolated suite
+    # passing twice), and exposed for a controlled human pilot via the
+    # "Kritieke notities" pilot UI section. No authenticated human
+    # browser workflow has been completed, and nothing has been deployed
+    # anywhere; these are accepted Pilot -> Active concerns, not blockers
+    # to reaching Pilot itself. This promotion does not claim Active
+    # status or production-operational maturity.
+    delivery_status: Pilot
     operational_maturity: M1
     mvp: true
     strategic_importance: Critical

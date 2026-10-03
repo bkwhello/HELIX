@@ -530,7 +530,7 @@ capability.
   is no longer accurate — see the "Service Session status" section above
   for `CAP-D02.02`'s own subsequent `Pilot` promotion.
 
-## Critical Note Management status (R1.3-I3/I4/I5/I6 — `CAP-D05.02`, remains `Designed`)
+## Critical Note Management status (R1.3-I3/I4/I5/I6 — `CAP-D05.02`, now `Pilot`)
 
 A distinct "Kritieke notities" section exists in `public/pilot.html`,
 visually separate from the plain "Opmerkingen" free-text field, on both
@@ -588,25 +588,32 @@ skips.
 - **No authenticated human browser workflow has been completed** through
   this pilot panel, and **nothing has been deployed anywhere.**
 
-**`CAP-D05.02`'s capability status remains `Designed`.** A portfolio
-readiness review (R1.3-I7/I8) concluded this capability is **technically
-eligible** for the same `Designed → Pilot` promotion this registry's
-established convention already applied to `CAP-D03.02`/`CAP-D02.01`/
-`CAP-D02.02` (implemented, automated-tested, and UI/API-exposed), and
-reconciled this capability's four declared-but-unimplemented owned
-events (`AllergyInformationRecorded`/`AllergyInformationChanged`/
+**`CAP-D05.02`'s capability status is now `Pilot`** (R1.3-I14). A
+portfolio readiness review (R1.3-I7/I8) first concluded this capability
+was **technically eligible** for the same `Designed → Pilot` promotion
+this registry's established convention already applied to
+`CAP-D03.02`/`CAP-D02.01`/`CAP-D02.02` (implemented, automated-tested,
+and UI/API-exposed), and reconciled this capability's four
+declared-but-unimplemented owned events
+(`AllergyInformationRecorded`/`AllergyInformationChanged`/
 `CriticalNoteAdded`/`CriticalNoteResolved`) as logical meanings
 currently carried inside `CAP-D01.01`'s own `ReservationCreated`/
 `ReservationModified` event envelope rather than as dedicated literal
 event types — see the capability registry's own R1-DOC-13 comment on
-`CAP-D05.02`. **This is a reconciliation, not a promotion**: the actual
-`delivery_status` transition for `CAP-D05.02` — and the related
-`CAP-D01.01` transition this AC31 closure also unblocks — requires a
-later, separately authorized gate. That gate remains open on one
-specific outstanding item: explicit Product Owner/Architect sign-off
-approving `CAP-D01.01`'s own capability contract (its §17 Exit
-Criteria's "the capability contract is approved" precondition), which
-has not yet been given and is not inferred or asserted by this document.
+`CAP-D05.02`. The one item that readiness review left open — explicit
+Product Owner/Architect sign-off approving `CAP-D01.01`'s own
+capability contract (its §17 Exit Criteria's "the capability contract
+is approved" precondition) — has since been **explicitly given and
+recorded** (`active/CAP-D01.01-reservation-management/
+DECISION-E-capability-contract-approval.md`, R1.3-I10), and the
+separately authorized promotion gate that approval unblocked has now
+occurred (R1.3-I14): the capability registry's own R1-DOC-14 and
+R1-DOC-15 comments record both `CAP-D01.01` and `CAP-D05.02` promoted
+`Designed → Pilot` together. **This remains controlled `Pilot` status
+only** — per this registry's own established meaning of that word (see
+above): neither capability is being declared `Active`, no production
+deployment is implied, and the underlying technical evidence (the
+"Development activation" facts above) is unchanged by this promotion.
 
 ## Before starting
 
