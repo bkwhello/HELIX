@@ -1593,6 +1593,39 @@ capabilities:
         - allergy classification
         - note attribution
         - note preservation
+      # R1-DOC-13 — commit 5d55227eddfb8da943c2c41d1486fb0fd1a69228
+      # (2026-10-01, "feat(reservations): add critical note management")
+      # delivered a Reservation-scoped `reservation_critical_notes` table
+      # (domain/value-objects/ReservationCriticalNote.ts,
+      # domain/rules/CriticalNoteRules.ts, migration
+      # `20261001090000_add_reservation_critical_notes`, applied to
+      # `helix_reservations_dev`) realizing all four owned concepts above
+      # and all four owned rules above — see
+      # active/CAP-D05.02-allergy-critical-note-management/rule-model.md
+      # for CAP-D05.02-R01..R04 and their evidence.
+      #
+      # The four events below remain CAP-D05.02-owned MEANINGS (this
+      # capability's `ownership_rule` concerns ownership of meaning, not
+      # the literal event `type` string) — but this implementation
+      # deliberately emits NO literal event of any of these four names.
+      # Each is instead carried as a typed field (id/noteType/detail/
+      # status) inside CAP-D01.01's own existing `ReservationCreated`/
+      # `ReservationModified` event envelope (domain/events/
+      # ReservationEvents.ts; see ReservationAggregate.ts's
+      # `criticalNotes`/`changedFields`/`previousValues`/`resultingValues`
+      # handling). This mirrors the same posture CAP-D02.02's and
+      # CAP-D03.02's own registry entries already accepted for their own
+      # capabilities (no literal events emitted; existing Reservation/
+      # Floorplan events carry the change instead). Dedicated literal
+      # event types for this list are deferred until an independent
+      # subscriber requires them (e.g. a future CAP-D08.01 guest-facing
+      # timeline) — not reopened or redesigned by this note.
+      #
+      # delivery_status intentionally unchanged (remains Designed) — this
+      # comment reconciles the registry's own description of what was
+      # built against the implementation; it is not a promotion. See
+      # `PILOT.md`'s own CAP-D05.02 section for the full readiness
+      # evidence and the separate, not-yet-authorized promotion gate.
       events:
         - AllergyInformationRecorded
         - AllergyInformationChanged

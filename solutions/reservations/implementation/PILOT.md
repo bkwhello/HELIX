@@ -530,6 +530,84 @@ capability.
   is no longer accurate — see the "Service Session status" section above
   for `CAP-D02.02`'s own subsequent `Pilot` promotion.
 
+## Critical Note Management status (R1.3-I3/I4/I5/I6 — `CAP-D05.02`, remains `Designed`)
+
+A distinct "Kritieke notities" section exists in `public/pilot.html`,
+visually separate from the plain "Opmerkingen" free-text field, on both
+the create-reservation form and the recalled edit-mode form. It adds
+Allergie/Kritiek entries, edits an Active entry, and resolves an Active
+entry one-way (with a required confirmation dialog) — no new pilot
+redesign beyond this bounded section, and the immediate-walk-in flow
+remains untouched (no critical-note contract, no note rows created, no
+`criticalNotes` field in its response).
+
+**What this milestone delivered, server-side:** a Reservation-scoped
+`reservation_critical_notes` table (migration
+`20261001090000_add_reservation_critical_notes`), the domain value
+object and rule module owning `noteType`/`detail`/`status` validation
+(`domain/value-objects/ReservationCriticalNote.ts`,
+`domain/rules/CriticalNoteRules.ts` — CAP-D05.02-R01..R04, see
+`active/CAP-D05.02-allergy-critical-note-management/rule-model.md`),
+explicit `criticalNotes` (Create) and `criticalNoteChanges.add/update/
+resolve` (Modify) contracts — never a complete-replacement set, so
+omission can never silently remove or resolve a note — and an explicit
+read allowlist (list = Active only, detail = Active + Resolved, actor
+ids never surfaced through an ordinary Reservation read). This directly
+satisfies `CAP-D01.01-AC31` ("Do Not Own Allergy Meaning"): allergy
+information is no longer reducible to the plain `notes` field, which
+remains independent and non-authoritative.
+
+**Automated verification is complete** — 13 focused files / 260 tests
+(domain, application, real-PostgreSQL integration including forced-
+failure rollback in both directions and genuine concurrent-modification
+proof, API/auth, pilot source-text) all pass, and the complete isolated
+suite (109 files / 2112 tests) passes twice with zero failures and zero
+skips.
+
+**Development activation (facts, verified read-only):**
+
+- The migration is applied in `helix_reservations_dev` (15 migrations
+  applied, none rolled back); `reservation_critical_notes` exists with
+  its full column set, primary key, the `reservation_id` foreign key
+  (`ON DELETE RESTRICT ON UPDATE RESTRICT`), its index, and all four
+  CHECK constraints, matching the migration file exactly.
+- A bounded functional validation (R1.3-I6) exercised the real
+  application layer — not raw SQL — directly against this development
+  database: Allergy and Critical note creation, all four validation
+  rejections, the full Active→Resolved lifecycle (including the
+  rejection of re-resolving or editing an already-Resolved note),
+  Reservation-integration independence from the plain `notes` field, the
+  read-contract shape, and the exact event/version behavior of a
+  note-only Modify. All 32 checks passed.
+- **This intentionally left development data in place** (one isolated
+  test Reservation, one test Contact, two critical notes — one Active,
+  one Resolved) because no supported application-level delete path
+  exists for either a Reservation or a critical note (both are
+  append-preserving by design). The four pre-existing development
+  Reservations/Contacts/SecurityEvents were never touched or altered.
+- **No authenticated human browser workflow has been completed** through
+  this pilot panel, and **nothing has been deployed anywhere.**
+
+**`CAP-D05.02`'s capability status remains `Designed`.** A portfolio
+readiness review (R1.3-I7/I8) concluded this capability is **technically
+eligible** for the same `Designed → Pilot` promotion this registry's
+established convention already applied to `CAP-D03.02`/`CAP-D02.01`/
+`CAP-D02.02` (implemented, automated-tested, and UI/API-exposed), and
+reconciled this capability's four declared-but-unimplemented owned
+events (`AllergyInformationRecorded`/`AllergyInformationChanged`/
+`CriticalNoteAdded`/`CriticalNoteResolved`) as logical meanings
+currently carried inside `CAP-D01.01`'s own `ReservationCreated`/
+`ReservationModified` event envelope rather than as dedicated literal
+event types — see the capability registry's own R1-DOC-13 comment on
+`CAP-D05.02`. **This is a reconciliation, not a promotion**: the actual
+`delivery_status` transition for `CAP-D05.02` — and the related
+`CAP-D01.01` transition this AC31 closure also unblocks — requires a
+later, separately authorized gate. That gate remains open on one
+specific outstanding item: explicit Product Owner/Architect sign-off
+approving `CAP-D01.01`'s own capability contract (its §17 Exit
+Criteria's "the capability contract is approved" precondition), which
+has not yet been given and is not inferred or asserted by this document.
+
 ## Before starting
 
 1. `npm install && npx prisma migrate deploy && npm run typecheck && npm test` — all green.
