@@ -69,7 +69,10 @@ describe("renderList — badge rendering", () => {
   });
 
   it("the badge is appended inline to the existing Gast cell, not a new column — existing column structure/labels are unchanged", () => {
-    expect(renderListBlock).toContain('<td data-label="Gast">${guest}${lateBadge}</td>');
+    // R1.3-I3 — CAP-D05.02 added its own critical-note badge immediately
+    // after this one, in the SAME cell (never a new column) — still no
+    // structural change to the Gast cell itself.
+    expect(renderListBlock).toContain('<td data-label="Gast">${guest}${lateBadge}${criticalNoteBadge}</td>');
   });
 
   it("the badge markup has no onclick/addEventListener wiring and no data-* attribute anywhere near it — purely presentational", () => {

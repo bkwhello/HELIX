@@ -58,6 +58,12 @@ class FakeReservationRepository implements ReservationRepository {
   async save(): Promise<SaveResult> {
     throw new Error("not used by SeatingAvailabilityService");
   }
+  async findCriticalNotesByReservationId(): Promise<readonly never[]> {
+    return [];
+  }
+  async findCriticalNotesByReservationIds(): Promise<readonly never[]> {
+    return [];
+  }
 }
 
 /** Every method returns "nothing found" — proves findTablesByArea([]) alone is sufficient to produce an honest empty result, with no other signal contributing. */

@@ -239,7 +239,8 @@ export class AvailabilityOrchestrator {
   async createWithCapacity(request: CreateReservationRequest): Promise<CreateWithCapacityResult> {
     const alreadyApplied = await this.reservationRepository.findByCommandId(request.commandId);
     if (alreadyApplied) {
-      return { type: "CREATED", outcome: toOutcome(alreadyApplied, []) };
+      const notes = await this.reservationRepository.findCriticalNotesByReservationId(alreadyApplied.getId().toString());
+      return { type: "CREATED", outcome: toOutcome(alreadyApplied, [], notes) };
     }
 
     const poolRaw = request.preferredArea;
@@ -430,13 +431,17 @@ export class AvailabilityOrchestrator {
             violations: [violation("CAP-D01.01-R44", "The reservation could not be located after a concurrent duplicate command was detected.")],
           };
         }
-        return { type: "CREATED", outcome: toOutcome(winner, []) };
+        const winnerNotes = await this.reservationRepository.findCriticalNotesByReservationId(winner.getId().toString());
+        return { type: "CREATED", outcome: toOutcome(winner, [], winnerNotes) };
       }
       return { type: "CREATED", outcome: work.outcome };
     } catch (err) {
       if (err instanceof ReservationCommandRaceLost) {
         const winner = await this.reservationRepository.findByCommandId(request.commandId);
-        if (winner) return { type: "CREATED", outcome: toOutcome(winner, []) };
+        if (winner) {
+          const winnerNotes = await this.reservationRepository.findCriticalNotesByReservationId(winner.getId().toString());
+          return { type: "CREATED", outcome: toOutcome(winner, [], winnerNotes) };
+        }
         return {
           type: "VALIDATION_FAILED",
           violations: [violation("CAP-D01.01-R44", "The reservation could not be located after a concurrent duplicate command was detected.")],

@@ -107,7 +107,7 @@ export function buildFloorHarness(
     clock,
     transactionManager
   );
-  const modifyHandler = new ModifyReservationHandler(reservationRepository, eventIdGenerator, clock, servicePeriodReader);
+  const modifyHandler = new ModifyReservationHandler(reservationRepository, eventIdGenerator, clock, servicePeriodReader, idGenerator);
   const cancelHandler = new CancelReservationHandler(reservationRepository, eventIdGenerator, clock);
   const completeHandler = new CompleteReservationHandler(reservationRepository, eventIdGenerator, clock);
   // R1.5-P1B — needed by tests that must reach a real "Confirmed" status

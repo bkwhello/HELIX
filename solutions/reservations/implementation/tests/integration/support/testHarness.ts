@@ -123,7 +123,7 @@ export function buildHarness(prisma: PrismaClient, now: Date, overrides: Harness
     communicationOutboxService,
     guestManagementTokenService
   );
-  const modifyHandler = new ModifyReservationHandler(repository, eventIdGenerator, clock, servicePeriodReader);
+  const modifyHandler = new ModifyReservationHandler(repository, eventIdGenerator, clock, servicePeriodReader, idGenerator);
   const cancelHandler = new CancelReservationHandler(repository, eventIdGenerator, clock);
 
   // R1.6-C0 — real Prisma-backed ServicePeriod authority, wired ONLY when

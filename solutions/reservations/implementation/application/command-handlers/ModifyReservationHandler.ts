@@ -1,14 +1,25 @@
-import { Result, fail, ok, violation } from "../../domain/shared/Result.js";
+import { Result, fail, ok, violation, RuleViolation } from "../../domain/shared/Result.js";
 import { Actor } from "../../domain/value-objects/Actor.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 import { ReservationSourceProps } from "../../domain/value-objects/ReservationSource.js";
-import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
+import { ReservationRepository, CriticalNoteWrites } from "../../domain/repositories/ReservationRepository.js";
 import { EventIdGenerator } from "../ports/EventIdGenerator.js";
 import { Clock } from "../ports/Clock.js";
+import { IdGenerator } from "../ports/IdGenerator.js";
 import { TransactionContext } from "../../domain/shared/TransactionContext.js";
 import { ServicePeriodReader } from "../ports/ServicePeriodReader.js";
 import { deriveServiceCode } from "../../domain/availability/Service.js";
+import { validateCriticalNoteType, CriticalNoteDetail, CriticalNoteStatus, CriticalNoteType } from "../../domain/value-objects/ReservationCriticalNote.js";
+import { validateCriticalNoteChangeIdentities, ExistingCriticalNote } from "../../domain/rules/CriticalNoteRules.js";
+import { CriticalNoteSnapshot } from "../../domain/commands/ReservationCommands.js";
+
+/** R1.3-I3 — CAP-D05.02. Explicit mutations only — omission can never remove or resolve a note. See CriticalNoteWrites's own doc comment for why this is never a complete-replacement set. */
+export interface CriticalNoteChangeRequest {
+  readonly add?: ReadonlyArray<{ readonly noteType: unknown; readonly detail: unknown }>;
+  readonly update?: ReadonlyArray<{ readonly id: string; readonly noteType: unknown; readonly detail: unknown }>;
+  readonly resolve?: ReadonlyArray<{ readonly id: string }>;
+}
 
 export interface ModifyReservationRequest {
   readonly commandId: string;
@@ -35,6 +46,8 @@ export interface ModifyReservationRequest {
   readonly correctionReason?: string;
   /** CAP-D02.03 — see CreateReservationRequest.tx. */
   readonly tx?: TransactionContext;
+  /** R1.3-I3 — CAP-D05.02. Whole field omitted: no critical-note change. Missing `add`/`update`/`resolve` arrays mean no operation of that kind. An entirely empty change set (every array missing or empty) is a no-op. */
+  readonly criticalNoteChanges?: CriticalNoteChangeRequest;
 }
 
 export class ModifyReservationHandler {
@@ -49,7 +62,9 @@ export class ModifyReservationHandler {
      * an optional/no-op default would silently reintroduce it for any
      * caller that omitted the parameter).
      */
-    private readonly servicePeriodReader: ServicePeriodReader
+    private readonly servicePeriodReader: ServicePeriodReader,
+    /** R1.3-I3 — CAP-D05.02. Generates ids for `criticalNoteChanges.add` entries BEFORE the command is built, the SAME "handler assigns identity" convention CreateReservationHandler already uses for `reservationId`. */
+    private readonly idGenerator: IdGenerator
   ) {}
 
   async handle(request: ModifyReservationRequest): Promise<Result<void>> {
@@ -66,6 +81,85 @@ export class ModifyReservationHandler {
     const aggregate = await this.repository.findById(idResult.value);
     if (!aggregate) {
       return fail([violation("CAP-D01.01-R15", "A reservation modification request must reference an existing Reservation Identity.")]);
+    }
+
+    // R1.3-I3 — CAP-D05.02. Validated BEFORE aggregate.modify()/save() are
+    // ever called, same timing as the servicePeriodId handling below — a
+    // rejection here mutates nothing. Normalizes the (possibly fully
+    // omitted) request into concrete add/update/resolve arrays first.
+    const noteChangeRequest = request.criticalNoteChanges;
+    const addRequests = noteChangeRequest?.add ?? [];
+    const updateRequests = noteChangeRequest?.update ?? [];
+    const resolveRequests = noteChangeRequest?.resolve ?? [];
+    const criticalNotesChanged = addRequests.length > 0 || updateRequests.length > 0 || resolveRequests.length > 0;
+
+    let criticalNoteWrites: CriticalNoteWrites | undefined;
+    let previousCriticalNoteSnapshots: readonly CriticalNoteSnapshot[] = [];
+    let resultingCriticalNoteSnapshots: readonly CriticalNoteSnapshot[] = [];
+
+    if (criticalNotesChanged) {
+      const noteViolations: RuleViolation[] = [];
+      const validatedAdds: { noteType: CriticalNoteType; detail: string }[] = [];
+      for (const entry of addRequests) {
+        const typeResult = validateCriticalNoteType(entry.noteType);
+        const detailResult = CriticalNoteDetail.create(entry.detail as string);
+        if (!typeResult.ok) noteViolations.push(...typeResult.violations);
+        if (!detailResult.ok) noteViolations.push(...detailResult.violations);
+        if (typeResult.ok && detailResult.ok) validatedAdds.push({ noteType: typeResult.value, detail: detailResult.value.toString() });
+      }
+      const validatedUpdates: { id: string; noteType: CriticalNoteType; detail: string }[] = [];
+      for (const entry of updateRequests) {
+        const typeResult = validateCriticalNoteType(entry.noteType);
+        const detailResult = CriticalNoteDetail.create(entry.detail as string);
+        if (!typeResult.ok) noteViolations.push(...typeResult.violations);
+        if (!detailResult.ok) noteViolations.push(...detailResult.violations);
+        if (typeResult.ok && detailResult.ok) validatedUpdates.push({ id: entry.id, noteType: typeResult.value, detail: detailResult.value.toString() });
+      }
+
+      // Unlocked, non-authoritative pre-read — the SAME posture
+      // `this.repository.findById()` above already has (never passed
+      // `request.tx` either). See
+      // ReservationRepository.findCriticalNotesByReservationId's own doc
+      // comment on why this is safe (save()'s optimistic version check is
+      // what actually guards concurrent writes).
+      const existingNotes = await this.repository.findCriticalNotesByReservationId(request.reservationId);
+      const existingById = new Map(existingNotes.map((n) => [n.id, n] as const));
+      const identityViolations = validateCriticalNoteChangeIdentities(
+        { update: updateRequests, resolve: resolveRequests },
+        existingNotes.map((n): ExistingCriticalNote => ({ id: n.id, status: n.status }))
+      );
+      noteViolations.push(...identityViolations);
+
+      if (noteViolations.length > 0) {
+        return fail(noteViolations);
+      }
+
+      const now = this.clock.now();
+      const addsWithIds = validatedAdds.map((a) => ({ id: this.idGenerator.generate(), noteType: a.noteType, detail: a.detail }));
+
+      criticalNoteWrites = {
+        actingStaffUserId: request.actor.id,
+        now,
+        add: addsWithIds,
+        update: validatedUpdates,
+        resolve: resolveRequests.map((r) => ({ id: r.id })),
+      };
+
+      previousCriticalNoteSnapshots = [
+        ...validatedUpdates.map((u): CriticalNoteSnapshot => {
+          const existing = existingById.get(u.id)!;
+          return { id: existing.id, noteType: existing.noteType, detail: existing.detail, status: existing.status };
+        }),
+        ...resolveRequests.map((r): CriticalNoteSnapshot => {
+          const existing = existingById.get(r.id)!;
+          return { id: existing.id, noteType: existing.noteType, detail: existing.detail, status: existing.status };
+        }),
+      ];
+      resultingCriticalNoteSnapshots = [
+        ...addsWithIds.map((a): CriticalNoteSnapshot => ({ id: a.id, noteType: a.noteType, detail: a.detail, status: CriticalNoteStatus.Active })),
+        ...validatedUpdates.map((u): CriticalNoteSnapshot => ({ id: u.id, noteType: u.noteType, detail: u.detail, status: CriticalNoteStatus.Active })),
+        ...resolveRequests.map((r): CriticalNoteSnapshot => ({ id: r.id, noteType: existingById.get(r.id)!.noteType, detail: existingById.get(r.id)!.detail, status: CriticalNoteStatus.Resolved })),
+      ];
     }
 
     // R1.6-P2B — server-authoritative Service-code handling, resolved
@@ -138,6 +232,9 @@ export class ModifyReservationHandler {
         isServicePeriodStillValid: request.isServicePeriodStillValid,
         isAuthorizedCorrection: request.isAuthorizedCorrection,
         correctionReason: request.correctionReason,
+        criticalNotesChanged,
+        previousCriticalNotes: criticalNotesChanged ? previousCriticalNoteSnapshots : undefined,
+        resultingCriticalNotes: criticalNotesChanged ? resultingCriticalNoteSnapshots : undefined,
       },
       this.clock.now()
     );
@@ -148,6 +245,7 @@ export class ModifyReservationHandler {
       expectedVersion: aggregate.getVersion(),
       commandId: request.commandId,
       tx: request.tx,
+      criticalNoteWrites,
     });
     if (saveResult.type === "CONCURRENCY_CONFLICT") {
       return fail([violation("CAP-D01.01-R05", "The reservation was modified concurrently by another command. Reload and retry.")]);

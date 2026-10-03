@@ -434,3 +434,18 @@ describe("POST /availability/reservations/walk-in — communication", () => {
     expect(messages.length).toBe(0);
   });
 });
+
+describe("POST /availability/reservations/walk-in — R1.3-I3 critical-note exclusion", () => {
+  it("ignores no critical-note extension and creates no authoritative note rows when a caller supplies criticalNotes", async () => {
+    const res = await post(sharedAgent, "/availability/reservations/walk-in").send(
+      walkInBody({
+        commandId: "walkin-critical-note-excluded",
+        criticalNotes: [{ noteType: "Allergy", detail: "must not enter the walk-in contract" }],
+      })
+    );
+
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty("criticalNotes");
+    expect(await prisma.reservationCriticalNote.count({ where: { reservationId: res.body.reservationId } })).toBe(0);
+  });
+});

@@ -6,6 +6,7 @@ import { Actor } from "../../domain/value-objects/Actor.js";
 import { ReservationSourceProps } from "../../domain/value-objects/ReservationSource.js";
 import { PreferredArea } from "../../domain/value-objects/PreferredArea.js";
 import { ReservationRepository } from "../../domain/repositories/ReservationRepository.js";
+import { validateCriticalNoteInputs, CriticalNoteInput } from "../../domain/value-objects/ReservationCriticalNote.js";
 import { ContactRepository, ContactRecord } from "../ports/ContactRepository.js";
 import { CreateContactHandler } from "./CreateContactHandler.js";
 import { ServicePeriodReader } from "../ports/ServicePeriodReader.js";
@@ -43,8 +44,10 @@ export interface CreateReservationRequest {
   readonly partySize: number;
   readonly source: ReservationSourceProps;
   readonly preferredArea?: PreferredArea;
-  /** CAP-D01.01-R36/R37: operational context (allergies, special requests). */
+  /** CAP-D01.01-R36/R37: operational context (allergies, special requests) — never the authoritative allergy record; see `criticalNotes` below for that. */
   readonly notes?: string;
+  /** R1.3-I3 — CAP-D05.02. Raw, not-yet-validated create-time critical notes; every entry becomes a new Active note. Omitted means none created. */
+  readonly criticalNotes?: ReadonlyArray<{ readonly noteType: unknown; readonly detail: unknown }>;
   /** R1.6-B — guest-facing communication language (assignment §3/§4). See CreateReservationCommand's own doc comment: absent only on a legacy/internal path, defaulted (never inferred) by ReservationAggregate.create(). */
   readonly communicationLanguage?: CommunicationLanguage;
   readonly actor: Actor;
@@ -92,6 +95,16 @@ export interface CreateReservationOutcome {
   readonly contactName?: string;
   readonly preferredArea?: PreferredArea;
   readonly notes?: string;
+  /** R1.3-I3 — CAP-D05.02. The explicit API allowlist (id/noteType/detail/status/timestamps) — never actor ids; see api/app.ts's own read-contract comment. */
+  readonly criticalNotes: ReadonlyArray<{
+    readonly id: string;
+    readonly noteType: string;
+    readonly detail: string;
+    readonly status: string;
+    readonly createdAt: Date;
+    readonly updatedAt: Date;
+    readonly resolvedAt: Date | null;
+  }>;
   readonly warnings: readonly RuleViolation[];
 }
 
@@ -138,7 +151,8 @@ export class CreateReservationHandler {
     // 1. Idempotency — a previous attempt at this exact command already succeeded.
     const alreadyCreated = await this.repository.findByCommandId(request.commandId);
     if (alreadyCreated) {
-      return ok(toOutcome(alreadyCreated, []));
+      const notes = await this.repository.findCriticalNotesByReservationId(alreadyCreated.getId().toString());
+      return ok(toOutcome(alreadyCreated, [], notes));
     }
 
     // 2. Validate request — CAP-D01.01-R08.
@@ -157,6 +171,13 @@ export class CreateReservationHandler {
     // has a real Date, not an Invalid Date.
     if (Number.isNaN(request.reservationDate.getTime())) {
       return fail([violation("CAP-D01.01-R10", "Reservation date and time must form a valid date-time value.")]);
+    }
+
+    // R1.3-I3 — CAP-D05.02. Validated before any write, same timing as
+    // every other pre-write validation step in this handler.
+    const criticalNotesResult = validateCriticalNoteInputs(request.criticalNotes ?? []);
+    if (!criticalNotesResult.ok) {
+      return fail(criticalNotesResult.violations);
     }
 
     // 3. Reject a marked closing day — CAP-D01.01-R51 (explicit pilot stopgap, see rule-model.md §16b).
@@ -246,6 +267,18 @@ export class CreateReservationHandler {
         contactEmailSnapshot = contactResult.value.emailRaw;
       }
 
+      // R1.3-I3 — CAP-D05.02. Ids pre-generated here (never by the
+      // aggregate, never by the repository/database default), the SAME
+      // "handler assigns identity before the command is built" convention
+      // `reservationId` immediately below already uses — so the SAME id
+      // appears in both the ReservationCreated event payload and the
+      // repository's actual insert instruction.
+      const criticalNoteWriteInputs: ReadonlyArray<CriticalNoteInput & { readonly id: string }> = criticalNotesResult.value.map((n) => ({
+        id: this.idGenerator.generate(),
+        noteType: n.noteType,
+        detail: n.detail,
+      }));
+
       const created = ReservationAggregate.create({
         reservationId: this.idGenerator.generate(),
         eventId: this.eventIdGenerator.generate(),
@@ -261,6 +294,7 @@ export class CreateReservationHandler {
         source: request.source,
         preferredArea: request.preferredArea,
         notes: request.notes,
+        criticalNotes: criticalNoteWriteInputs,
         communicationLanguage: request.communicationLanguage,
         actor: request.actor,
         now: request.nowOverride ?? this.clock.now(),
@@ -295,6 +329,10 @@ export class CreateReservationHandler {
         expectedVersion: created.value.getVersion(),
         commandId: request.commandId,
         tx,
+        criticalNoteWrites:
+          criticalNoteWriteInputs.length > 0
+            ? { actingStaffUserId: request.actor.id, now: request.nowOverride ?? this.clock.now(), add: criticalNoteWriteInputs, update: [], resolve: [] }
+            : undefined,
       });
 
       if (saveResult.type === "IDEMPOTENT_REPLAY") {
@@ -302,7 +340,8 @@ export class CreateReservationHandler {
         if (!winner) {
           return fail([violation("CAP-D01.01-R44", "The reservation could not be located after a concurrent duplicate command was detected.")]);
         }
-        return ok(toOutcome(winner, []));
+        const winnerNotes = await this.repository.findCriticalNotesByReservationId(winner.getId().toString());
+        return ok(toOutcome(winner, [], winnerNotes));
       }
       if (saveResult.type === "CONCURRENCY_CONFLICT") {
         // A freshly generated identity cannot legitimately conflict — IdGenerator
@@ -344,7 +383,21 @@ export class CreateReservationHandler {
       const warnings: RuleViolation[] = potentialDuplicateDetected
         ? [violation("CAP-D01.01-R14", "A potentially duplicate reservation already exists.")]
         : [];
-      return ok(toOutcome(created.value, warnings));
+      // R1.3-I3 — built directly from what was just written in this SAME
+      // transaction, never a separate post-commit read: avoids a race
+      // between this transaction's commit and a subsequent query, and
+      // every field needed (id/noteType/detail; status/timestamps are
+      // always Active/`now`/null for a brand-new note) is already known.
+      const createdNotes = criticalNoteWriteInputs.map((n) => ({
+        id: n.id,
+        noteType: n.noteType,
+        detail: n.detail,
+        status: "Active",
+        createdAt: request.nowOverride ?? this.clock.now(),
+        updatedAt: request.nowOverride ?? this.clock.now(),
+        resolvedAt: null,
+      }));
+      return ok(toOutcome(created.value, warnings, createdNotes));
     };
 
     if (request.tx || existingContact) {
@@ -371,7 +424,10 @@ export class CreateReservationHandler {
         // self-contained-transaction IDEMPOTENT_REPLAY return — resolve
         // the actual winner against a fresh connection instead.
         const winner = await this.repository.findByCommandId(request.commandId);
-        if (winner) return ok(toOutcome(winner, []));
+        if (winner) {
+          const winnerNotes = await this.repository.findCriticalNotesByReservationId(winner.getId().toString());
+          return ok(toOutcome(winner, [], winnerNotes));
+        }
         return fail([violation("CAP-D01.01-R44", "The reservation could not be located after a concurrent duplicate command was detected.")]);
       }
       throw err;
@@ -379,14 +435,40 @@ export class CreateReservationHandler {
   }
 }
 
-/** Exported for AvailabilityOrchestrator, which needs to build the same outcome DTO shape when it resolves a race-lost commandId to its winning aggregate — see PrismaReservationRepository's ReservationCommandRaceLost. */
-export function toOutcome(aggregate: ReservationAggregate, warnings: readonly RuleViolation[]): CreateReservationOutcome {
+/**
+ * Exported for AvailabilityOrchestrator, which needs to build the same
+ * outcome DTO shape when it resolves a race-lost commandId to its
+ * winning aggregate — see PrismaReservationRepository's
+ * ReservationCommandRaceLost.
+ *
+ * R1.3-I3 — `criticalNotes` is supplied by the caller (never fetched
+ * internally here) so this stays a pure, synchronous DTO mapper; every
+ * call site already has the right notes at hand — either freshly
+ * written in the same transaction, or read back via
+ * `repository.findCriticalNotesByReservationId()` for a replay/race-lost
+ * winner. Projected through the same explicit allowlist api/app.ts's own
+ * read contract uses — actor ids are never included.
+ */
+export function toOutcome(
+  aggregate: ReservationAggregate,
+  warnings: readonly RuleViolation[],
+  criticalNotes: ReadonlyArray<{
+    readonly id: string;
+    readonly noteType: string;
+    readonly detail: string;
+    readonly status: string;
+    readonly createdAt: Date;
+    readonly updatedAt: Date;
+    readonly resolvedAt: Date | null;
+  }> = []
+): CreateReservationOutcome {
   return {
     reservationId: aggregate.getId().toString(),
     status: aggregate.getStatus(),
     contactName: aggregate.getContactName(),
     preferredArea: aggregate.getPreferredArea(),
     notes: aggregate.getNotes(),
+    criticalNotes,
     warnings,
   };
 }

@@ -1312,3 +1312,138 @@ describe("GET /teppanyaki-occupancy", () => {
     expect(res.body.days).toHaveLength(0);
   });
 });
+
+describe("R1.3-I3 — Reservation critical-note HTTP contract", () => {
+  it("creates typed notes atomically, attributes them to the authenticated staff user, and exposes only the safe response allowlist", async () => {
+    const res = await create(sharedAgent, {
+      commandId: "http-critical-create",
+      criticalNotes: [
+        { noteType: "Allergy", detail: "  noten  " },
+        { noteType: "Critical", detail: "rolstoel" },
+      ],
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.criticalNotes).toHaveLength(2);
+    expect(res.body.criticalNotes[0]).toEqual(
+      expect.objectContaining({ noteType: "Allergy", detail: "noten", status: "Active", resolvedAt: null })
+    );
+    expect(Object.keys(res.body.criticalNotes[0]).sort()).toEqual(
+      ["createdAt", "detail", "id", "noteType", "resolvedAt", "status", "updatedAt"].sort()
+    );
+
+    const persisted = await prisma.reservationCriticalNote.findMany({ where: { reservationId: res.body.reservationId } });
+    expect(persisted).toHaveLength(2);
+    expect(persisted.every((note) => note.createdByStaffUserId === "staff-owner-test")).toBe(true);
+  });
+
+  it("rejects an invalid create note without writing the Reservation, event, capacity commitment, or note", async () => {
+    const res = await create(sharedAgent, {
+      commandId: "http-critical-create-invalid",
+      criticalNotes: [{ noteType: "Other", detail: "x" }],
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.violations).toEqual(expect.arrayContaining([expect.objectContaining({ ruleId: "CAP-D05.02-R02" })]));
+    expect(await prisma.reservation.count()).toBe(0);
+    expect(await prisma.reservationEvent.count()).toBe(0);
+    expect(await prisma.capacityCommitment.count()).toBe(0);
+    expect(await prisma.reservationCriticalNote.count()).toBe(0);
+  });
+
+  it("adds, updates, and resolves explicitly; a note-only Modify increments version and emits one safe ReservationModified event", async () => {
+    const created = await create(sharedAgent, {
+      commandId: "http-critical-modify-seed",
+      criticalNotes: [
+        { noteType: "Allergy", detail: "noten" },
+        { noteType: "Critical", detail: "oude instructie" },
+      ],
+    });
+    const [allergy, critical] = created.body.criticalNotes;
+    const before = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-critical-modify",
+      criticalNoteChanges: {
+        add: [{ noteType: "Critical", detail: "nieuwe instructie" }],
+        update: [{ id: allergy.id, noteType: "Allergy", detail: "noten en pinda" }],
+        resolve: [{ id: critical.id }],
+      },
+    });
+    expect(patched.status).toBe(204);
+
+    const after = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(after.version).toBe(before.version + 1);
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId: created.body.reservationId, type: "ReservationModified" } });
+    expect(events).toHaveLength(1);
+    const payload = JSON.parse(events[0]!.payload);
+    expect(payload.changedFields).toEqual(["criticalNotes"]);
+    expect(JSON.stringify(payload)).not.toContain("createdByStaffUserId");
+    expect(JSON.stringify(payload)).not.toContain("updatedByStaffUserId");
+
+    const detail = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.criticalNotes).toHaveLength(3);
+    expect(detail.body.criticalNotes.find((note: { id: string }) => note.id === critical.id).status).toBe("Resolved");
+  });
+
+  it("the daily list exposes Active notes only while detail preserves resolved history", async () => {
+    const created = await create(sharedAgent, {
+      commandId: "http-critical-list-seed",
+      criticalNotes: [{ noteType: "Allergy", detail: "noten" }],
+    });
+    const noteId = created.body.criticalNotes[0].id;
+    const resolved = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-critical-list-resolve",
+      criticalNoteChanges: { resolve: [{ id: noteId }] },
+    });
+    expect(resolved.status).toBe(204);
+
+    const date = FUTURE_DATE.toISOString().slice(0, 10);
+    const list = await sharedAgent.get(`/reservations?date=${date}`);
+    expect(list.status).toBe(200);
+    expect(list.body.reservations[0].criticalNotes).toEqual([]);
+
+    const detail = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(detail.body.criticalNotes).toEqual([expect.objectContaining({ id: noteId, status: "Resolved" })]);
+  });
+
+  it("rejects duplicate and cross-Reservation ids atomically with no parent version or note mutation", async () => {
+    const first = await create(sharedAgent, {
+      commandId: "http-critical-owner",
+      criticalNotes: [{ noteType: "Allergy", detail: "noten" }],
+    });
+    const second = await create(sharedAgent, { commandId: "http-critical-other" });
+    const noteId = first.body.criticalNotes[0].id;
+    const before = await prisma.reservation.findUniqueOrThrow({ where: { id: second.body.reservationId } });
+
+    const cross = await patchReq(sharedAgent, `/availability/reservations/${second.body.reservationId}`).send({
+      commandId: "http-critical-cross",
+      criticalNoteChanges: { update: [{ id: noteId, noteType: "Allergy", detail: "mutated" }] },
+    });
+    expect(cross.status).toBe(422);
+
+    const duplicate = await patchReq(sharedAgent, `/availability/reservations/${first.body.reservationId}`).send({
+      commandId: "http-critical-duplicate",
+      criticalNoteChanges: {
+        update: [{ id: noteId, noteType: "Allergy", detail: "mutated" }],
+        resolve: [{ id: noteId }],
+      },
+    });
+    expect(duplicate.status).toBe(422);
+    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: second.body.reservationId } })).version).toBe(before.version);
+    expect((await prisma.reservationCriticalNote.findUniqueOrThrow({ where: { id: noteId } })).detail).toBe("noten");
+    expect((await prisma.reservationCriticalNote.findUniqueOrThrow({ where: { id: noteId } })).status).toBe("Active");
+  });
+
+  it("requires the existing authenticated reservation permissions and never trusts actor data from the request body", async () => {
+    const unauthenticated = await post(request.agent(sharedApp), "/availability/reservations").send(
+      validBody({
+        commandId: "http-critical-unauthenticated",
+        actor: { id: "forged-owner" },
+        criticalNotes: [{ noteType: "Allergy", detail: "noten" }],
+      })
+    );
+    expect(unauthenticated.status).toBe(401);
+    expect(await prisma.reservationCriticalNote.count()).toBe(0);
+  });
+});

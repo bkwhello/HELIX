@@ -148,3 +148,81 @@ describe("CAP-D01.01-R11 — Past reservation creation", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// CAP-D01.01-AC31 — Allergy Information Is Not Reduced to Unstructured
+// Notes. R1.6-P1B12 found this genuinely violated (Reservation.notes was
+// the only place allergy information could live); R1.3-I3 (CAP-D05.02)
+// delivers the required authoritative, typed structure — ReservationCreated
+// now carries its own `criticalNotes`, entirely separate from `notes`.
+describe("AC31 — Allergy Information Is Not Reduced to Unstructured Notes", () => {
+  it("a create-time Allergy note is carried on the event as a typed, separate record — never folded into notes", () => {
+    const result = ReservationAggregate.create(
+      validCreateCommand({
+        notes: "window seat please",
+        criticalNotes: [{ id: "note-1", noteType: "Allergy", detail: "pinda-allergie" }],
+      })
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const created = result.value.pullEvents()[0];
+    expect(created?.type).toBe("ReservationCreated");
+    if (created?.type !== "ReservationCreated") return;
+    // notes (operational context) and criticalNotes (the authoritative
+    // record) are two distinct fields — AC31's own complaint was that
+    // there was only ONE place (notes) for this information to live.
+    expect(created.notes).toBe("window seat please");
+    expect(created.criticalNotes).toEqual([{ id: "note-1", noteType: "Allergy", detail: "pinda-allergie" }]);
+  });
+
+  it("supports multiple critical notes of mixed type on the same reservation", () => {
+    const result = ReservationAggregate.create(
+      validCreateCommand({
+        criticalNotes: [
+          { id: "note-1", noteType: "Allergy", detail: "noten" },
+          { id: "note-2", noteType: "Critical", detail: "rolstoeltoegankelijke tafel nodig" },
+        ],
+      })
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const created = result.value.pullEvents()[0];
+    if (created?.type !== "ReservationCreated") return;
+    expect(created.criticalNotes).toHaveLength(2);
+  });
+
+  it("omitting criticalNotes entirely creates a reservation with none — never inferred from notes", () => {
+    const result = ReservationAggregate.create(validCreateCommand({ notes: "allergieën, speciale wensen" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const created = result.value.pullEvents()[0];
+    if (created?.type !== "ReservationCreated") return;
+    expect(created.criticalNotes ?? []).toEqual([]);
+  });
+
+  it("re-validates every critical note itself — never trusts the caller's own claim of validity (CAP-D05.02-R01/R02)", () => {
+    const result = ReservationAggregate.create(
+      validCreateCommand({ criticalNotes: [{ id: "note-1", noteType: "NotARealType" as never, detail: "x" }] })
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.violations.some((v) => v.ruleId === "CAP-D05.02-R02")).toBe(true);
+  });
+
+  it("rejects an empty-after-trim detail even if the handler already validated it once", () => {
+    const result = ReservationAggregate.create(
+      validCreateCommand({ criticalNotes: [{ id: "note-1", noteType: "Allergy", detail: "   " }] })
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.violations.some((v) => v.ruleId === "CAP-D05.02-R01")).toBe(true);
+  });
+
+  it("a rejected critical note means NOTHING is created — not the reservation, not any note", () => {
+    const result = ReservationAggregate.create(
+      validCreateCommand({ criticalNotes: [{ id: "note-1", noteType: "Bogus" as never, detail: "x" }] })
+    );
+    expect(result.ok).toBe(false);
+  });
+});

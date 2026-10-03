@@ -255,3 +255,117 @@ describe("AC17 — Reject Unauthorized Modification", () => {
     expect(aggregate.pullEvents()).toHaveLength(0);
   });
 });
+
+// R1.3-I3 — CAP-D05.02. A critical-note-only Modify: `changes` is entirely
+// empty, the ONLY thing that changed is the critical-note set — exactly
+// the shape ModifyReservationHandler builds for a pilot "add/edit/resolve"
+// action (see api/app.ts's own PATCH route, which sends `changes: {}`
+// alongside `criticalNoteChanges`).
+describe("CAP-D05.02 — critical-note-only Modify", () => {
+  it("a note-only Modify still increments state and emits exactly one ReservationModified event", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify(
+      {
+        ...testEnvelope(),
+        actor: staffActor,
+        changes: {},
+        criticalNotesChanged: true,
+        previousCriticalNotes: [],
+        resultingCriticalNotes: [{ id: "note-1", noteType: "Allergy", detail: "noten", status: "Active" }],
+      },
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    const events = aggregate.pullEvents();
+    expect(events).toHaveLength(1);
+    const modified = events[0];
+    expect(modified?.type).toBe("ReservationModified");
+    if (modified?.type !== "ReservationModified") return;
+    expect(modified.changedFields).toEqual(["criticalNotes"]);
+    expect(modified.previousValues["criticalNotes"]).toEqual([]);
+    expect(modified.resultingValues["criticalNotes"]).toEqual([{ id: "note-1", noteType: "Allergy", detail: "noten", status: "Active" }]);
+  });
+
+  it("carries previous/resulting snapshots for an update (one note's before/after state)", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify(
+      {
+        ...testEnvelope(),
+        actor: staffActor,
+        changes: {},
+        criticalNotesChanged: true,
+        previousCriticalNotes: [{ id: "note-1", noteType: "Allergy", detail: "noten", status: "Active" }],
+        resultingCriticalNotes: [{ id: "note-1", noteType: "Allergy", detail: "pinda's EN noten", status: "Active" }],
+      },
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    const modified = aggregate.pullEvents()[0];
+    if (modified?.type !== "ReservationModified") return;
+    expect(modified.previousValues["criticalNotes"]).toEqual([{ id: "note-1", noteType: "Allergy", detail: "noten", status: "Active" }]);
+    expect(modified.resultingValues["criticalNotes"]).toEqual([{ id: "note-1", noteType: "Allergy", detail: "pinda's EN noten", status: "Active" }]);
+  });
+
+  it("carries a Resolved status in the resulting snapshot (one-way resolution)", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify(
+      {
+        ...testEnvelope(),
+        actor: staffActor,
+        changes: {},
+        criticalNotesChanged: true,
+        previousCriticalNotes: [{ id: "note-1", noteType: "Critical", detail: "rolstoel", status: "Active" }],
+        resultingCriticalNotes: [{ id: "note-1", noteType: "Critical", detail: "rolstoel", status: "Resolved" }],
+      },
+      NOW
+    );
+
+    expect(result.ok).toBe(true);
+    const modified = aggregate.pullEvents()[0];
+    if (modified?.type !== "ReservationModified") return;
+    expect((modified.resultingValues["criticalNotes"] as unknown[])[0]).toMatchObject({ status: "Resolved" });
+  });
+
+  it("a note-only Modify against a TERMINAL (Cancelled) reservation is rejected by the existing, unmodified CAP-D01.01-R16 check", () => {
+    const aggregate = createProposedReservation();
+    const cancelResult = aggregate.cancel({ ...testEnvelope(), actor: staffActor }, NOW);
+    expect(cancelResult.ok).toBe(true);
+    aggregate.pullEvents();
+
+    const result = aggregate.modify(
+      {
+        ...testEnvelope(),
+        actor: staffActor,
+        changes: {},
+        criticalNotesChanged: true,
+        previousCriticalNotes: [],
+        resultingCriticalNotes: [{ id: "note-1", noteType: "Allergy", detail: "noten", status: "Active" }],
+      },
+      NOW
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.ruleId === "CAP-D01.01-R16")).toBe(true);
+    }
+    // Nothing was emitted — the rejected attempt produced no event at all.
+    expect(aggregate.pullEvents()).toHaveLength(0);
+  });
+
+  it("a plain field-only Modify (criticalNotesChanged omitted) is entirely unaffected — changedFields never mentions criticalNotes", () => {
+    const aggregate = createProposedReservation();
+
+    const result = aggregate.modify({ ...testEnvelope(), actor: staffActor, changes: { partySize: 5 } }, NOW);
+
+    expect(result.ok).toBe(true);
+    const modified = aggregate.pullEvents()[0];
+    if (modified?.type !== "ReservationModified") return;
+    expect(modified.changedFields).not.toContain("criticalNotes");
+    expect(modified.previousValues["criticalNotes"]).toBeUndefined();
+  });
+});

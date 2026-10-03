@@ -242,6 +242,8 @@
   .status { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; }
   /* P1-B7 — presentation-only, non-interactive: no click handler, no data attribute driving any action. */
   .late-badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem; background: var(--danger-bg); color: var(--danger-text); }
+  /* R1.3-I3 — CAP-D05.02. Presentation-only, same non-interactive posture as .late-badge above: reflects r.criticalNotes (Active-only, from the list read) and drives nothing. */
+  .critical-note-badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem; background: var(--danger-bg); color: var(--danger-text); }
   .status-Proposed { background: var(--status-grey-bg); color: var(--status-grey-text); }
   .status-Confirmed { background: var(--status-blue-bg); color: var(--status-blue-text); }
   .status-Cancelled { background: var(--danger-bg); color: var(--danger-text); }
@@ -296,6 +298,22 @@
   .edit-banner { display: none; margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 6px; background: var(--warn-bg); color: var(--warn-text); font-size: 0.9rem; }
   .edit-banner.active { display: block; }
   .hint { font-size: 0.85rem; color: var(--warn-text); padding-top: 0.4rem; }
+  /* R1.3-I3 — CAP-D05.02. Visually separate from "Opmerkingen" (the plain, disclaimed free-text field) by a bordered, tinted box — never merged into the same input. */
+  .critical-notes-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin: 0.75rem 0; background: var(--warn-bg); }
+  .critical-notes-section > label { margin-top: 0; }
+  .critical-notes-hint { margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--warn-text); }
+  .critical-notes-empty { margin: 0; font-size: 0.85rem; color: var(--muted); }
+  .critical-note-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+  .critical-note-item:last-child { border-bottom: none; }
+  .critical-note-item.resolved { opacity: 0.7; }
+  .critical-note-type { font-weight: 600; min-width: 4.5rem; padding-top: 0.6rem; }
+  .critical-note-detail { flex: 1; padding-top: 0.6rem; }
+  .critical-note-detail-input { flex: 1 1 12rem; min-height: 44px; margin: 0; }
+  .critical-note-resolved-label { font-size: 0.78rem; color: var(--muted); padding-top: 0.6rem; }
+  .critical-note-actions { display: flex; gap: 0.4rem; }
+  .critical-note-add-row { display: flex; gap: 0.5rem; align-items: flex-start; margin-top: 0.5rem; }
+  .critical-note-add-row select { flex: 0 0 9rem; margin: 0; }
+  .critical-note-add-row input { flex: 1; margin: 0; }
   .link-button { background: none; border: none; padding: 0; color: var(--warn-text); text-decoration: underline; cursor: pointer; font-size: 0.85rem; text-align: left; }
   .occupancy-row { font-size: 0.9rem; }
   .occupancy-row td { padding: 0.4rem 0.3rem; }
@@ -574,7 +592,23 @@
       </select>
 
       <label for="notes">Opmerkingen</label>
-      <textarea id="notes" placeholder="allergieën, speciale wensen…"></textarea>
+      <textarea id="notes" placeholder="speciale wensen, voorkeuren…"></textarea>
+
+      <!-- R1.3-I3 — CAP-D05.02. A distinct, structured record — never part of the free-text "Opmerkingen" above. -->
+      <div class="critical-notes-section">
+        <label>Kritieke notities</label>
+        <p class="critical-notes-hint">Allergieën en andere kritieke informatie horen hier, niet bij Opmerkingen.</p>
+        <div id="critical-notes-list"></div>
+        <div class="critical-note-add-row">
+          <select id="critical-note-type">
+            <option value="Allergy">Allergie</option>
+            <option value="Critical">Kritiek</option>
+          </select>
+          <input id="critical-note-detail" type="text" placeholder="bijv. notenallergie" />
+        </div>
+        <button type="button" id="critical-note-add-button" class="secondary">Kritieke notitie toevoegen</button>
+        <div id="critical-note-message"></div>
+      </div>
 
       <button type="submit" id="create-submit">Reservering aanmaken</button>
       <button type="button" class="secondary" id="cancel-edit" style="display:none;">Annuleren</button>
@@ -881,6 +915,245 @@
   const editBanner = document.getElementById("edit-banner");
   const formTitle = document.getElementById("form-title");
 
+  // R1.3-I3 — CAP-D05.02. Explicit add/update/resolve mutations only —
+  // never a complete-replacement set, so omitting a note from any of this
+  // can never silently remove or resolve it (ReservationCriticalNote's own
+  // contract). Two local lists, never merged: pendingCriticalNotes holds
+  // not-yet-saved entries for a brand-new reservation (included in the
+  // CREATE request body itself, since there is no reservationId yet to
+  // PATCH against); editingCriticalNotes holds the ALREADY-persisted
+  // Active+Resolved notes of the reservation currently being edited
+  // (fetched via GET /reservations/:id — the one route that exposes
+  // Resolved notes too), each add/update/resolve against it is its own
+  // immediate, confirmed PATCH, matching the daily list's own established
+  // "immediate save, in-flight guard, no deferred batch" convention rather
+  // than the main form's own save-on-submit convention — resolving a
+  // safety record is exactly the kind of action that must not wait behind
+  // an unrelated field edit, or be silently lost if the form is abandoned.
+  let pendingCriticalNotes = [];
+  let editingCriticalNotes = [];
+  const criticalNotesList = document.getElementById("critical-notes-list");
+  const criticalNoteTypeSelect = document.getElementById("critical-note-type");
+  const criticalNoteDetailInput = document.getElementById("critical-note-detail");
+  const criticalNoteAddButton = document.getElementById("critical-note-add-button");
+  const criticalNoteMessage = document.getElementById("critical-note-message");
+
+  async function submitCriticalNoteChange(reservationId, criticalNoteChanges) {
+    try {
+      const res = await fetch(`/availability/reservations/${reservationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...actorHeaders() },
+        body: JSON.stringify({
+          commandId: `pilot-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          changes: {},
+          criticalNoteChanges,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showMessage(criticalNoteMessage, ruleMessages(data.violations) || data.message || "Kon kritieke notitie niet opslaan.", "error");
+        return { ok: false };
+      }
+      return { ok: true };
+    } catch (err) {
+      showMessage(criticalNoteMessage, "Netwerkfout: kon kritieke notitie niet opslaan.", "error");
+      return { ok: false };
+    }
+  }
+
+  // R1.3-I3 — CAP-D05.02. Shared guard for every PERSISTED critical-note
+  // mutation (add/update/resolve against an EXISTING reservation) —
+  // deliberately never used by the Create-mode local queue (pendingCriticalNotes
+  // add/remove), which has no network call and stays synchronous. Refuses
+  // re-entry (a second mutation cannot start while one is already in
+  // flight), disables every critical-note control BEFORE the awaited
+  // PATCH, and — in `finally` — clears the flag and re-renders from
+  // current state, which rebuilds the list with fresh, enabled controls
+  // in one step rather than re-enabling stale DOM nodes by hand.
+  let criticalNoteActionInFlight = false;
+
+  function setCriticalNoteControlsDisabled(disabled) {
+    criticalNoteAddButton.disabled = disabled;
+    criticalNoteTypeSelect.disabled = disabled;
+    criticalNoteDetailInput.disabled = disabled;
+    criticalNotesList.querySelectorAll("button, textarea").forEach((el) => {
+      el.disabled = disabled;
+    });
+  }
+
+  async function runCriticalNoteMutation(action) {
+    if (criticalNoteActionInFlight) return;
+    criticalNoteActionInFlight = true;
+    setCriticalNoteControlsDisabled(true);
+    try {
+      await action();
+    } finally {
+      criticalNoteActionInFlight = false;
+      renderCriticalNotes();
+    }
+  }
+
+  // Re-fetches the full Active+Resolved set from the detail route after
+  // every successful add/update/resolve — never trusts a locally-patched
+  // copy, since resolve/update are terminal-ish, server-validated actions
+  // (CAP-D05.02-R03/R04) whose exact resulting state should come from the
+  // server, not be guessed client-side.
+  async function refreshEditingCriticalNotes() {
+    if (!editingReservationId) return;
+    try {
+      const res = await fetch(`/reservations/${editingReservationId}`, { headers: actorHeaders() });
+      if (!res.ok) {
+        showMessage(criticalNoteMessage, "Kon kritieke notities niet laden.", "error");
+        return;
+      }
+      const data = await res.json();
+      editingCriticalNotes = data.criticalNotes || [];
+      renderCriticalNotes();
+    } catch (err) {
+      showMessage(criticalNoteMessage, "Netwerkfout: kon kritieke notities niet laden.", "error");
+    }
+  }
+
+  function renderCriticalNotes() {
+    criticalNotesList.innerHTML = "";
+    const notes = editingReservationId ? editingCriticalNotes : pendingCriticalNotes;
+    if (notes.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "critical-notes-empty";
+      empty.textContent = "Geen kritieke notities.";
+      criticalNotesList.appendChild(empty);
+      return;
+    }
+    for (const note of notes) {
+      const isResolved = note.status === "Resolved";
+      const item = document.createElement("div");
+      item.className = "critical-note-item" + (isResolved ? " resolved" : "");
+
+      const typeLabel = document.createElement("span");
+      typeLabel.className = "critical-note-type";
+      typeLabel.textContent = note.noteType === "Allergy" ? "Allergie" : "Kritiek";
+      item.appendChild(typeLabel);
+
+      if (!editingReservationId) {
+        // CREATE mode — nothing is persisted yet; "remove" only drops it
+        // from this local, not-yet-submitted list.
+        const detailSpan = document.createElement("span");
+        detailSpan.className = "critical-note-detail";
+        detailSpan.textContent = note.detail;
+        item.appendChild(detailSpan);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "edit-button";
+        removeButton.textContent = "Verwijderen";
+        removeButton.addEventListener("click", () => {
+          pendingCriticalNotes = pendingCriticalNotes.filter((n) => n.clientKey !== note.clientKey);
+          renderCriticalNotes();
+        });
+        item.appendChild(removeButton);
+      } else if (isResolved) {
+        // Resolved — read-only, clearly marked, never offered an edit/
+        // resolve control again (resolution is one-way).
+        const detailSpan = document.createElement("span");
+        detailSpan.className = "critical-note-detail";
+        detailSpan.textContent = note.detail;
+        item.appendChild(detailSpan);
+
+        const resolvedLabel = document.createElement("span");
+        resolvedLabel.className = "critical-note-resolved-label";
+        resolvedLabel.textContent = "Opgelost";
+        item.appendChild(resolvedLabel);
+      } else {
+        const detailInput = document.createElement("textarea");
+        detailInput.className = "critical-note-detail-input";
+        detailInput.value = note.detail;
+        item.appendChild(detailInput);
+
+        const actions = document.createElement("div");
+        actions.className = "critical-note-actions";
+
+        const saveButton = document.createElement("button");
+        saveButton.type = "button";
+        saveButton.className = "edit-button";
+        saveButton.textContent = "Opslaan";
+        saveButton.addEventListener("click", () => {
+          const detail = detailInput.value.trim();
+          if (!detail) {
+            showMessage(criticalNoteMessage, "Vul een omschrijving in.", "error");
+            return;
+          }
+          runCriticalNoteMutation(async () => {
+            const result = await submitCriticalNoteChange(editingReservationId, {
+              update: [{ id: note.id, noteType: note.noteType, detail }],
+            });
+            if (result.ok) {
+              clearMessage(criticalNoteMessage);
+              await refreshEditingCriticalNotes();
+            }
+          });
+        });
+        actions.appendChild(saveButton);
+
+        // Resolution is one-way (never un-resolved) — the one critical-
+        // note action that asks for confirmation first, same posture as
+        // cancelReservation's own "terminal, no undo" confirm().
+        const resolveButton = document.createElement("button");
+        resolveButton.type = "button";
+        resolveButton.className = "cancel-button";
+        resolveButton.textContent = "Oplossen";
+        resolveButton.addEventListener("click", () => {
+          // Confirmation happens BEFORE the shared in-flight guard engages
+          // — same "confirm first, then act" ordering as cancelReservation.
+          if (!confirm("Deze kritieke notitie als opgelost markeren? Dit kan niet ongedaan worden gemaakt.")) return;
+          runCriticalNoteMutation(async () => {
+            const result = await submitCriticalNoteChange(editingReservationId, { resolve: [{ id: note.id }] });
+            if (result.ok) {
+              clearMessage(criticalNoteMessage);
+              await refreshEditingCriticalNotes();
+            }
+          });
+        });
+        actions.appendChild(resolveButton);
+
+        item.appendChild(actions);
+      }
+
+      criticalNotesList.appendChild(item);
+    }
+  }
+
+  criticalNoteAddButton.addEventListener("click", () => {
+    const noteType = criticalNoteTypeSelect.value;
+    const detail = criticalNoteDetailInput.value.trim();
+    if (!detail) {
+      showMessage(criticalNoteMessage, "Vul een omschrijving in.", "error");
+      return;
+    }
+    if (editingReservationId) {
+      runCriticalNoteMutation(async () => {
+        const result = await submitCriticalNoteChange(editingReservationId, { add: [{ noteType, detail }] });
+        if (result.ok) {
+          criticalNoteDetailInput.value = "";
+          clearMessage(criticalNoteMessage);
+          await refreshEditingCriticalNotes();
+        }
+      });
+    } else {
+      // Create-mode local queue — no network call, never gated by the
+      // shared in-flight guard, stays synchronous.
+      pendingCriticalNotes.push({
+        clientKey: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        noteType,
+        detail,
+      });
+      criticalNoteDetailInput.value = "";
+      clearMessage(criticalNoteMessage);
+      renderCriticalNotes();
+    }
+  });
+
+  renderCriticalNotes();
+
   // Rather than a growing pile of small inline editors for every
   // correctable field (name, phone, date/time, aantal, bron), "Bewerken"
   // recalls the whole reservation into this same form and re-registers it
@@ -932,8 +1205,16 @@
   document.getElementById("guest-email").addEventListener("blur", checkPossibleContactMatches);
   document.getElementById("guest-name").addEventListener("input", () => clearContactMatchHint());
 
-  function enterEditMode(r) {
+  async function enterEditMode(r) {
     editingReservationId = r.id;
+    // R1.3-I3 — CAP-D05.02. Starts empty and re-renders immediately (so
+    // the section never shows a stale previous reservation's notes even
+    // for an instant), then refreshes from the detail route, the one read
+    // that also exposes Resolved notes.
+    editingCriticalNotes = [];
+    clearMessage(criticalNoteMessage);
+    renderCriticalNotes();
+    refreshEditingCriticalNotes();
     document.getElementById("guest-name").value = r.contactName || "";
     document.getElementById("guest-phone").value = r.contactId || "";
     // R1.3-I2 — the reservation's OWN recorded snapshot, not the linked
@@ -961,6 +1242,10 @@
 
   function exitEditMode() {
     editingReservationId = null;
+    editingCriticalNotes = [];
+    pendingCriticalNotes = [];
+    clearMessage(criticalNoteMessage);
+    renderCriticalNotes();
     createForm.reset();
     document.getElementById("contact-snapshot-row").style.display = "none";
     formTitle.textContent = "Nieuwe reservering";
@@ -1093,6 +1378,13 @@
         source: { category: document.getElementById("source").value },
         preferredArea: document.getElementById("preferred-area").value,
         notes: document.getElementById("notes").value.trim() || undefined,
+        // R1.3-I3 — CAP-D05.02. Omitted entirely when empty (undefined,
+        // not []), matching every other optional field on this form;
+        // these are brand-new Active notes only — id/status/actor/
+        // timestamps are never client-supplied (see CriticalNoteInput's
+        // own contract).
+        criticalNotes:
+          pendingCriticalNotes.length > 0 ? pendingCriticalNotes.map((n) => ({ noteType: n.noteType, detail: n.detail })) : undefined,
       };
 
       // R1.6-C0 — switched from the plain, capacity-unaware /reservations
@@ -1126,6 +1418,8 @@
       document.getElementById("guest-email").value = "";
       document.getElementById("preferred-area").value = "";
       document.getElementById("notes").value = "";
+      pendingCriticalNotes = [];
+      renderCriticalNotes();
       clearContactMatchHint();
       await loadList();
       await loadOccupancy();
@@ -1787,6 +2081,11 @@
         // Purely presentation: no click handler, no data-* attribute
         // driving any action, nothing here ever writes anything.
         const lateBadge = lateArrivalReservationIds.has(r.id) ? '<span class="late-badge">Laat</span>' : "";
+        // R1.3-I3 — CAP-D05.02. Presence-only indicator (list read is
+        // Active-only already); no detail text is ever interpolated here,
+        // so this needs no escaping of note content.
+        const criticalNoteBadge =
+          r.criticalNotes && r.criticalNotes.length > 0 ? '<span class="critical-note-badge">⚠ Kritiek</span>' : "";
 
         // Editable — a guest can change their mind, or staff learn the
         // real preference after the fact. Changing it also affects
@@ -2012,7 +2311,7 @@
 
         tr.innerHTML = `
           <td class="time-cell" data-label="Tijd">${time}</td>
-          <td data-label="Gast">${guest}${lateBadge}</td>
+          <td data-label="Gast">${guest}${lateBadge}${criticalNoteBadge}</td>
           <td data-label="Aantal">${r.partySize}</td>
           <td></td>
           <td></td>

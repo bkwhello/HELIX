@@ -58,6 +58,8 @@ export interface ReservationCreated extends BaseEvent {
   readonly preferredArea?: PreferredArea;
   /** CAP-D01.01-R36/R37 — operational context, not the authoritative allergy record. */
   readonly notes?: string;
+  /** R1.3-I3 — CAP-D05.02's own authoritative critical-note records created atomically with this reservation, each already carrying its real (repository-assigned-at-handler-time) id. Empty/absent when none were requested. */
+  readonly criticalNotes?: ReadonlyArray<{ readonly id: string; readonly noteType: string; readonly detail: string }>;
   /** R1.6-B — the reservation-time communication-language snapshot (assignment §10's "freeze for logical confirmation intent" list). */
   readonly communicationLanguage: CommunicationLanguage;
 }

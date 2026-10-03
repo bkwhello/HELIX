@@ -77,8 +77,37 @@ model Reservation {
   version               Int       @default(1)
 
   events ReservationEvent[]
+  criticalNotes ReservationCriticalNote[]
 
   @@map("reservations")
+}
+
+// R1.3-I3 — CAP-D05.02 (Allergy and Critical Note Management) foundation.
+// The sole authoritative allergy/critical-note record — `Reservation.notes`
+// above remains a separate, non-authoritative general-comments field,
+// untouched by this table. One row per note; never hard-deleted (see
+// `status` below) and never complete-replacement-overwritten — every
+// mutation is an explicit add/update/resolve, so omission can never
+// silently remove or resolve a safety record (see
+// R1.6-P1B13's own "Command contract correction").
+model ReservationCriticalNote {
+  id                   String    @id @default(cuid())
+  reservationId        String    @map("reservation_id")
+  // "Allergy" | "Critical" — CAP-D05.02-R02, CHECK-constrained below.
+  noteType             String    @map("note_type")
+  detail               String
+  // "Active" | "Resolved" — one-way transition only; CHECK-constrained below.
+  status               String    @default("Active")
+  createdByStaffUserId String    @map("created_by_staff_user_id")
+  updatedByStaffUserId String?   @map("updated_by_staff_user_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([reservationId])
+  @@map("reservation_critical_notes")
 }
 
 // Append-only event history. CAP-D01.01-R04 (history preserved) and

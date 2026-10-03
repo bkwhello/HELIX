@@ -7,6 +7,7 @@ import { ReservationSource } from "../value-objects/ReservationSource.js";
 import { Actor } from "../value-objects/Actor.js";
 import { PreferredArea } from "../value-objects/PreferredArea.js";
 import { CommunicationLanguage, DEFAULT_COMMUNICATION_LANGUAGE } from "../value-objects/CommunicationLanguage.js";
+import { CriticalNoteDetail, validateCriticalNoteType } from "../value-objects/ReservationCriticalNote.js";
 import {
   CreateReservationCommand,
   ModifyReservationCommand,
@@ -166,6 +167,17 @@ export class ReservationAggregate {
     for (const r of [idResult, dateTimeResult, partySizeResult, sourceResult]) {
       if (!r.ok) violations.push(...r.violations);
     }
+    // R1.3-I3 — CAP-D05.02. Re-validated here even though the caller
+    // (CreateReservationHandler) already validated these entries once —
+    // the aggregate never trusts a command's own claim of validity for
+    // anything it can re-check cheaply, the same posture every other
+    // field above already has.
+    for (const note of cmd.criticalNotes ?? []) {
+      const typeResult = validateCriticalNoteType(note.noteType);
+      const detailResult = CriticalNoteDetail.create(note.detail);
+      if (!typeResult.ok) violations.push(...typeResult.violations);
+      if (!detailResult.ok) violations.push(...detailResult.violations);
+    }
     if (violations.length > 0) {
       return fail(violations);
     }
@@ -237,6 +249,7 @@ export class ReservationAggregate {
       potentialDuplicateWarning: duplicateWarning !== null,
       preferredArea: cmd.preferredArea,
       notes: cmd.notes,
+      criticalNotes: cmd.criticalNotes?.map((n) => ({ id: n.id, noteType: n.noteType, detail: n.detail })),
       communicationLanguage,
     });
 
@@ -252,6 +265,18 @@ export class ReservationAggregate {
     const changedFields = Object.keys(cmd.changes).filter(
       (k) => (cmd.changes as Record<string, unknown>)[k] !== undefined
     );
+    // R1.3-I3 — CAP-D05.02. A real critical-note change is a changed
+    // field for every purpose this list already serves — most
+    // importantly, CAP-D01.01-R16's own terminal-state check below reads
+    // `currentStatus`/`isAuthorizedCorrection` directly (never
+    // `changedFields.length`), so a note-only Modify against a terminal
+    // Reservation is already rejected by that existing, unmodified
+    // check; this addition only affects the resulting event's own
+    // `changedFields`/`previousValues`/`resultingValues`, never which
+    // rule fires.
+    if (cmd.criticalNotesChanged) {
+      changedFields.push("criticalNotes");
+    }
 
     const violations: RuleViolation[] = [
       ...checkModificationAuthorization(cmd.actor),
@@ -358,6 +383,11 @@ export class ReservationAggregate {
     if (cmd.changes.arrivedAt !== undefined) {
       previousValues["arrivedAt"] = this.arrivedAt;
       resultingValues["arrivedAt"] = cmd.changes.arrivedAt;
+    }
+
+    if (cmd.criticalNotesChanged) {
+      previousValues["criticalNotes"] = cmd.previousCriticalNotes;
+      resultingValues["criticalNotes"] = cmd.resultingCriticalNotes;
     }
 
     if (violations.length > 0) {

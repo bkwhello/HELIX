@@ -152,6 +152,6 @@ describe("End-to-end — a real reservation creation issues a real credential at
     expect(result.type).toBe("CREATED");
     if (result.type !== "CREATED") throw new Error("unreachable");
     // The outcome DTO returned to the (staff) HTTP caller has a fixed, known field set — no token-shaped field anywhere in it.
-    expect(Object.keys(result.outcome).sort()).toEqual(["contactName", "notes", "preferredArea", "reservationId", "status", "warnings"]);
+    expect(Object.keys(result.outcome).sort()).toEqual(["contactName", "criticalNotes", "notes", "preferredArea", "reservationId", "status", "warnings"]);
   });
 });

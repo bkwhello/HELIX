@@ -1,6 +1,39 @@
 import { ReservationAggregate } from "../aggregates/ReservationAggregate.js";
 import { ReservationId } from "../value-objects/ReservationId.js";
 import { TransactionContext } from "../shared/TransactionContext.js";
+import { CriticalNoteType, CriticalNoteStatus } from "../value-objects/ReservationCriticalNote.js";
+
+/** R1.3-I3 — CAP-D05.02. The full persisted shape of one critical note, as read back. Actor ids are included here (repository-internal) but are NEVER part of the ordinary Reservation API response allowlist — see api/app.ts's own projection. */
+export interface ReservationCriticalNoteRecord {
+  readonly id: string;
+  readonly reservationId: string;
+  readonly noteType: CriticalNoteType;
+  readonly detail: string;
+  readonly status: CriticalNoteStatus;
+  readonly createdByStaffUserId: string;
+  readonly updatedByStaffUserId: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly resolvedAt: Date | null;
+}
+
+/**
+ * R1.3-I3 — the already-validated, ready-to-apply instructions for the
+ * child-note side of one Modify save() call. The repository performs no
+ * validation here (ModifyReservationHandler already validated identity/
+ * lifecycle rules against a fresh pre-read — see CriticalNoteRules.ts) —
+ * it only executes exactly these three operations, atomically alongside
+ * the Reservation row update, the ReservationEvent insert, and the
+ * AppliedCommand marker, all gated by the SAME optimistic version check
+ * save() already performs on the parent Reservation.
+ */
+export interface CriticalNoteWrites {
+  readonly actingStaffUserId: string;
+  readonly now: Date;
+  readonly add: ReadonlyArray<{ readonly id: string; readonly noteType: CriticalNoteType; readonly detail: string }>;
+  readonly update: ReadonlyArray<{ readonly id: string; readonly noteType: CriticalNoteType; readonly detail: string }>;
+  readonly resolve: ReadonlyArray<{ readonly id: string }>;
+}
 
 /**
  * Outcome of a save() attempt. Concurrency conflicts and a lost
@@ -82,5 +115,39 @@ export interface ReservationRepository {
     readonly expectedVersion: number;
     readonly commandId: string;
     readonly tx?: TransactionContext;
+    /**
+     * R1.3-I3 — CAP-D05.02. Omitted/undefined: no critical-note change
+     * (today's unchanged behavior for every existing caller). When
+     * supplied, `add`/`update`/`resolve` are executed atomically inside
+     * the SAME transaction and gated by the SAME optimistic version
+     * check as the Reservation row update — a version mismatch rolls
+     * back the note writes too, exactly like the event/AppliedCommand
+     * writes already do.
+     */
+    readonly criticalNoteWrites?: CriticalNoteWrites;
   }): Promise<SaveResult>;
+
+  /**
+   * R1.3-I3 — CAP-D05.02. Unlocked, non-authoritative read used by
+   * ModifyReservationHandler to validate an `add`/`update`/`resolve`
+   * request BEFORE calling aggregate.modify()/save() — the SAME timing
+   * convention `servicePeriodId` revalidation already uses in
+   * ModifyReservationHandler. Never used to decide what is safe to
+   * WRITE; `save()`'s own optimistic version check is what actually
+   * guards concurrent writes to the same Reservation (see
+   * CriticalNoteWrites's own doc comment).
+   */
+  findCriticalNotesByReservationId(reservationId: string, tx?: TransactionContext): Promise<readonly ReservationCriticalNoteRecord[]>;
+
+  /**
+   * R1.3-I3 — CAP-D05.02. Batched read for GET /reservations (one query
+   * for the whole day's list, never N+1) — `activeOnly: true` for the
+   * list view, `false` for a single-reservation detail view. Ordered
+   * `(reservationId, createdAt ASC, id ASC)` — deterministic, matching
+   * every other append-ordered read in this codebase.
+   */
+  findCriticalNotesByReservationIds(
+    reservationIds: readonly string[],
+    options: { readonly activeOnly: boolean }
+  ): Promise<readonly ReservationCriticalNoteRecord[]>;
 }

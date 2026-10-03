@@ -355,7 +355,7 @@ export function createApp(deps: AppDependencies): Express {
     communicationOutboxService,
     guestManagementTokenService
   );
-  const modifyHandler = new ModifyReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock, deps.servicePeriodReader);
+  const modifyHandler = new ModifyReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock, deps.servicePeriodReader, deps.idGenerator);
   const confirmHandler = new ConfirmReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const cancelHandler = new CancelReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
   const completeHandler = new CompleteReservationHandler(deps.repository, deps.eventIdGenerator, deps.clock);
@@ -493,6 +493,39 @@ export function createApp(deps: AppDependencies): Express {
       return null;
     }
     return { present: true, value };
+  }
+
+  /**
+   * R1.3-I3 — CAP-D05.02. Shape only: `add`/`update`/`resolve`, when
+   * present, must each be an array, and every `update`/`resolve` entry
+   * must carry a string `id` (so ModifyReservationHandler can safely
+   * index into it) — per-entry noteType/detail content, and every
+   * identity/lifecycle rule (CAP-D05.02-R01..R04), are validated exactly
+   * once, inside the handler, never duplicated here. Returns `null` when
+   * the shape is fine (including entirely absent).
+   */
+  function validateCriticalNoteChangeRequestShape(value: unknown): { ruleId: string; message: string } | null {
+    if (value === undefined) return null;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return { ruleId: "CAP-D05.02-R01", message: "criticalNoteChanges must be an object." };
+    }
+    const record = value as Record<string, unknown>;
+    for (const key of ["add", "update", "resolve"]) {
+      if (record[key] === undefined) continue;
+      if (!Array.isArray(record[key])) {
+        return { ruleId: "CAP-D05.02-R01", message: `criticalNoteChanges.${key} must be an array.` };
+      }
+    }
+    for (const key of ["update", "resolve"]) {
+      const entries = record[key];
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if (typeof entry !== "object" || entry === null || typeof (entry as Record<string, unknown>)["id"] !== "string") {
+          return { ruleId: "CAP-D05.02-R03", message: `Each criticalNoteChanges.${key} entry must have a string id.` };
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -770,9 +803,24 @@ export function createApp(deps: AppDependencies): Express {
     }
 
     const aggregates = await deps.repository.findByDate(date);
+    // R1.3-I3 — CAP-D05.02. One batched query for the whole day's list,
+    // never N+1 — see findCriticalNotesByReservationIds's own doc
+    // comment. List exposes Active notes only.
+    const criticalNotesByReservationId = new Map<string, ReturnType<typeof serializeCriticalNote>[]>();
+    if (aggregates.length > 0) {
+      const notes = await deps.repository.findCriticalNotesByReservationIds(
+        aggregates.map((a) => a.getId().toString()),
+        { activeOnly: true }
+      );
+      for (const note of notes) {
+        const list = criticalNotesByReservationId.get(note.reservationId) ?? [];
+        list.push(serializeCriticalNote(note));
+        criticalNotesByReservationId.set(note.reservationId, list);
+      }
+    }
     res.status(200).json({
       date: date.toISOString().slice(0, 10),
-      reservations: aggregates.map(serializeReservation),
+      reservations: aggregates.map((a) => serializeReservation(a, criticalNotesByReservationId.get(a.getId().toString()) ?? [])),
     });
   });
 
@@ -1679,7 +1727,9 @@ export function createApp(deps: AppDependencies): Express {
       res.status(404).json({ message: "Reservation not found." });
       return;
     }
-    res.status(200).json(serializeReservation(aggregate));
+    // R1.3-I3 — CAP-D05.02. Detail exposes Active AND Resolved notes.
+    const notes = await deps.repository.findCriticalNotesByReservationId(aggregate.getId().toString());
+    res.status(200).json(serializeReservation(aggregate, notes.map(serializeCriticalNote)));
   });
 
   // P1-B4-A — CAP-D03.03/CAP-D04.01 read-only discovery: "which physical
@@ -2203,6 +2253,8 @@ export function createApp(deps: AppDependencies): Express {
         preferredArea?: string;
         notes?: string;
         communicationLanguage?: string;
+        /** R1.3-I3 — CAP-D05.02. Shape-checked here only (is it an array at all); per-entry noteType/detail validation (CAP-D05.02-R01/R02) happens once, inside CreateReservationHandler, surfacing as the existing VALIDATION_FAILED/422 {violations} case below. */
+        criticalNotes?: unknown;
       };
 
       if (!req.staffPrincipal) return;
@@ -2210,6 +2262,10 @@ export function createApp(deps: AppDependencies): Express {
 
       if (!body.preferredArea || !isCapacityPoolId(body.preferredArea)) {
         res.status(422).json({ message: `preferredArea must be one of the capacity-managed areas for a capacity-aware create. Received: ${String(body.preferredArea)}.` });
+        return;
+      }
+      if (body.criticalNotes !== undefined && !Array.isArray(body.criticalNotes)) {
+        res.status(422).json({ violations: [{ ruleId: "CAP-D05.02-R01", message: "criticalNotes must be an array." }] });
         return;
       }
       const communicationLanguage = parseCommunicationLanguage(body.communicationLanguage, res);
@@ -2228,6 +2284,7 @@ export function createApp(deps: AppDependencies): Express {
         source: body.source as never,
         preferredArea: body.preferredArea,
         notes: body.notes,
+        criticalNotes: Array.isArray(body.criticalNotes) ? (body.criticalNotes as never) : undefined,
         communicationLanguage: communicationLanguage.present ? communicationLanguage.value : undefined,
         actor,
       });
@@ -2320,12 +2377,20 @@ export function createApp(deps: AppDependencies): Express {
         });
 
         switch (result.type) {
-          case "CREATED_AND_SEATED":
-            res.status(201).json({ ...result.outcome, seating: { status: "Seated", assignmentId: result.assignment.id, seatedAt: result.assignment.seatedAt } });
+          case "CREATED_AND_SEATED": {
+            // R1.3-I3 — the immediate-walk-in contract remains deliberately
+            // narrower than ordinary Reservation creation. The shared
+            // CreateReservationOutcome now carries criticalNotes, but this
+            // endpoint accepts none and must not grow a new response field.
+            const { criticalNotes: _criticalNotes, ...walkInOutcome } = result.outcome;
+            res.status(201).json({ ...walkInOutcome, seating: { status: "Seated", assignmentId: result.assignment.id, seatedAt: result.assignment.seatedAt } });
             return;
-          case "CREATED_UNSEATED":
-            res.status(201).json({ ...result.outcome, seating: { status: "Unseated" } });
+          }
+          case "CREATED_UNSEATED": {
+            const { criticalNotes: _criticalNotes, ...walkInOutcome } = result.outcome;
+            res.status(201).json({ ...walkInOutcome, seating: { status: "Unseated" } });
             return;
+          }
           case "NOT_CREATED":
             switch (result.result.type) {
               case "CAPACITY_UNAVAILABLE":
@@ -2368,6 +2433,12 @@ export function createApp(deps: AppDependencies): Express {
           arrivedAt?: string | null;
         };
         isServicePeriodStillValid?: boolean;
+        /** R1.3-I3 — CAP-D05.02. Shape-checked here only; per-entry/identity validation (CAP-D05.02-R01/R02/R03/R04) happens once, inside ModifyReservationHandler, surfacing as the existing VALIDATION_FAILED/422 {violations} case below. */
+        criticalNoteChanges?: {
+          add?: unknown;
+          update?: unknown;
+          resolve?: unknown;
+        };
       };
 
       if (!req.staffPrincipal) return;
@@ -2375,6 +2446,12 @@ export function createApp(deps: AppDependencies): Express {
 
       const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
       if (!preferredArea) return;
+
+      const criticalNoteChangesShapeViolation = validateCriticalNoteChangeRequestShape(body.criticalNoteChanges);
+      if (criticalNoteChangesShapeViolation) {
+        res.status(422).json({ violations: [criticalNoteChangesShapeViolation] });
+        return;
+      }
 
       // R1.3-I2 — validated BEFORE modifyWithCapacity/ModifyReservationHandler
       // are ever invoked, using the SAME PhoneNumber/EmailAddress value
@@ -2424,6 +2501,7 @@ export function createApp(deps: AppDependencies): Express {
             body.changes?.arrivedAt === undefined ? undefined : body.changes.arrivedAt === null ? null : new Date(body.changes.arrivedAt),
         },
         isServicePeriodStillValid: body.isServicePeriodStillValid,
+        criticalNoteChanges: body.criticalNoteChanges as never,
       });
 
       switch (result.type) {
@@ -2642,7 +2720,7 @@ function serializeReservation(aggregate: {
   getNotes(): string | undefined;
   getTableAssignment(): string | undefined;
   getArrivedAt(): Date | undefined;
-}) {
+}, criticalNotes: ReadonlyArray<ReturnType<typeof serializeCriticalNote>> = []) {
   return {
     id: aggregate.getId().toString(),
     status: aggregate.getStatus(),
@@ -2658,5 +2736,34 @@ function serializeReservation(aggregate: {
     notes: aggregate.getNotes(),
     tableAssignment: aggregate.getTableAssignment(),
     arrivedAt: aggregate.getArrivedAt()?.toISOString(),
+    criticalNotes,
+  };
+}
+
+/**
+ * R1.3-I3 — CAP-D05.02. The explicit API read allowlist: id/noteType/
+ * detail/status/timestamps only — actor ids (`createdByStaffUserId`/
+ * `updatedByStaffUserId`) are deliberately never included here. Actor
+ * attribution remains persisted (`ReservationCriticalNoteRecord`'s own
+ * full shape) for auditability, just never surfaced through an ordinary
+ * Reservation read.
+ */
+function serializeCriticalNote(note: {
+  readonly id: string;
+  readonly noteType: string;
+  readonly detail: string;
+  readonly status: string;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly resolvedAt: Date | null;
+}) {
+  return {
+    id: note.id,
+    noteType: note.noteType,
+    detail: note.detail,
+    status: note.status,
+    createdAt: note.createdAt.toISOString(),
+    updatedAt: note.updatedAt.toISOString(),
+    resolvedAt: note.resolvedAt ? note.resolvedAt.toISOString() : null,
   };
 }

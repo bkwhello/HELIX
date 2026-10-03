@@ -296,4 +296,83 @@ describe("CreateReservationHandler", () => {
 
     await expect(handler.handle(validRequest({ commandId: "cmd-3" }))).rejects.toThrow();
   });
+
+  // R1.3-I3 — CAP-D05.02 (application-layer coverage; aggregate-level
+  // AC31 proof lives in tests/acceptance/creation.test.ts).
+  describe("critical notes (create-time)", () => {
+    it("creates Active critical notes atomically with the reservation, returned via the explicit allowlist (no actor id)", async () => {
+      const result = await handler.handle(
+        validRequest({
+          commandId: "cmd-notes-1",
+          criticalNotes: [
+            { noteType: "Allergy", detail: "pinda-allergie" },
+            { noteType: "Critical", detail: "rolstoeltoegang nodig" },
+          ],
+        })
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.criticalNotes).toHaveLength(2);
+      expect(result.value.criticalNotes.map((n) => n.noteType).sort()).toEqual(["Allergy", "Critical"]);
+      expect(result.value.criticalNotes.every((n) => n.status === "Active")).toBe(true);
+      // The explicit read allowlist — never createdByStaffUserId/updatedByStaffUserId.
+      const keys = Object.keys(result.value.criticalNotes[0]!).sort();
+      expect(keys).toEqual(["createdAt", "detail", "id", "noteType", "resolvedAt", "status", "updatedAt"]);
+
+      const persisted = await repository.findCriticalNotesByReservationId(result.value.reservationId);
+      expect(persisted).toHaveLength(2);
+    });
+
+    it("trims the detail the same way the domain value object does", async () => {
+      const result = await handler.handle(
+        validRequest({ commandId: "cmd-notes-trim", criticalNotes: [{ noteType: "Allergy", detail: "  schaaldieren  " }] })
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.criticalNotes[0]?.detail).toBe("schaaldieren");
+    });
+
+    it("omitting criticalNotes creates a reservation with none", async () => {
+      const result = await handler.handle(validRequest({ commandId: "cmd-notes-none" }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.criticalNotes).toEqual([]);
+    });
+
+    it("rejects an invalid noteType BEFORE any write — nothing is persisted", async () => {
+      const result = await handler.handle(
+        validRequest({ commandId: "cmd-notes-bad-type", criticalNotes: [{ noteType: "NotAType", detail: "x" }] })
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.ruleId === "CAP-D05.02-R02")).toBe(true);
+      expect(await repository.findByCommandId("cmd-notes-bad-type")).toBeNull();
+    });
+
+    it("rejects an empty detail BEFORE any write — nothing is persisted", async () => {
+      const result = await handler.handle(
+        validRequest({ commandId: "cmd-notes-bad-detail", criticalNotes: [{ noteType: "Allergy", detail: "   " }] })
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.violations.some((v) => v.ruleId === "CAP-D05.02-R01")).toBe(true);
+      expect(await repository.findByCommandId("cmd-notes-bad-detail")).toBeNull();
+    });
+
+    it("a repeated commandId (idempotent replay) returns the SAME notes, not a second set", async () => {
+      const request = validRequest({ commandId: "cmd-notes-replay", criticalNotes: [{ noteType: "Allergy", detail: "noten" }] });
+
+      const first = await handler.handle(request);
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+
+      const second = await handler.handle(request);
+      expect(second.ok).toBe(true);
+      if (!second.ok) return;
+
+      expect(second.value.criticalNotes).toHaveLength(1);
+      expect(second.value.criticalNotes[0]?.id).toBe(first.value.criticalNotes[0]?.id);
+      const persisted = await repository.findCriticalNotesByReservationId(first.value.reservationId);
+      expect(persisted).toHaveLength(1); // never duplicated by the replay
+    });
+  });
 });

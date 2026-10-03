@@ -1,6 +1,7 @@
-import { ReservationRepository, SaveResult } from "../../domain/repositories/ReservationRepository.js";
+import { ReservationRepository, SaveResult, ReservationCriticalNoteRecord, CriticalNoteWrites } from "../../domain/repositories/ReservationRepository.js";
 import { ReservationAggregate } from "../../domain/aggregates/ReservationAggregate.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
+import { CriticalNoteStatus } from "../../domain/value-objects/ReservationCriticalNote.js";
 
 interface StoredReservation {
   status: ReturnType<ReservationAggregate["getStatus"]>;
@@ -35,6 +36,10 @@ export class InMemoryReservationRepository implements ReservationRepository {
   private readonly byId = new Map<string, StoredReservation>();
   private readonly appliedCommandIds = new Set<string>();
   private readonly reservationIdByCommandId = new Map<string, string>();
+  // R1.3-I3 — CAP-D05.02. Keyed by note id (globally unique, like the real
+  // schema's PK) — reservationId is a field on each record, not a second
+  // map key, mirroring PrismaReservationRepository's own single-table shape.
+  private readonly criticalNotesById = new Map<string, ReservationCriticalNoteRecord>();
   forceNextSaveToFail = false;
   saveCallCount = 0;
 
@@ -96,8 +101,9 @@ export class InMemoryReservationRepository implements ReservationRepository {
     readonly aggregate: ReservationAggregate;
     readonly expectedVersion: number;
     readonly commandId: string;
+    readonly criticalNoteWrites?: CriticalNoteWrites;
   }): Promise<SaveResult> {
-    const { aggregate, expectedVersion, commandId } = input;
+    const { aggregate, expectedVersion, commandId, criticalNoteWrites } = input;
 
     // CAP-D01.01-R44 — safe to call again with the same commandId.
     if (this.appliedCommandIds.has(commandId)) {
@@ -144,6 +150,56 @@ export class InMemoryReservationRepository implements ReservationRepository {
       createdAt: existing?.createdAt ?? aggregate.getCreatedAt(),
       version: newVersion,
     });
+
+    // R1.3-I3 — CAP-D05.02. Applied at the SAME commit point as the
+    // Reservation row above (after the version check passed, before
+    // events are drained) — a concurrency conflict or a forced failure
+    // above already returned/threw without reaching here, so these never
+    // apply on their own; mirrors PrismaReservationRepository's "same
+    // transaction" guarantee without an actual database transaction.
+    if (criticalNoteWrites) {
+      for (const note of criticalNoteWrites.add) {
+        this.criticalNotesById.set(note.id, {
+          id: note.id,
+          reservationId: id,
+          noteType: note.noteType,
+          detail: note.detail,
+          status: CriticalNoteStatus.Active,
+          createdByStaffUserId: criticalNoteWrites.actingStaffUserId,
+          updatedByStaffUserId: null,
+          createdAt: criticalNoteWrites.now,
+          updatedAt: criticalNoteWrites.now,
+          resolvedAt: null,
+        });
+      }
+      for (const note of criticalNoteWrites.update) {
+        const existingNote = this.criticalNotesById.get(note.id);
+        if (!existingNote || existingNote.status !== CriticalNoteStatus.Active) {
+          throw new Error(`test double: criticalNoteWrites.update target ${note.id} is missing or not Active`);
+        }
+        this.criticalNotesById.set(note.id, {
+          ...existingNote,
+          noteType: note.noteType,
+          detail: note.detail,
+          updatedByStaffUserId: criticalNoteWrites.actingStaffUserId,
+          updatedAt: criticalNoteWrites.now,
+        });
+      }
+      for (const note of criticalNoteWrites.resolve) {
+        const existingNote = this.criticalNotesById.get(note.id);
+        if (!existingNote || existingNote.status !== CriticalNoteStatus.Active) {
+          throw new Error(`test double: criticalNoteWrites.resolve target ${note.id} is missing or not Active`);
+        }
+        this.criticalNotesById.set(note.id, {
+          ...existingNote,
+          status: CriticalNoteStatus.Resolved,
+          resolvedAt: criticalNoteWrites.now,
+          updatedByStaffUserId: criticalNoteWrites.actingStaffUserId,
+          updatedAt: criticalNoteWrites.now,
+        });
+      }
+    }
+
     this.appliedCommandIds.add(commandId);
     this.reservationIdByCommandId.set(commandId, id);
     this.saveCallCount += 1;
@@ -153,5 +209,21 @@ export class InMemoryReservationRepository implements ReservationRepository {
 
   wasCommandApplied(commandId: string): boolean {
     return this.appliedCommandIds.has(commandId);
+  }
+
+  async findCriticalNotesByReservationId(reservationId: string): Promise<readonly ReservationCriticalNoteRecord[]> {
+    return [...this.criticalNotesById.values()]
+      .filter((n) => n.reservationId === reservationId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+  }
+
+  async findCriticalNotesByReservationIds(
+    reservationIds: readonly string[],
+    options: { readonly activeOnly: boolean }
+  ): Promise<readonly ReservationCriticalNoteRecord[]> {
+    const idSet = new Set(reservationIds);
+    return [...this.criticalNotesById.values()]
+      .filter((n) => idSet.has(n.reservationId) && (!options.activeOnly || n.status === CriticalNoteStatus.Active))
+      .sort((a, b) => a.reservationId.localeCompare(b.reservationId) || a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
   }
 }

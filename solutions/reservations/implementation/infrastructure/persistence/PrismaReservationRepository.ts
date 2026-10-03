@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { ReservationRepository, SaveResult } from "../../domain/repositories/ReservationRepository.js";
+import { ReservationRepository, SaveResult, ReservationCriticalNoteRecord, CriticalNoteWrites } from "../../domain/repositories/ReservationRepository.js";
+import { CriticalNoteType, CriticalNoteStatus } from "../../domain/value-objects/ReservationCriticalNote.js";
 import { ReservationAggregate } from "../../domain/aggregates/ReservationAggregate.js";
 import { ReservationId } from "../../domain/value-objects/ReservationId.js";
 import { ReservationStatus } from "../../domain/value-objects/ReservationStatus.js";
@@ -10,7 +11,34 @@ import { asPrismaTx } from "./PrismaTransactionManager.js";
 import { CommunicationLanguage, isCommunicationLanguage, DEFAULT_COMMUNICATION_LANGUAGE } from "../../domain/value-objects/CommunicationLanguage.js";
 
 /** Either a top-level PrismaClient or an interactive-transaction client — the write logic below only ever needs the model delegates both expose. */
-type PrismaWriteClient = Pick<Prisma.TransactionClient, "reservation" | "reservationEvent" | "appliedCommand">;
+type PrismaWriteClient = Pick<Prisma.TransactionClient, "reservation" | "reservationEvent" | "appliedCommand" | "reservationCriticalNote">;
+
+/** Maps one raw `reservation_critical_notes` row to the domain-facing record shape — never trusts a stored value outside the closed type/status unions without re-validating, same defense-in-depth posture as toAggregate() below. */
+function toCriticalNoteRecord(row: {
+  id: string;
+  reservationId: string;
+  noteType: string;
+  detail: string;
+  status: string;
+  createdByStaffUserId: string;
+  updatedByStaffUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  resolvedAt: Date | null;
+}): ReservationCriticalNoteRecord {
+  return {
+    id: row.id,
+    reservationId: row.reservationId,
+    noteType: row.noteType as CriticalNoteType,
+    detail: row.detail,
+    status: row.status as CriticalNoteStatus,
+    createdByStaffUserId: row.createdByStaffUserId,
+    updatedByStaffUserId: row.updatedByStaffUserId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    resolvedAt: row.resolvedAt,
+  };
+}
 
 /**
  * Infrastructure adapter for the ReservationRepository port.
@@ -54,6 +82,30 @@ export class PrismaReservationRepository implements ReservationRepository {
       orderBy: { reservationDate: "asc" },
     });
     return rows.map((row) => this.toAggregate(row));
+  }
+
+  async findCriticalNotesByReservationId(reservationId: string, tx?: TransactionContext): Promise<readonly ReservationCriticalNoteRecord[]> {
+    const client = tx ? asPrismaTx(tx) : this.prisma;
+    const rows = await client.reservationCriticalNote.findMany({
+      where: { reservationId },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map(toCriticalNoteRecord);
+  }
+
+  async findCriticalNotesByReservationIds(
+    reservationIds: readonly string[],
+    options: { readonly activeOnly: boolean }
+  ): Promise<readonly ReservationCriticalNoteRecord[]> {
+    if (reservationIds.length === 0) return [];
+    const rows = await this.prisma.reservationCriticalNote.findMany({
+      where: {
+        reservationId: { in: [...reservationIds] },
+        ...(options.activeOnly ? { status: CriticalNoteStatus.Active } : {}),
+      },
+      orderBy: [{ reservationId: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    return rows.map(toCriticalNoteRecord);
   }
 
   private toAggregate(row: {
@@ -109,8 +161,9 @@ export class PrismaReservationRepository implements ReservationRepository {
     readonly expectedVersion: number;
     readonly commandId: string;
     readonly tx?: TransactionContext;
+    readonly criticalNoteWrites?: CriticalNoteWrites;
   }): Promise<SaveResult> {
-    const { aggregate, expectedVersion, commandId, tx: externalTx } = input;
+    const { aggregate, expectedVersion, commandId, tx: externalTx, criticalNoteWrites } = input;
 
     // The idempotency pre-check always reads against the top-level client,
     // even when an external `tx` is supplied: it is a non-authoritative
@@ -188,6 +241,63 @@ export class PrismaReservationRepository implements ReservationRepository {
           });
           if (updated.count === 0) {
             throw new ConcurrencyConflict();
+          }
+        }
+
+        // R1.3-I3 — CAP-D05.02. Reached only after the Reservation write
+        // above has succeeded (a create, or an update that passed the
+        // optimistic version check) — a throw from any statement here
+        // rolls back that write too, inside this SAME transaction. Explicit
+        // add/update/resolve only; never a complete-replacement set, so
+        // omission can never remove or resolve a note (see
+        // CriticalNoteWrites's own doc comment).
+        if (criticalNoteWrites) {
+          for (const note of criticalNoteWrites.add) {
+            await tx.reservationCriticalNote.create({
+              data: {
+                id: note.id,
+                reservationId,
+                noteType: note.noteType,
+                detail: note.detail,
+                status: CriticalNoteStatus.Active,
+                createdByStaffUserId: criticalNoteWrites.actingStaffUserId,
+                createdAt: criticalNoteWrites.now,
+                updatedAt: criticalNoteWrites.now,
+              },
+            });
+          }
+          for (const note of criticalNoteWrites.update) {
+            const updatedNote = await tx.reservationCriticalNote.updateMany({
+              where: { id: note.id, reservationId, status: CriticalNoteStatus.Active },
+              data: {
+                noteType: note.noteType,
+                detail: note.detail,
+                updatedByStaffUserId: criticalNoteWrites.actingStaffUserId,
+                updatedAt: criticalNoteWrites.now,
+              },
+            });
+            // Structurally unreachable while ModifyReservationHandler's own
+            // pre-validation (CriticalNoteRules.validateCriticalNoteChangeIdentities)
+            // runs immediately before this same transaction — but handled
+            // explicitly anyway, never assumed away, matching this
+            // repository's own existing posture on its other defensive branches.
+            if (updatedNote.count === 0) {
+              throw new ConcurrencyConflict();
+            }
+          }
+          for (const note of criticalNoteWrites.resolve) {
+            const resolvedNote = await tx.reservationCriticalNote.updateMany({
+              where: { id: note.id, reservationId, status: CriticalNoteStatus.Active },
+              data: {
+                status: CriticalNoteStatus.Resolved,
+                resolvedAt: criticalNoteWrites.now,
+                updatedByStaffUserId: criticalNoteWrites.actingStaffUserId,
+                updatedAt: criticalNoteWrites.now,
+              },
+            });
+            if (resolvedNote.count === 0) {
+              throw new ConcurrencyConflict();
+            }
           }
         }
 
