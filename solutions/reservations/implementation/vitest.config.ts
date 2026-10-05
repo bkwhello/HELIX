@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 
 export default defineConfig({
   test: {
@@ -8,5 +8,10 @@ export default defineConfig({
     // file is mid-assertion on. The whole suite is small enough that
     // running files serially costs negligible wall-clock time.
     fileParallelism: false,
+    // R1.4-I3 — tests/e2e/** runs under Playwright's own test runner
+    // (playwright.config.ts), a real browser, not vitest's. Without this
+    // exclude, vitest's own default glob would also try to collect those
+    // files and fail on @playwright/test's incompatible test()/expect().
+    exclude: [...configDefaults.exclude, "tests/e2e/**"],
   },
 });

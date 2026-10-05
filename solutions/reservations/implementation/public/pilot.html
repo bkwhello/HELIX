@@ -676,10 +676,15 @@
     <div id="resource-block-empty" class="empty" style="display:none;">Geen actieve tafelblokkades.</div>
   </section>
 
-  <!-- R1.7-P1 — read-only; no form, no buttons. Hidden entirely (see
-       loadSecurityEvents()) for any staff member without Permission.AuditView
-       — the server remains authoritative, this is display convenience only. -->
-  <section id="security-events-section" class="full-width">
+  <!-- R1.7-P1 — read-only; no form, no buttons. R1.4-I8: hidden by
+       default and only ever revealed by loadSecurityEvents() itself,
+       which initApp() now calls only when the server has already told
+       us (currentStaffPermissions.canViewSecurityEvents) this role
+       holds audit.view — the server's own requirePermission(AuditView)
+       on GET /security-events remains the real, unchanged boundary;
+       this is display convenience only, and the panel is never even
+       requested for a role that cannot see it. -->
+  <section id="security-events-section" class="full-width" style="display:none;">
     <h2>Beveiligingsgebeurtenissen</h2>
     <div id="security-events-message"></div>
     <div id="security-events-list" style="margin-top: 1rem;"></div>
@@ -709,9 +714,17 @@
   const loginMessage = document.getElementById("login-message");
   const sessionIndicator = document.getElementById("session-indicator");
 
+  // R1.4-I8 — server-derived, UI-visibility-only booleans (see
+  // api/app.ts's staffUiPermissions()); never computed client-side, never
+  // sent BY the client, and never themselves the authorization boundary
+  // — every route they affect the appearance of is still independently
+  // enforced server-side regardless of what this holds.
+  let currentStaffPermissions = { canCompleteReservation: false, canViewSecurityEvents: false };
+
   function showApp(staffUser) {
     loginGate.style.display = "none";
     appShell.style.display = "";
+    currentStaffPermissions = staffUser.permissions || { canCompleteReservation: false, canViewSecurityEvents: false };
     sessionIndicator.textContent = `Ingelogd als ${staffUser.displayName} (${staffUser.role}) — `;
     const logoutLink = document.createElement("a");
     logoutLink.href = "#";
@@ -738,7 +751,17 @@
     loadClosingDays();
     loadResourceBlocks();
     loadOccupancy();
-    loadSecurityEvents();
+    // R1.4-I8 — P3-B: only requested for a role the server has already
+    // told us holds audit.view (currentStaffPermissions, set in
+    // showApp()). Previously this always fired, and the server's own
+    // (unchanged) requirePermission(Permission.AuditView) check on GET
+    // /security-events correctly rejected it for every other role —
+    // real, working authorization, just advertised by an unnecessary
+    // 403 on every single login. The section stays hidden (its default
+    // markup state) rather than ever being queried.
+    if (currentStaffPermissions.canViewSecurityEvents) {
+      loadSecurityEvents();
+    }
   }
 
   function showLoginGate() {
@@ -770,14 +793,17 @@
   // browser still holds a valid, unexpired session cookie from an
   // earlier visit, this skips the login form instead of forcing a
   // re-login on every page refresh (sessions last hours, §11).
+  // R1.4-I8 — P3-C: now calls the real /auth/me rather than probing
+  // /closing-days and showing a generic placeholder. /auth/me derives
+  // identity solely from the live session -> StaffUser lookup
+  // (requireStaffSession's own req.staffPrincipal) — the client never
+  // supplies or influences it, so this is a transparency fix only, not
+  // a change to what the session cookie itself authorizes.
   (async function checkExistingSession() {
-    const res = await fetch("/closing-days");
+    const res = await fetch("/auth/me");
     if (res.ok) {
-      // No /auth/me endpoint exists to fetch a display name from
-      // without one more request; a generic label is an acceptable
-      // trade-off for this pilot rather than adding a route solely for
-      // this cosmetic purpose.
-      showApp({ displayName: "ingelogde gebruiker", role: "" });
+      const body = await res.json();
+      showApp(body.staffUser);
     } else {
       showLoginGate();
     }
@@ -990,6 +1016,12 @@
     } finally {
       criticalNoteActionInFlight = false;
       renderCriticalNotes();
+      // R1.4-I6 — renderCriticalNotes() only rebuilds the per-note list
+      // items (fresh, enabled by construction); it never touches the
+      // static add-note controls disabled above, so they must be
+      // explicitly re-enabled here on every exit path (success or
+      // failure) rather than relying on a page reload.
+      setCriticalNoteControlsDisabled(false);
     }
   }
 
@@ -1152,13 +1184,12 @@
     }
   });
 
-  renderCriticalNotes();
-
   // Rather than a growing pile of small inline editors for every
   // correctable field (name, phone, date/time, aantal, bron), "Bewerken"
   // recalls the whole reservation into this same form and re-registers it
   // via PATCH — one flow for any data-entry mistake, not many.
   let editingReservationId = null;
+  renderCriticalNotes();
   // CAP-D05.01 §13 — staff's explicit choice: null means "create a new
   // Contact" (the default); set only by clicking a possible-match hint
   // below. Never inferred automatically from matching phone/email alone.
@@ -2267,8 +2298,14 @@
         // P1-A — CAP-D01.01-R29: only a Confirmed reservation may be
         // completed, so this action is visible only in that state,
         // matching the same status-gated pattern the Confirm/Cancel
-        // buttons above already use.
-        if (r.status === "Confirmed") {
+        // buttons above already use. R1.4-I8 — also gated on the
+        // server-derived currentStaffPermissions.canCompleteReservation
+        // (see showApp()): a role lacking reservation.complete no longer
+        // sees a button the server would just deny anyway. The server
+        // check (requirePermission(Permission.ReservationComplete) on
+        // POST /reservations/:id/complete) is unchanged and remains the
+        // real boundary — this is visibility only.
+        if (r.status === "Confirmed" && currentStaffPermissions.canCompleteReservation) {
           const completeButton = document.createElement("button");
           completeButton.type = "button";
           completeButton.className = "complete-button";

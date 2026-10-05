@@ -43,7 +43,8 @@ import { LogoutHandler } from "../application/auth/LogoutHandler.js";
 import { CreateStaffUserHandler } from "../application/auth/CreateStaffUserHandler.js";
 import { LoginThrottleGuard, LoginThrottleConfig } from "../application/auth/LoginThrottleGuard.js";
 import { LoginAttemptTracker } from "../application/ports/LoginAttemptTracker.js";
-import { Permission } from "../domain/rules/StaffAuthorizationPolicy.js";
+import { Permission, hasPermission } from "../domain/rules/StaffAuthorizationPolicy.js";
+import { ActorRole } from "../domain/value-objects/Actor.js";
 import { CommunicationLanguage, isCommunicationLanguage } from "../domain/value-objects/CommunicationLanguage.js";
 import { CommunicationOutboxRepository } from "../application/ports/CommunicationOutboxRepository.js";
 import { GuestManagementCredentialRepository } from "../application/ports/GuestManagementCredentialRepository.js";
@@ -462,6 +463,20 @@ export function createApp(deps: AppDependencies): Express {
     clock: deps.clock,
   });
 
+  // R1.4-I8 — UI-transparency only: both fields are derived from the
+  // SAME, unchanged hasPermission() policy already enforced server-side
+  // on POST /reservations/:id/complete and GET /security-events
+  // respectively. The client never computes or guesses a permission
+  // itself; it only reflects what the server already decided for this
+  // role, so there is no new authorization surface and no possibility
+  // of client-side role spoofing affecting an actual decision.
+  function staffUiPermissions(role: ActorRole): { canCompleteReservation: boolean; canViewSecurityEvents: boolean } {
+    return {
+      canCompleteReservation: hasPermission(role, Permission.ReservationComplete),
+      canViewSecurityEvents: hasPermission(role, Permission.AuditView),
+    };
+  }
+
   function routeParam(req: Request, name: string): string {
     const value = req.params[name];
     return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
@@ -707,7 +722,13 @@ export function createApp(deps: AppDependencies): Express {
       maxAge: sessionLifetimeMs,
     });
     res.status(200).json({
-      staffUser: { id: result.staffUser.id, username: result.staffUser.username, displayName: result.staffUser.displayName, role: result.staffUser.role },
+      staffUser: {
+        id: result.staffUser.id,
+        username: result.staffUser.username,
+        displayName: result.staffUser.displayName,
+        role: result.staffUser.role,
+        permissions: staffUiPermissions(result.staffUser.role),
+      },
     });
   });
 
@@ -718,6 +739,28 @@ export function createApp(deps: AppDependencies): Express {
     }
     res.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
     res.status(204).send();
+  });
+
+  // R1.4-I8 — P3-C. The pilot UI previously had no way to re-fetch its
+  // own identity after a reload other than re-POSTing credentials (which
+  // it rightly never does), so it fell back to a generic label even
+  // though the session cookie was still perfectly valid. This returns
+  // EXACTLY the same staffUser shape /auth/login already returns (minus
+  // `username`, which the UI has never consumed from either endpoint —
+  // see pilot.html's showApp()), built only from req.staffPrincipal,
+  // which requireStaffSession itself derived from the live session ->
+  // StaffUser lookup. No request body, no client-supplied id/role is
+  // ever read — the client cannot influence this response at all.
+  app.get("/auth/me", requireStaffSession, (req: Request, res: Response) => {
+    const principal = req.staffPrincipal!;
+    res.status(200).json({
+      staffUser: {
+        id: principal.staffUserId,
+        displayName: principal.displayName,
+        role: principal.role,
+        permissions: staffUiPermissions(principal.role),
+      },
+    });
   });
 
   // R1.2 §19 — Owner-only (users.manage). The minimal necessary write

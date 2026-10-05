@@ -13,3 +13,10 @@ prisma/dev.db-journal
 /backups/
 /snapshots/
 /recovery-drill-results/
+
+# R1.4-I3 — Playwright run artifacts (traces/screenshots on failure may
+# contain page content; never committed).
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
