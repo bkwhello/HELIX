@@ -861,9 +861,29 @@ export function createApp(deps: AppDependencies): Express {
         criticalNotesByReservationId.set(note.reservationId, list);
       }
     }
+    // R1.5-P5 — P5-B: the daily list needs each reservation's current
+    // seating-assignment state (not just the free-text tableAssignment
+    // note) so Reception's row actions can be gated on it without a
+    // per-row round trip — same batched-query convention as the critical
+    // notes lookup just above. Optional (deps.floor), matching every
+    // other floor-feature gate in this file — a deployment/test harness
+    // that omits it sees every row as having no active assignment, which
+    // is exactly the pre-P5 behavior.
+    let assignmentStatusByReservationId: ReadonlyMap<string, "Assigned" | "Seated"> = new Map();
+    if (deps.floor && aggregates.length > 0) {
+      assignmentStatusByReservationId = await deps.floor.floorRepository.findActiveAssignmentStatusesByReservationIds(
+        aggregates.map((a) => a.getId().toString())
+      );
+    }
     res.status(200).json({
       date: date.toISOString().slice(0, 10),
-      reservations: aggregates.map((a) => serializeReservation(a, criticalNotesByReservationId.get(a.getId().toString()) ?? [])),
+      reservations: aggregates.map((a) =>
+        serializeReservation(
+          a,
+          criticalNotesByReservationId.get(a.getId().toString()) ?? [],
+          assignmentStatusByReservationId.get(a.getId().toString()) ?? "Unassigned"
+        )
+      ),
     });
   });
 
@@ -2763,7 +2783,12 @@ function serializeReservation(aggregate: {
   getNotes(): string | undefined;
   getTableAssignment(): string | undefined;
   getArrivedAt(): Date | undefined;
-}, criticalNotes: ReadonlyArray<ReturnType<typeof serializeCriticalNote>> = []) {
+},
+criticalNotes: ReadonlyArray<ReturnType<typeof serializeCriticalNote>> = [],
+// R1.5-P5 — P5-B: additive, optional (defaults to "Unassigned" so every
+// existing caller/test that doesn't pass it keeps today's exact output).
+seatingAssignmentStatus: "Unassigned" | "Assigned" | "Seated" = "Unassigned"
+) {
   return {
     id: aggregate.getId().toString(),
     status: aggregate.getStatus(),
@@ -2780,6 +2805,7 @@ function serializeReservation(aggregate: {
     tableAssignment: aggregate.getTableAssignment(),
     arrivedAt: aggregate.getArrivedAt()?.toISOString(),
     criticalNotes,
+    seatingAssignmentStatus,
   };
 }
 

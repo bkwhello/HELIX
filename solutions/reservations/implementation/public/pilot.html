@@ -473,15 +473,23 @@
   </section>
 
   <!-- P1-B4-C — the ONE authoritative seating panel, shared by BOTH entry
-       points: the daily list's "Plaatsen" action (A) and the Walk-in
+       points: the daily list's "Tafel toewijzen" action (A) and the Walk-in
        CREATED_UNSEATED follow-up (B) — same two approved endpoints
        (GET/POST .../seating*), same rendering, same outcome handling, no
-       second seating model. Hidden until openSeatingPicker() is called. -->
+       second seating model. Hidden until openSeatingPicker() is called.
+       R1.5-P5 (H5) — the later-vs-immediate choice that used to be two
+       separate top-level list buttons ("Plaatsen" / "Vooraf toewijzen")
+       now lives here, as one checkbox, for the assign/pre-assign case
+       only (never shown for "move", which has no such choice). -->
   <section id="seating-picker" style="display:none;">
-    <h2 id="seating-picker-title">Plaatsen</h2>
+    <h2 id="seating-picker-title">Tafel toewijzen</h2>
     <div id="seating-picker-message"></div>
     <div id="seating-picker-resources"></div>
-    <button type="button" id="seating-picker-confirm">Plaatsen bevestigen</button>
+    <label id="seating-picker-seat-immediately-row" style="display:block; margin: 0.5rem 0;">
+      <input type="checkbox" id="seating-picker-seat-immediately" checked />
+      Nu plaatsen (uitvinken voor: alleen vooraf toewijzen)
+    </label>
+    <button type="button" id="seating-picker-confirm">Tafel toewijzen bevestigen</button>
     <button type="button" class="secondary" id="seating-picker-cancel">Annuleren</button>
   </section>
 
@@ -1524,6 +1532,27 @@
       });
       const data = await res.json().catch(() => ({}));
 
+      // R1.5-P5 — P5-A: 401/403 handled explicitly and distinctly, same as
+      // the seating picker already does elsewhere in this file. 401 means
+      // the session itself is no longer valid — reuse the existing
+      // showLoginGate() helper (the same transition checkExistingSession()
+      // already uses) rather than leaving the app-shell visibly "logged
+      // in" with a raw backend string. 403 means authenticated but not
+      // permitted — a distinct, non-session message, no gate transition.
+      // Previously both fell through to the generic branch below, which
+      // for a 401 body ({"message":"Authentication required."}) rendered
+      // the raw English string verbatim via creationErrorMessage's
+      // `data.message` fallback.
+      if (res.status === 401) {
+        showLoginGate();
+        showMessage(loginMessage, "Je sessie is niet meer geldig. Log opnieuw in en probeer het opnieuw.", "error");
+        return;
+      }
+      if (res.status === 403) {
+        showMessage(walkinMessage, "Je hebt geen rechten om een walk-in te registreren.", "error");
+        return;
+      }
+
       if (!res.ok) {
         // Outcome C — NOT_CREATED. A meaningful server error, shown as a
         // genuine failure; never an automatic retry, never a rounded or
@@ -1580,6 +1609,8 @@
   const seatingPickerResources = document.getElementById("seating-picker-resources");
   const seatingPickerConfirm = document.getElementById("seating-picker-confirm");
   const seatingPickerCancel = document.getElementById("seating-picker-cancel");
+  const seatingPickerSeatImmediatelyRow = document.getElementById("seating-picker-seat-immediately-row");
+  const seatingPickerSeatImmediately = document.getElementById("seating-picker-seat-immediately");
   let seatingPickerReservationId = null;
   // P1-B6/P1-B9 — "assign" (Plaatsen, B4-B), "pre-assign" (Vooraf
   // toewijzen, B9), or "move" (Verplaatsen, B6). ONE panel/resource-
@@ -1601,21 +1632,36 @@
   }
   seatingPickerCancel.addEventListener("click", closeSeatingPicker);
 
-  // Sushi -> whole Tables ("Tafel 5 — 2 personen"); Teppanyaki -> individual
-  // Seats with grill context ("C-01 — Grill C"). Driven entirely by
-  // resource.kind, exactly as B4-A's own response already distinguishes
-  // them — no area-based branching invented here, and no combination/
-  // grouping rule beyond plain multi-select (staff may tick more than one).
-  function renderSeatingResources(resources) {
+  // Sushi -> whole Tables ("Tafel 5 — 2 personen"), rendered flat, one row
+  // each, exactly as before. Teppanyaki -> individual Seats, now (R1.5-P5,
+  // H6) grouped by their parent grill with an occupied/free/total summary
+  // line, instead of a flat list of seat labels Reception had to count by
+  // hand. Driven entirely by resource.kind/resource.parentTable, exactly
+  // as B4-A's own response already distinguishes them — no area-based
+  // branching invented here. The summary is informational only: it
+  // reuses the exact same numbers SeatingAvailabilityService already
+  // returns (nominalCapacity on parentTable, and this response's own free-
+  // seat list) — never a second capacity computation — and selection
+  // itself is never blocked client-side; the server/database remain the
+  // sole authority at Save time, unchanged.
+  async function renderSeatingResources(resources, partySize, area) {
     seatingPickerResources.innerHTML = "";
-    if (resources.length === 0) {
+    // Teppanyaki always renders its per-grill breakdown, even when EVERY
+    // grill is currently full (resources.length === 0 then too — a grill
+    // with zero free seats has no entry of its own) — otherwise a fully-
+    // booked Teppanyaki service would misleadingly look identical to "no
+    // grills exist at all". Only the plain "nothing found" message is
+    // skipped in that case; Sushi (or any other non-Teppanyaki area) with
+    // zero resources still shows it unchanged.
+    if (resources.length === 0 && area !== "Teppanyaki") {
       const empty = document.createElement("div");
       empty.className = "empty";
       empty.textContent = "Geen beschikbare tafel of zitplaats gevonden.";
       seatingPickerResources.appendChild(empty);
       return;
     }
-    for (const resource of resources) {
+
+    function appendSeatCheckbox(resource) {
       const row = document.createElement("label");
       row.className = "list-item";
       const checkbox = document.createElement("input");
@@ -1623,13 +1669,82 @@
       checkbox.dataset.resourceId = resource.resourceId;
       checkbox.dataset.resourceKind = resource.kind;
       const span = document.createElement("span");
-      span.textContent =
-        resource.kind === "Table"
-          ? `Tafel ${resource.operationalLabel} — ${resource.capacity} personen`
-          : `${resource.operationalLabel} — Grill ${resource.parentTable ? resource.parentTable.operationalLabel : "?"}`;
+      span.textContent = resource.kind === "Table" ? `Tafel ${resource.operationalLabel} — ${resource.capacity} personen` : resource.operationalLabel;
       row.appendChild(checkbox);
       row.appendChild(span);
       seatingPickerResources.appendChild(row);
+    }
+
+    const tables = resources.filter((r) => r.kind === "Table");
+    const seats = resources.filter((r) => r.kind === "Seat");
+
+    for (const resource of tables) {
+      appendSeatCheckbox(resource);
+    }
+
+    if (seats.length === 0 && area !== "Teppanyaki") return;
+
+    // Group free seats by parent grill — preserves first-seen grill order.
+    const seatsByGrill = new Map();
+    for (const seat of seats) {
+      const grillId = seat.parentTable ? seat.parentTable.id : "?";
+      if (!seatsByGrill.has(grillId)) seatsByGrill.set(grillId, { label: seat.parentTable ? seat.parentTable.operationalLabel : "?", total: seat.parentTable ? seat.parentTable.nominalCapacity : null, freeSeats: [] });
+      seatsByGrill.get(grillId).freeSeats.push(seat);
+    }
+
+    // A grill with ZERO free seats has no entry in `resources` at all (the
+    // service only ever returns free seats) — fetched separately here so
+    // a fully-occupied grill ("10/10 bezet — VOL") still appears instead
+    // of silently disappearing from the list. Same existing, already-
+    // approved read-only endpoint the Floorplan panel already uses
+    // elsewhere in this file; not a new capacity source, just the already-
+    // existing full Table inventory, cross-referenced against the free-
+    // seat counts SeatingAvailabilityService already computed above.
+    try {
+      const tablesRes = await fetch("/floorplan-resources/tables", { headers: actorHeaders() });
+      if (tablesRes.ok) {
+        const tablesData = await tablesRes.json();
+        for (const t of tablesData.tables || []) {
+          if (t.areaId === "Teppanyaki" && t.supportsSharedSeating && t.status === "Active" && !seatsByGrill.has(t.id)) {
+            seatsByGrill.set(t.id, { label: t.operationalLabel, total: t.nominalCapacity, freeSeats: [] });
+          }
+        }
+      }
+    } catch (err) {
+      // Best-effort only — the FULL-grill line is a display enhancement;
+      // its absence never blocks seeing/selecting the free seats above.
+    }
+
+    if (seatsByGrill.size === 0 && tables.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Geen beschikbare tafel of zitplaats gevonden.";
+      seatingPickerResources.appendChild(empty);
+      return;
+    }
+
+    // Deterministic, staff-readable order regardless of fetch/insertion order.
+    const grillEntries = Array.from(seatsByGrill.entries()).sort((a, b) => a[1].label.localeCompare(b[1].label, "en", { numeric: true }));
+
+    for (const [, grill] of grillEntries) {
+      const free = grill.freeSeats.length;
+      const header = document.createElement("div");
+      header.className = "hint";
+      header.style.marginTop = "0.5rem";
+      if (typeof grill.total === "number") {
+        const occupied = grill.total - free;
+        const fitsParty = typeof partySize !== "number" || free >= partySize;
+        header.textContent =
+          free === 0
+            ? `Grill ${grill.label} — ${occupied}/${grill.total} bezet — VOL`
+            : `Grill ${grill.label} — ${occupied}/${grill.total} bezet — ${free} vrij` + (fitsParty ? "" : " (onvoldoende voor dit gezelschap)");
+      } else {
+        header.textContent = `Grill ${grill.label}`;
+      }
+      seatingPickerResources.appendChild(header);
+      for (const seat of grill.freeSeats) {
+        appendSeatCheckbox(seat);
+      }
     }
   }
 
@@ -1640,9 +1755,16 @@
   // mode through) — never a second, ad-hoc availability fetch.
   async function openSeatingPicker(reservationId, mode) {
     seatingPickerReservationId = reservationId;
-    seatingPickerMode = mode === "move" ? "move" : mode === "pre-assign" ? "pre-assign" : "assign";
-    seatingPickerTitle.textContent = seatingPickerMode === "move" ? "Verplaatsen" : seatingPickerMode === "pre-assign" ? "Vooraf toewijzen" : "Plaatsen";
-    seatingPickerConfirm.textContent = seatingPickerMode === "move" ? "Verplaatsen bevestigen" : seatingPickerMode === "pre-assign" ? "Vooraf toewijzen bevestigen" : "Plaatsen bevestigen";
+    // R1.5-P5 (H5) — only two modes now: "assign" (the single State-A
+    // entry point, "Tafel toewijzen" — later-vs-immediate is decided by
+    // the checkbox below, not by which button was clicked) and "move".
+    // "pre-assign" no longer exists as an entry mode (see the list
+    // rendering above) — the checkbox row carries that choice now.
+    seatingPickerMode = mode === "move" ? "move" : "assign";
+    seatingPickerTitle.textContent = seatingPickerMode === "move" ? "Verplaatsen" : "Tafel toewijzen";
+    seatingPickerConfirm.textContent = seatingPickerMode === "move" ? "Verplaatsen bevestigen" : "Tafel toewijzen bevestigen";
+    seatingPickerSeatImmediatelyRow.style.display = seatingPickerMode === "move" ? "none" : "";
+    seatingPickerSeatImmediately.checked = true;
     seatingPicker.style.display = "";
     clearMessage(seatingPickerMessage);
     seatingPickerResources.innerHTML = '<div class="empty">Bezig met laden…</div>';
@@ -1670,10 +1792,10 @@
     }
     // Authoritative seating state (B4-A's own assignmentStatus) — never
     // the legacy, free-text Reservation table-note field, which plays no
-    // role anywhere in this panel. Plaatsen/Vooraf toewijzen both need NO
-    // active assignment yet; Verplaatsen needs one already active to move.
+    // role anywhere in this panel. "assign" needs NO active assignment
+    // yet; Verplaatsen needs one already active to move.
     const hasActiveAssignment = data.assignmentStatus && data.assignmentStatus !== "Unassigned";
-    if ((seatingPickerMode === "assign" || seatingPickerMode === "pre-assign") && hasActiveAssignment) {
+    if (seatingPickerMode === "assign" && hasActiveAssignment) {
       seatingPickerResources.innerHTML = "";
       showMessage(seatingPickerMessage, "Deze reservering is al toegewezen of geplaatst.", "warn");
       return;
@@ -1683,7 +1805,7 @@
       showMessage(seatingPickerMessage, "Deze reservering heeft geen actieve toewijzing om te verplaatsen.", "warn");
       return;
     }
-    renderSeatingResources(data.availableResources);
+    await renderSeatingResources(data.availableResources, data.partySize, data.area);
   }
 
   seatingPickerConfirm.addEventListener("click", async () => {
@@ -1709,7 +1831,10 @@
       // Reservation (and, for a move, from the existing assignment)
       // itself. Same body for all three modes — only the URL differs.
       const isMove = seatingPickerMode === "move";
-      const isPreAssign = seatingPickerMode === "pre-assign";
+      // R1.5-P5 (H5) — the later-vs-immediate choice now comes from the
+      // picker's own checkbox (ignored/hidden for "move"), not from which
+      // top-level list button was clicked — see openSeatingPicker above.
+      const isPreAssign = !isMove && !seatingPickerSeatImmediately.checked;
       const urlSuffix = isMove ? "/move" : isPreAssign ? "/pre-assign" : "";
       const commandPrefix = isMove ? "move" : isPreAssign ? "preassign" : "seat";
       const actionLabel = isMove ? "verplaatsen" : isPreAssign ? "vooraf toewijzen" : "plaatsen";
@@ -1746,7 +1871,10 @@
         // already uses (same mode, so the same gating still applies).
         // Never auto-pick another resource, never auto-retry.
         showMessage(seatingPickerMessage, "Deze plek is niet meer beschikbaar. De beschikbare plekken worden vernieuwd.", "warn");
+        // Preserve staff's later-vs-immediate choice across the refresh — openSeatingPicker always resets it to checked otherwise.
+        const seatImmediatelyBeforeRefresh = seatingPickerSeatImmediately.checked;
         await openSeatingPicker(seatingPickerReservationId, seatingPickerMode);
+        seatingPickerSeatImmediately.checked = seatImmediatelyBeforeRefresh;
         return;
       }
       if (data.type === "NOT_SEATABLE") {
@@ -2224,57 +2352,53 @@
         // P1-B4-C — offered for Proposed/Confirmed only, never Cancelled/
         // Completed (same status gate as Cancel above). Whether an active
         // SeatingAssignment already exists (Assigned/Seated) is NOT
-        // pre-checked here from list data — the daily list has no
-        // per-row assignment data of its own and this deliberately does
-        // not add one; openSeatingPicker() itself performs the real,
-        // authoritative check (B4-A's own assignmentStatus) the moment
-        // staff actually clicks, and shows a clear message instead of a
-        // picker if one is already active. UI visibility is convenience
-        // only, per the assignment's own instruction.
+        // R1.5-P5 — P5-B (H5): state-gated seating actions, driven by the
+        // list's own seatingAssignmentStatus field (added this increment —
+        // see api/app.ts's serializeReservation/findActiveAssignmentStatusesByReservationIds).
+        // Previously "Plaatsen"/"Vooraf toewijzen"/"Nu zetten" all rendered
+        // unconditionally for any Proposed/Confirmed row, regardless of
+        // whether a table was already assigned — Reception could already
+        // have pre-assigned a table and still see two more "pick a table"
+        // buttons, reopening the picker and appearing to ask again. The
+        // domain itself was never the problem (Assigned vs Seated remains
+        // exactly as before, and markSeatedNow()/the move picker already
+        // correctly reused an existing assignment) — only which buttons
+        // this list renders, and when, has changed.
+        const hasActiveAssignment = r.seatingAssignmentStatus === "Assigned" || r.seatingAssignmentStatus === "Seated";
         if (r.status === "Proposed" || r.status === "Confirmed") {
-          const seatButton = document.createElement("button");
-          seatButton.type = "button";
-          seatButton.className = "confirm-button";
-          seatButton.textContent = "Plaatsen";
-          seatButton.addEventListener("click", () => openSeatingPicker(r.id, "assign"));
-          actionCell.appendChild(seatButton);
+          if (!hasActiveAssignment) {
+            // State A — no active assignment: ONE primary entry point.
+            // The picker itself now offers the later-vs-immediate choice
+            // (a checkbox), rather than two separate top-level buttons.
+            const assignButton = document.createElement("button");
+            assignButton.type = "button";
+            assignButton.className = "confirm-button";
+            assignButton.textContent = "Tafel toewijzen";
+            assignButton.addEventListener("click", () => openSeatingPicker(r.id, "assign"));
+            actionCell.appendChild(assignButton);
+          } else if (r.seatingAssignmentStatus === "Assigned") {
+            // State B — already Assigned, not yet Seated: reuse the
+            // existing assignment, never reopen the table picker for this.
+            const markSeatedButton = document.createElement("button");
+            markSeatedButton.type = "button";
+            markSeatedButton.className = "confirm-button";
+            markSeatedButton.textContent = "Nu plaatsen";
+            markSeatedButton.addEventListener("click", () => markSeatedNow(r));
+            actionCell.appendChild(markSeatedButton);
+          }
+          // State C — Seated: no initial-assignment action, no "Nu
+          // plaatsen" (already seated) — falls through to Verplaatsen
+          // below only, which remains valid for both Assigned and Seated.
         }
-        // P1-B9 — "prepare the floor before guests arrive" (final
-        // architecture §12, Decision #9): the SAME picker/resource
-        // selection as Plaatsen above, only the resulting status differs
-        // (Assigned, not Seated) — same status gate, same "no pre-check
-        // from list data, openSeatingPicker's own authoritative B4-A check
-        // decides at click time" posture.
-        if (r.status === "Proposed" || r.status === "Confirmed") {
-          const preAssignButton = document.createElement("button");
-          preAssignButton.type = "button";
-          preAssignButton.className = "secondary";
-          preAssignButton.textContent = "Vooraf toewijzen";
-          preAssignButton.addEventListener("click", () => openSeatingPicker(r.id, "pre-assign"));
-          actionCell.appendChild(preAssignButton);
-        }
-        // P1-B9 — "Nu zetten" (mark-seated): confirmation only, no
-        // resource picker — this only transitions an EXISTING active
-        // assignment (from Vooraf toewijzen or Plaatsen) to Seated. Same
-        // status gate as the other seating actions; markSeatedNow() itself
-        // performs the real, authoritative B4-A check at click time.
-        if (r.status === "Proposed" || r.status === "Confirmed") {
-          const markSeatedButton = document.createElement("button");
-          markSeatedButton.type = "button";
-          markSeatedButton.className = "confirm-button";
-          markSeatedButton.textContent = "Nu zetten";
-          markSeatedButton.addEventListener("click", () => markSeatedNow(r));
-          actionCell.appendChild(markSeatedButton);
-        }
-        // P1-B6 — same status gate as Plaatsen/Cancel above; whether an
-        // active assignment actually exists to move is NOT pre-checked
-        // from list data either — openSeatingPicker's own "move" mode
-        // performs the real, authoritative check (B4-A's own
-        // assignmentStatus) the moment staff actually clicks, refusing
-        // cleanly if there is nothing active yet. UI visibility is
-        // convenience only. Reuses the exact same picker component as
-        // Plaatsen above — no second resource-selection implementation.
-        if (r.status === "Proposed" || r.status === "Confirmed") {
+        // P1-B6 — Verplaatsen (move), now shown only when an active
+        // assignment exists to move (R1.5-P5: previously rendered
+        // unconditionally for any Proposed/Confirmed row and relied on
+        // openSeatingPicker's own click-time check to refuse cleanly when
+        // there was nothing to move — that authoritative check is
+        // unchanged and still runs, this is list-visibility only).
+        // Reuses the exact same picker component as Tafel toewijzen above
+        // — no second resource-selection implementation.
+        if ((r.status === "Proposed" || r.status === "Confirmed") && hasActiveAssignment) {
           const moveButton = document.createElement("button");
           moveButton.type = "button";
           moveButton.className = "secondary";

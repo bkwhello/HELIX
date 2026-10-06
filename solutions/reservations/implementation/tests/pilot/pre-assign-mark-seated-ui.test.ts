@@ -41,52 +41,53 @@ beforeAll(() => {
   markSeatedNowBlock = source.slice(markSeatedStart, markSeatedEnd);
 });
 
-describe("Daily list — Vooraf toewijzen exposure", () => {
-  it("offers Vooraf toewijzen for Proposed or Confirmed reservations, same gate as Plaatsen", () => {
-    expect(actionCellBlock).toMatch(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const preAssignButton/);
-    expect(actionCellBlock).toContain('preAssignButton.textContent = "Vooraf toewijzen"');
-  });
-
-  it("never offers Vooraf toewijzen for Cancelled or Completed — an explicit Proposed/Confirmed allowlist", () => {
-    const gate = actionCellBlock.match(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const preAssignButton[\s\S]*?\n {8}\}/);
-    expect(gate).not.toBeNull();
-    expect(gate![0]).not.toMatch(/Cancelled|Completed/);
-  });
-
-  it("clicking Vooraf toewijzen opens the SAME shared picker as Plaatsen, in pre-assign mode", () => {
-    expect(actionCellBlock).toContain('openSeatingPicker(r.id, "pre-assign")');
+describe("Daily list — 'Vooraf toewijzen' is no longer a separate top-level button (R1.5-P5, H5)", () => {
+  // Superseded: the later-vs-immediate choice now lives inside the
+  // shared picker as a checkbox (see "pre-assign checkbox wiring"
+  // below), not as a second top-level list button competing with
+  // "Tafel toewijzen" — tests/pilot/seating-ui.test.ts covers the single
+  // remaining entry point's own gating.
+  it("no button with this exact label exists anywhere in the daily list action cell", () => {
+    expect(actionCellBlock).not.toMatch(/textContent = "Vooraf toewijzen"/);
   });
 });
 
-describe("Daily list — Nu zetten exposure", () => {
-  it("offers Nu zetten for Proposed or Confirmed reservations, same gate as the other seating actions", () => {
-    expect(actionCellBlock).toMatch(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const markSeatedButton/);
-    expect(actionCellBlock).toContain('markSeatedButton.textContent = "Nu zetten"');
+describe("Daily list — Nu plaatsen exposure (renamed from Nu zetten, R1.5-P5)", () => {
+  it("offers Nu plaatsen only in State B (Assigned, not yet Seated) — not a flat Proposed/Confirmed gate like the other actions", () => {
+    expect(actionCellBlock).toMatch(/else if \(r\.seatingAssignmentStatus === "Assigned"\) \{\s*[\s\S]*?const markSeatedButton/);
+    expect(actionCellBlock).toContain('markSeatedButton.textContent = "Nu plaatsen"');
   });
 
-  it("never offers Nu zetten for Cancelled or Completed", () => {
-    const gate = actionCellBlock.match(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const markSeatedButton[\s\S]*?\n {8}\}/);
-    expect(gate).not.toBeNull();
-    expect(gate![0]).not.toMatch(/Cancelled|Completed/);
+  it("is still nested inside the Proposed/Confirmed allowlist (never Cancelled/Completed)", () => {
+    const gateStart = actionCellBlock.indexOf('const hasActiveAssignment = r.seatingAssignmentStatus === "Assigned" || r.seatingAssignmentStatus === "Seated";');
+    const gateEnd = actionCellBlock.indexOf("P1-B6 — Verplaatsen", gateStart);
+    expect(gateStart).toBeGreaterThan(-1);
+    const gate = actionCellBlock.slice(gateStart, gateEnd);
+    expect(gate).toContain("markSeatedButton");
+    expect(gate).not.toMatch(/Cancelled|Completed/);
   });
 
-  it("clicking Nu zetten calls the dedicated markSeatedNow(r), never the shared resource picker — no resource selection for this action", () => {
+  it("clicking Nu plaatsen calls the dedicated markSeatedNow(r), never the shared resource picker — no resource selection for this action", () => {
     expect(actionCellBlock).toContain("markSeatedNow(r)");
   });
 });
 
-describe("Seating picker — pre-assign mode wiring", () => {
-  it("openSeatingPicker recognizes 'pre-assign' as its own mode, distinct from 'assign' and 'move'", () => {
-    expect(seatingPickerBlock).toContain('seatingPickerMode = mode === "move" ? "move" : mode === "pre-assign" ? "pre-assign" : "assign";');
+describe("Seating picker — pre-assign checkbox wiring (R1.5-P5: replaces the old 3-mode string)", () => {
+  it("openSeatingPicker now recognizes only 'assign' and 'move' as modes — 'pre-assign' is no longer a mode value", () => {
+    expect(seatingPickerBlock).toContain('seatingPickerMode = mode === "move" ? "move" : "assign";');
   });
 
-  it("pre-assign uses its own title/confirm-button text, distinct from Plaatsen/Verplaatsen", () => {
-    expect(seatingPickerBlock).toContain('"Vooraf toewijzen"');
-    expect(seatingPickerBlock).toContain('"Vooraf toewijzen bevestigen"');
+  it("the picker exposes a 'seat immediately' checkbox, hidden for move mode, checked by default", () => {
+    expect(seatingPickerBlock).toContain('seatingPickerSeatImmediatelyRow.style.display = seatingPickerMode === "move" ? "none" : "";');
+    expect(seatingPickerBlock).toContain("seatingPickerSeatImmediately.checked = true;");
   });
 
-  it("pre-assign wants the SAME starting gate as assign — no active assignment yet, not the move gate", () => {
-    expect(seatingPickerBlock).toMatch(/\(seatingPickerMode === "assign" \|\| seatingPickerMode === "pre-assign"\) && hasActiveAssignment/);
+  it("isPreAssign is derived from the unchecked checkbox, not from a separate mode — never active for move", () => {
+    expect(seatingPickerBlock).toContain("const isPreAssign = !isMove && !seatingPickerSeatImmediately.checked;");
+  });
+
+  it("pre-assign (unchecked box) still uses the SAME starting gate as assign — no active assignment yet, not the move gate", () => {
+    expect(seatingPickerBlock).toMatch(/seatingPickerMode === "assign" && hasActiveAssignment/);
   });
 
   it("there is still exactly one openSeatingPicker function and one confirm click handler — pre-assign reuses the component, never a second implementation", () => {

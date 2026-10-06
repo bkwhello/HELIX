@@ -26,8 +26,15 @@ import fs from "node:fs";
 
 const EXPECTED_DEV_DATABASE_NAME = "helix_reservations_dev";
 const EXPECTED_LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-/** Every row this module is ever asked to delete must carry one of these tags somewhere in its identifying text. */
-const E2E_SYNTHETIC_TAG_PATTERN = /^R1\.4-I[4-9]\b/;
+/**
+ * Every row this module is ever asked to delete must carry one of these
+ * tags somewhere in its identifying text. R1.5-P5 — broadened from
+ * R1.4-I[4-9]-only to also accept R1.5-P<n> (and any later R1.<x>-<phase>
+ * milestone), since this module keeps getting reused as the E2E suite
+ * grows past R1.4 — never loosened to match arbitrary text, still an
+ * exact milestone-prefix anchor.
+ */
+const E2E_SYNTHETIC_TAG_PATTERN = /^R1\.(4-I[4-9]|5-P\d+)\b/;
 const E2E_SYNTHETIC_STAFF_USER_ID = "su-resetcheck";
 
 export class UnsafeE2ECleanupError extends Error {
@@ -131,6 +138,15 @@ export async function deleteE2EReservationAndContact(prisma: PrismaClient, reser
     throw new UnsafeE2ECleanupError(`reservation ${reservationId} still has ${noteCount} critical-note row(s) — refusing to delete (would violate the ON DELETE RESTRICT FK); this helper is not for reservations that carry critical notes.`);
   }
 
+  // R1.5-P5 — seating_assignment_resources.assignment_id -> seating_assignments.id
+  // is ON DELETE RESTRICT (prisma/migrations/20260820120000_.../migration.sql),
+  // so any resource rows for this reservation's assignment(s) must be
+  // deleted first, or the seating_assignments delete below fails closed
+  // with a real FK violation rather than silently succeeding.
+  await prisma.$executeRawUnsafe(
+    'DELETE FROM "seating_assignment_resources" WHERE "assignment_id" IN (SELECT "id" FROM "seating_assignments" WHERE "reservation_id" = $1)',
+    reservationId
+  );
   await prisma.$executeRawUnsafe('DELETE FROM "seating_assignments" WHERE "reservation_id" = $1', reservationId);
   await prisma.$executeRawUnsafe('DELETE FROM "reservation_events" WHERE "reservationId" = $1', reservationId);
   await prisma.$executeRawUnsafe('DELETE FROM "applied_commands" WHERE "reservationId" = $1', reservationId);
@@ -144,7 +160,7 @@ export async function deleteE2EReservationAndContact(prisma: PrismaClient, reser
   if (!contactId) return;
   const contact = await prisma.contact.findUnique({ where: { id: contactId } });
   if (!contact) return;
-  if (!contact.displayName.startsWith("R1.4-I4 Browser T08")) {
+  if (!E2E_SYNTHETIC_TAG_PATTERN.test(contact.displayName)) {
     throw new UnsafeE2ECleanupError(`contact ${contactId} displayName ${JSON.stringify(contact.displayName)} does not match the expected E2E synthetic tag — refusing to delete.`);
   }
   const stillReferenced = await prisma.reservation.count({ where: { contactId } });

@@ -107,6 +107,9 @@ class EmptyFloorRepository implements FloorRepository {
   async findActiveAssignmentByReservationId(): Promise<SeatingAssignment | null> {
     return null;
   }
+  async findActiveAssignmentStatusesByReservationIds(): Promise<ReadonlyMap<string, "Assigned" | "Seated">> {
+    return new Map();
+  }
   async findAssignmentResources(): Promise<readonly []> {
     return [];
   }
@@ -156,5 +159,34 @@ describe("SeatingAvailabilityService", () => {
     // updateAssignmentStatus/createResourceBlock/save were never invoked
     // — each fake implementation throws if called at all.
     await expect(service.getAvailableResourcesForReservation(reservation.getId())).resolves.toMatchObject({ type: "FOUND" });
+  });
+
+  // R1.5-P5 — H6: AvailableResourceRow.parentTable now carries nominalCapacity
+  // (the same Table.nominalCapacity SeatabilityEvaluator already uses), so
+  // the Reception picker can group/count occupied-vs-free per grill without
+  // a second request or a second capacity source.
+  class OneGrillFloorRepository extends EmptyFloorRepository {
+    override async findTablesByArea(): Promise<readonly Table[]> {
+      return [{ id: "grill-1", areaId: "Teppanyaki", operationalLabel: "Grill 1", nominalCapacity: 8, supportsSharedSeating: true, status: "Active" }];
+    }
+    override async findSeatsByTableId(): Promise<readonly Seat[]> {
+      return [
+        { id: "grill-1-seat-1", tableId: "grill-1", operationalLabel: "1-01", status: "Active", createdAt: new Date() },
+        { id: "grill-1-seat-2", tableId: "grill-1", operationalLabel: "1-02", status: "Active", createdAt: new Date() },
+      ];
+    }
+  }
+
+  it("a Teppanyaki Seat's parentTable includes nominalCapacity, not just id/operationalLabel", async () => {
+    const reservation = buildReservation({ preferredArea: "Teppanyaki", partySize: 2 });
+    const service = new SeatingAvailabilityService(new FakeReservationRepository(reservation), new OneGrillFloorRepository());
+    const result = await service.getAvailableResourcesForReservation(reservation.getId());
+    expect(result.type).toBe("FOUND");
+    if (result.type !== "FOUND") return;
+    expect(result.availableResources).toHaveLength(2);
+    for (const row of result.availableResources) {
+      expect(row.kind).toBe("Seat");
+      expect(row.parentTable).toEqual({ id: "grill-1", operationalLabel: "Grill 1", nominalCapacity: 8 });
+    }
   });
 });

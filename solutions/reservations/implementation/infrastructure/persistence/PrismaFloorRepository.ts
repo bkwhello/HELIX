@@ -225,6 +225,19 @@ export class PrismaFloorRepository implements FloorRepository {
     return row ? toAssignment(row) : null;
   }
 
+  async findActiveAssignmentStatusesByReservationIds(
+    reservationIds: readonly string[],
+    tx?: TransactionContext
+  ): Promise<ReadonlyMap<string, "Assigned" | "Seated">> {
+    if (reservationIds.length === 0) return new Map();
+    const client = tx ? asPrismaTx(tx) : this.prisma;
+    const rows = await client.seatingAssignment.findMany({
+      where: { reservationId: { in: [...reservationIds] }, status: { in: ["Assigned", "Seated"] } },
+      select: { reservationId: true, status: true },
+    });
+    return new Map(rows.map((r) => [r.reservationId, r.status as "Assigned" | "Seated"]));
+  }
+
   async findAssignmentResources(assignmentId: string, tx?: TransactionContext): Promise<readonly SeatingAssignmentResource[]> {
     const client = tx ? asPrismaTx(tx) : this.prisma;
     const rows = await client.seatingAssignmentResource.findMany({ where: { assignmentId } });

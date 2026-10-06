@@ -60,6 +60,19 @@ export interface FloorRepository {
   /** The current non-Released SeatingAssignment for a reservation, if any — at most one by construction (partial unique index). */
   findActiveAssignmentByReservationId(reservationId: string, tx?: TransactionContext): Promise<SeatingAssignment | null>;
 
+  /**
+   * R1.5-P5 — batched sibling of findActiveAssignmentByReservationId, for
+   * the daily reservation list (one query for the whole day, never N+1 —
+   * same convention as ReservationRepository.findCriticalNotesByReservationIds).
+   * Only each reservation's current status ("Assigned" | "Seated") is
+   * needed by the list; reservations with no active assignment are
+   * simply absent from the returned map (never "Unassigned" as a value).
+   */
+  findActiveAssignmentStatusesByReservationIds(
+    reservationIds: readonly string[],
+    tx?: TransactionContext
+  ): Promise<ReadonlyMap<string, "Assigned" | "Seated">>;
+
   findAssignmentResources(assignmentId: string, tx?: TransactionContext): Promise<readonly SeatingAssignmentResource[]>;
 
   createAssignment(input: {

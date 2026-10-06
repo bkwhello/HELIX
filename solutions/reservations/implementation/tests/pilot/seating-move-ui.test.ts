@@ -34,13 +34,13 @@ beforeAll(() => {
 });
 
 describe("Daily list — Verplaatsen exposure", () => {
-  it("offers Verplaatsen for Proposed or Confirmed reservations, gated the same way as Plaatsen/No-show", () => {
-    expect(actionCellBlock).toMatch(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const moveButton/);
+  it("offers Verplaatsen for Proposed or Confirmed reservations that already have an active assignment (R1.5-P5: now gated on hasActiveAssignment too, not status alone)", () => {
+    expect(actionCellBlock).toMatch(/if \(\(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) && hasActiveAssignment\) \{\s*const moveButton/);
     expect(actionCellBlock).toContain('moveButton.textContent = "Verplaatsen"');
   });
 
   it("never offers Verplaatsen for Cancelled or Completed — an explicit Proposed/Confirmed allowlist", () => {
-    const gate = actionCellBlock.match(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const moveButton[\s\S]*?\n {8}\}/);
+    const gate = actionCellBlock.match(/if \(\(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) && hasActiveAssignment\) \{\s*const moveButton[\s\S]*?\n {8}\}/);
     expect(gate).not.toBeNull();
     expect(gate![0]).not.toMatch(/Cancelled|Completed/);
   });
@@ -78,9 +78,9 @@ describe("Seating picker — one shared component, parameterized by mode, not du
     expect(confirmHandlerIndex).toBeGreaterThan(getIndex);
   });
 
-  it("move mode requires an ALREADY active assignment (opposite gate from assign/pre-assign mode)", () => {
+  it("move mode requires an ALREADY active assignment (opposite gate from assign mode)", () => {
     expect(seatingPickerBlock).toMatch(/seatingPickerMode === "move" && !hasActiveAssignment/);
-    expect(seatingPickerBlock).toMatch(/\(seatingPickerMode === "assign" \|\| seatingPickerMode === "pre-assign"\) && hasActiveAssignment/);
+    expect(seatingPickerBlock).toMatch(/seatingPickerMode === "assign" && hasActiveAssignment/);
   });
 
   it("the POST body contains only commandId and resources for all modes — no area, partySize, seatImmediately, or reservationDate", () => {

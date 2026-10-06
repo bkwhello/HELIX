@@ -128,6 +128,9 @@ class FakeInventoryFloorRepository implements FloorRepository {
   findActiveAssignmentByReservationId(): Promise<SeatingAssignment | null> {
     return this.notImplemented();
   }
+  findActiveAssignmentStatusesByReservationIds(): Promise<ReadonlyMap<string, "Assigned" | "Seated">> {
+    return this.notImplemented();
+  }
   findAssignmentResources(): Promise<readonly SeatingAssignmentResource[]> {
     return this.notImplemented();
   }

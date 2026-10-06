@@ -45,8 +45,14 @@ export interface AvailableResourceRow {
   readonly operationalLabel: string;
   /** A Table's own nominalCapacity, or 1 for an individual Seat — same convention as SeatabilityCandidate.capacity. */
   readonly capacity: number;
-  /** Present only for a Seat — the Teppanyaki grill it belongs to, so staff can read "C-01" in context. */
-  readonly parentTable?: { readonly id: string; readonly operationalLabel: string };
+  /**
+   * Present only for a Seat — the Teppanyaki grill it belongs to, so
+   * staff can read "C-01" in context. `nominalCapacity` (R1.5-P5, H6) is
+   * the same `Table.nominalCapacity` SeatabilityEvaluator already uses —
+   * added so the Reception picker can show occupied/free per grill
+   * without a second capacity source or a second request.
+   */
+  readonly parentTable?: { readonly id: string; readonly operationalLabel: string; readonly nominalCapacity: number };
 }
 
 export type SeatingAvailabilityResult =
@@ -116,7 +122,7 @@ export class SeatingAvailabilityService {
       readonly operationalLabel: string;
       readonly capacity: number;
       readonly blockCheckTableId: string;
-      readonly parentTable?: { readonly id: string; readonly operationalLabel: string };
+      readonly parentTable?: { readonly id: string; readonly operationalLabel: string; readonly nominalCapacity: number };
     }
     const candidates: Candidate[] = [];
     for (const table of tables) {
@@ -131,7 +137,7 @@ export class SeatingAvailabilityService {
             operationalLabel: seat.operationalLabel,
             capacity: 1,
             blockCheckTableId: table.id,
-            parentTable: { id: table.id, operationalLabel: table.operationalLabel },
+            parentTable: { id: table.id, operationalLabel: table.operationalLabel, nominalCapacity: table.nominalCapacity },
           });
         }
       } else {

@@ -54,21 +54,34 @@ beforeAll(() => {
   pickerPanelHtml = source.slice(panelStart, panelEnd);
 });
 
-describe("Daily list — Plaatsen exposure", () => {
-  it("offers Plaatsen for Proposed or Confirmed reservations", () => {
-    expect(actionCellBlock).toMatch(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const seatButton/);
-    expect(actionCellBlock).toContain('seatButton.textContent = "Plaatsen"');
+describe("Daily list — state-driven seating actions (R1.5-P5, H5)", () => {
+  it("State A (no active assignment): offers ONE primary entry point, 'Tafel toewijzen', for Proposed or Confirmed reservations", () => {
+    expect(actionCellBlock).toMatch(/if \(!hasActiveAssignment\) \{\s*[\s\S]*?const assignButton/);
+    expect(actionCellBlock).toContain('assignButton.textContent = "Tafel toewijzen"');
   });
 
-  it("never offers Plaatsen for Cancelled or Completed — the gate is an explicit Proposed/Confirmed allowlist, not a Cancelled/Completed denylist", () => {
-    const seatButtonGate = actionCellBlock.match(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) \{\s*const seatButton[\s\S]*?\n {8}\}/);
-    expect(seatButtonGate).not.toBeNull();
-    expect(seatButtonGate![0]).not.toMatch(/Cancelled|Completed/);
+  it("never offers the initial entry point for Cancelled or Completed — the gate is an explicit Proposed/Confirmed allowlist, not a Cancelled/Completed denylist", () => {
+    const gateStart = actionCellBlock.indexOf('const hasActiveAssignment = r.seatingAssignmentStatus === "Assigned" || r.seatingAssignmentStatus === "Seated";');
+    const gateEnd = actionCellBlock.indexOf("P1-B6 — Verplaatsen", gateStart);
+    expect(gateStart).toBeGreaterThan(-1);
+    expect(gateEnd).toBeGreaterThan(gateStart);
+    const outerGate = actionCellBlock.slice(gateStart, gateEnd);
+    expect(outerGate).toMatch(/if \(r\.status === "Proposed" \|\| r\.status === "Confirmed"\)/);
+    expect(outerGate).not.toMatch(/Cancelled|Completed/);
   });
 
-  it("clicking Plaatsen calls the shared openSeatingPicker(reservationId, mode), never a second implementation", () => {
-    // P1-B6 — openSeatingPicker now takes an explicit mode; Plaatsen requests "assign".
+  it("clicking 'Tafel toewijzen' calls the shared openSeatingPicker(reservationId, mode), never a second implementation", () => {
     expect(actionCellBlock).toContain('openSeatingPicker(r.id, "assign")');
+  });
+
+  it("State B (Assigned, not yet Seated): hides the initial entry point, offers 'Nu plaatsen' which reuses the existing assignment via markSeatedNow — never reopens the picker", () => {
+    expect(actionCellBlock).toMatch(/else if \(r\.seatingAssignmentStatus === "Assigned"\) \{\s*[\s\S]*?const markSeatedButton/);
+    expect(actionCellBlock).toContain('markSeatedButton.textContent = "Nu plaatsen"');
+    expect(actionCellBlock).toContain('markSeatedButton.addEventListener("click", () => markSeatedNow(r));');
+  });
+
+  it("Verplaatsen is offered only when an active assignment already exists (State B/C), never in State A", () => {
+    expect(actionCellBlock).toMatch(/if \(\(r\.status === "Proposed" \|\| r\.status === "Confirmed"\) && hasActiveAssignment\) \{\s*const moveButton/);
   });
 });
 
@@ -102,8 +115,11 @@ describe("Seating picker — resource rendering", () => {
     expect(seatingPickerBlock).toMatch(/resource\.kind === "Table"\s*\?\s*`Tafel/);
   });
 
-  it("renders Teppanyaki Seats with parent grill context: '<label> — Grill <grill>'", () => {
-    expect(seatingPickerBlock).toContain("Grill ${resource.parentTable");
+  it("groups Teppanyaki Seats under a per-grill header showing occupied/free/total (R1.5-P5, H6) instead of repeating 'Grill X' on every seat row", () => {
+    expect(seatingPickerBlock).toMatch(/header\.textContent =\s*\n?\s*free === 0/);
+    expect(seatingPickerBlock).toContain("bezet");
+    expect(seatingPickerBlock).toContain("VOL");
+    expect(seatingPickerBlock).toContain("onvoldoende voor dit gezelschap");
   });
 
   it("supports selecting multiple resources (a collected array, not a single-select)", () => {
