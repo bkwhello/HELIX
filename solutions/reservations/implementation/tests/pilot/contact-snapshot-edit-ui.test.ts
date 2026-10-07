@@ -47,9 +47,14 @@ describe("Contact snapshot correction — form markup", () => {
     expect(source).toContain('id="contact-email-snapshot"');
   });
 
-  it("is clearly labeled as the reservation's own recorded snapshot, distinct from guest-phone/guest-email", () => {
-    expect(source).toContain("Telefoon (zoals vastgelegd bij deze reservering)");
-    expect(source).toContain("E-mail (zoals vastgelegd bij deze reservering)");
+  // R1.5-P7-A — superseded: the snapshot inputs are now THE one editable
+  // Telefoon/E-mail in edit mode (guest-phone/guest-email are hidden and
+  // disabled there), so the confusing duplicate "(zoals vastgelegd bij deze
+  // reservering)" presentation is gone. See contact-id-edit-integrity-ui.test.ts.
+  it("labels the snapshot inputs as the plain Telefoon / E-mail (optioneel) fields, with no duplicate snapshot wording", () => {
+    expect(source).toContain('<label for="contact-phone-snapshot">Telefoon</label>');
+    expect(source).toContain('<label for="contact-email-snapshot">E-mail (optioneel)</label>');
+    expect(source).not.toContain("zoals vastgelegd bij deze reservering");
   });
 });
 

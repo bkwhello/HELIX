@@ -537,12 +537,13 @@
           <label for="guest-name">Naam gast</label>
           <input id="guest-name" type="text" required placeholder="bijv. Jan Jansen" />
         </div>
-        <div>
+        <div id="guest-phone-field">
           <label for="guest-phone">Telefoon</label>
           <input id="guest-phone" type="tel" required placeholder="06-12345678" />
         </div>
       </div>
-      <div class="row">
+      <!-- R1.5-P7-A — guest-phone/guest-email select or create the CONTACT on Create only; in edit mode they are hidden and disabled, and the reservation's own snapshot fields below are the one editable Telefoon/E-mail. -->
+      <div class="row" id="guest-contact-row">
         <div>
           <label for="guest-email">E-mail (optioneel)</label>
           <input id="guest-email" type="email" placeholder="bijv. jan@voorbeeld.nl" />
@@ -556,11 +557,11 @@
 
       <div class="row" id="contact-snapshot-row" style="display:none;">
         <div>
-          <label for="contact-phone-snapshot">Telefoon (zoals vastgelegd bij deze reservering)</label>
+          <label for="contact-phone-snapshot">Telefoon</label>
           <input id="contact-phone-snapshot" type="tel" placeholder="bijv. 06-12345678" />
         </div>
         <div>
-          <label for="contact-email-snapshot">E-mail (zoals vastgelegd bij deze reservering)</label>
+          <label for="contact-email-snapshot">E-mail (optioneel)</label>
           <input id="contact-email-snapshot" type="email" placeholder="bijv. jan@voorbeeld.nl" />
         </div>
       </div>
@@ -1283,6 +1284,23 @@
   document.getElementById("guest-email").addEventListener("blur", checkPossibleContactMatches);
   document.getElementById("guest-name").addEventListener("input", () => clearContactMatchHint());
 
+  // R1.5-P7-A — Create-only Contact selection inputs. Disabled (not just
+  // hidden) in edit mode so their `required` never blocks an edit save and
+  // they can never contribute a value to the edit request.
+  function setContactSelectionFieldsForEdit(isEdit) {
+    const phone = document.getElementById("guest-phone");
+    const email = document.getElementById("guest-email");
+    if (isEdit) {
+      phone.value = "";
+      email.value = "";
+      clearContactMatchHint();
+    }
+    phone.disabled = isEdit;
+    email.disabled = isEdit;
+    document.getElementById("guest-phone-field").style.display = isEdit ? "none" : "";
+    document.getElementById("guest-contact-row").style.display = isEdit ? "none" : "";
+  }
+
   async function enterEditMode(r) {
     editingReservationId = r.id;
     // R1.3-I3 — CAP-D05.02. Starts empty and re-renders immediately (so
@@ -1299,10 +1317,16 @@
     renderCriticalNotes();
     refreshEditingCriticalNotes();
     document.getElementById("guest-name").value = r.contactName || "";
-    document.getElementById("guest-phone").value = r.contactId || "";
+    // R1.5-P7-A — P0-1. guest-phone used to be filled with r.contactId here
+    // (and that value was sent back as changes.contactId), presenting the
+    // internal Contact id as the guest's "Telefoon". guest-phone/guest-email
+    // only select/create a Contact on Create, so in edit mode they are
+    // cleared, disabled (never validated, never submitted, no possible-match
+    // lookup) and hidden.
+    setContactSelectionFieldsForEdit(true);
     // R1.3-I2 — the reservation's OWN recorded snapshot, not the linked
-    // Contact's current phone/email (guest-phone/guest-email above stay
-    // scoped to selecting/creating the Contact, unchanged by this phase).
+    // Contact's current phone/email: the one editable Telefoon/E-mail in
+    // edit mode. Correcting it never changes the Contact record.
     document.getElementById("contact-phone-snapshot").value = r.contactPhoneSnapshot || "";
     document.getElementById("contact-email-snapshot").value = r.contactEmailSnapshot || "";
     document.getElementById("contact-snapshot-row").style.display = "";
@@ -1331,6 +1355,7 @@
     clearMessage(criticalNoteMessage);
     renderCriticalNotes();
     createForm.reset();
+    setContactSelectionFieldsForEdit(false);
     document.getElementById("contact-snapshot-row").style.display = "none";
     formTitle.textContent = "Nieuwe reservering";
     createSubmit.textContent = "Reservering aanmaken";
@@ -1394,7 +1419,8 @@
           body: JSON.stringify({
             commandId: `pilot-edit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             changes: {
-              contactId: document.getElementById("guest-phone").value.trim(),
+              // R1.5-P7-A — no contactId: the generic modify route rejects it
+              // (a reservation is never re-linked to another Contact here).
               contactName: document.getElementById("guest-name").value.trim(),
               // R1.3-I2 — same "blank means leave unchanged" convention
               // already used by notes/preferredArea below: the field is

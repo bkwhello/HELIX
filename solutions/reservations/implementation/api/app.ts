@@ -2485,7 +2485,8 @@ export function createApp(deps: AppDependencies): Express {
           reservationDate?: string;
           partySize?: number;
           preferredArea?: string;
-          contactId?: string;
+          /** R1.5-P7-A — never accepted here; any presence is rejected below. */
+          contactId?: unknown;
           contactName?: string;
           contactPhoneSnapshot?: string;
           contactEmailSnapshot?: string;
@@ -2506,6 +2507,31 @@ export function createApp(deps: AppDependencies): Express {
 
       if (!req.staffPrincipal) return;
       const actor = principalToActor(req.staffPrincipal);
+
+      // R1.5-P7-A — P0-1. Re-linking a reservation to a different Contact is
+      // NOT a generic modification: CreateReservationHandler proves a
+      // referenced Contact exists and is Active (CAP-D05.01) before a
+      // reservation may reference it, while this generic path never did —
+      // any string (e.g. a phone number typed into the old edit form) was
+      // persisted as contactId. Rejected on mere PRESENCE of the key, even
+      // when the value equals the current contactId, before any parsing or
+      // handler call, so nothing in the request partially applies. A
+      // dedicated, validated "change contact" operation would be a separate
+      // capability. Correcting the guest's phone/email remains possible via
+      // contactPhoneSnapshot/contactEmailSnapshot below (reservation-only;
+      // the Contact record itself is never touched by this route).
+      if (body.changes && typeof body.changes === "object" && Object.prototype.hasOwnProperty.call(body.changes, "contactId")) {
+        res.status(422).json({
+          code: "CONTACT_ID_NOT_MODIFIABLE",
+          violations: [
+            {
+              ruleId: "CAP-D01.01-R07",
+              message: "contactId cannot be changed through reservation modification; correct the reservation's phone/email via contactPhoneSnapshot/contactEmailSnapshot instead.",
+            },
+          ],
+        });
+        return;
+      }
 
       const preferredArea = parsePreferredArea(body.changes?.preferredArea, res);
       if (!preferredArea) return;
@@ -2538,7 +2564,7 @@ export function createApp(deps: AppDependencies): Express {
         changes: {
           reservationDate: body.changes?.reservationDate ? new Date(body.changes.reservationDate) : undefined,
           partySize: body.changes?.partySize,
-          contactId: body.changes?.contactId,
+          // R1.5-P7-A — contactId is never forwarded (rejected above).
           contactName: body.changes?.contactName,
           // ModifyReservationHandler/ReservationAggregate.modify() already
           // support correcting these two snapshot fields (this route

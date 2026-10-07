@@ -1155,6 +1155,98 @@ describe("PATCH /availability/reservations/:id — correcting the contact phone/
   });
 });
 
+/**
+ * R1.5-P7-A — P0-1. The generic modify route used to forward
+ * changes.contactId straight to the aggregate, which overwrote it with any
+ * string (no existence/Active check, no FK) — the pilot edit form even sent
+ * the value of a field labelled "Telefoon". The route now rejects the key's
+ * mere presence (422, CONTACT_ID_NOT_MODIFIABLE / CAP-D01.01-R07), before
+ * any other parsing, so nothing in such a request applies. Phone/email
+ * corrections stay possible via the reservation's own snapshot fields and
+ * never touch the Contact record.
+ */
+describe("PATCH /availability/reservations/:id — contactId is never modifiable (R1.5-P7-A)", () => {
+  async function persistedState(reservationId: string) {
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId }, orderBy: { id: "asc" } });
+    const commitments = await prisma.capacityCommitment.findMany({ where: { reservationId }, orderBy: { commitmentId: "asc" } });
+    const seating = await prisma.seatingAssignment.count({ where: { reservationId } });
+    const contacts = await prisma.contact.findMany({ orderBy: { id: "asc" } });
+    return JSON.stringify({ reservation, events, commitments, seating, contacts });
+  }
+
+  async function expectRejectedWithoutMutation(reservationId: string, changes: Record<string, unknown>, commandId: string) {
+    const before = await persistedState(reservationId);
+    const res = await patchReq(sharedAgent, `/availability/reservations/${reservationId}`).send({ commandId, changes });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("CONTACT_ID_NOT_MODIFIABLE");
+    expect(res.body.violations).toEqual([expect.objectContaining({ ruleId: "CAP-D01.01-R07" })]);
+    // Byte-identical: reservation row (version, contactId, snapshots, ...),
+    // its events (no ReservationModified), capacity commitments, seating,
+    // and every Contact row.
+    expect(await persistedState(reservationId)).toBe(before);
+    // The rejected commandId was never applied, so it is not burned either.
+    expect(await prisma.appliedCommand.count({ where: { commandId } })).toBe(0);
+  }
+
+  it("A — an ordinary modification without contactId still succeeds and leaves contactId unchanged", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7a-a" });
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-p7a-a-1",
+      changes: { notes: "raamtafel graag", partySize: 3 },
+    });
+    // Existing contract: a capacity-relevant change (partySize) reports 200 + MODIFIED (not 204).
+    expect(patched.status).toBe(200);
+    expect(patched.body.type).toBe("MODIFIED");
+    const after = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(after.notes).toBe("raamtafel graag");
+    expect(after.partySize).toBe(3);
+    expect(after.contactId).toBe("contact-1");
+  });
+
+  it("B — a phone-snapshot-only correction updates the snapshot, never contactId, and never the Contact record", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7a-b" });
+    const contactBefore = await prisma.contact.findUniqueOrThrow({ where: { id: "contact-1" } });
+    const patched = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
+      commandId: "http-cmd-p7a-b-1",
+      changes: { contactPhoneSnapshot: "0687654321" },
+    });
+    expect(patched.status).toBe(204);
+    const after = await prisma.reservation.findUniqueOrThrow({ where: { id: created.body.reservationId } });
+    expect(after.contactPhoneSnapshot).toBe("0687654321");
+    expect(after.contactId).toBe("contact-1");
+    expect(await prisma.contact.findUniqueOrThrow({ where: { id: "contact-1" } })).toEqual(contactBefore);
+  });
+
+  it("C — contactId set to an arbitrary string (a typed phone number) is rejected with 422 and nothing changes", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7a-c" });
+    await expectRejectedWithoutMutation(created.body.reservationId, { contactId: "0687654321" }, "http-cmd-p7a-c-1");
+  });
+
+  it("D — contactId set to ANOTHER real, Active Contact is rejected with 422 and nothing changes", async () => {
+    await prisma.contact.create({
+      data: { id: "contact-2", displayName: "Other Real Guest", phoneRaw: "0622222222", phoneNormalized: "+31622222222", createdBy: "staff-owner-test", lastRelevantActivityAt: NOW },
+    });
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7a-d" });
+    await expectRejectedWithoutMutation(created.body.reservationId, { contactId: "contact-2" }, "http-cmd-p7a-d-1");
+  });
+
+  it("E — contactId equal to the reservation's CURRENT contactId is still rejected (presence, not value, is refused)", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7a-e" });
+    await expectRejectedWithoutMutation(created.body.reservationId, { contactId: "contact-1" }, "http-cmd-p7a-e-1");
+  });
+
+  it("F — contactId alongside otherwise-valid changes rejects the WHOLE request atomically (no partial apply), including a null contactId", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7a-f" });
+    await expectRejectedWithoutMutation(
+      created.body.reservationId,
+      { contactId: "contact-1", notes: "mag niet doorkomen", contactPhoneSnapshot: "0600000001", partySize: 4 },
+      "http-cmd-p7a-f-1"
+    );
+    await expectRejectedWithoutMutation(created.body.reservationId, { contactId: null }, "http-cmd-p7a-f-2");
+  });
+});
+
 describe("POST /availability/reservations/:id/cancel (authoritative cancel)", () => {
   it("cancels the reservation and releases its committed capacity", async () => {
     const created = await create(sharedAgent, { commandId: "http-cmd-cancel" });
