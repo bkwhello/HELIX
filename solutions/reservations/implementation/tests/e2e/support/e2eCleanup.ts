@@ -110,7 +110,7 @@ export async function deleteE2ECriticalNotes(prisma: PrismaClient, ids: readonly
 
 /**
  * Deletes exactly one E2E-created Reservation row and its own Contact
- * row (plus the Reservation's child rows that the ON DELETE RESTRICT FKs
+ * row (plus its own guest-management credential(s), and the Reservation's child rows that the ON DELETE RESTRICT FKs
  * on reservation_events/reservation_critical_notes/seating_assignments
  * require to be removed first — reservation_critical_notes is refused,
  * not deleted, if any are found: this helper is only for reservations
@@ -155,6 +155,19 @@ export async function deleteE2EReservationAndContact(prisma: PrismaClient, reser
   const deletedReservations = await prisma.reservation.deleteMany({ where: { id: reservationId } });
   if (deletedReservations.count !== 1) {
     throw new UnsafeE2ECleanupError(`expected to delete exactly 1 reservation row for ${reservationId}, deleted ${deletedReservations.count}.`);
+  }
+
+  // R1.5-P7-B2 — every real create issues a guest-management credential
+  // (CreateReservationHandler.finalize() -> GuestManagementTokenService.issue,
+  // deliberately outside the reservation transaction). The table has no FK
+  // and nothing references a credential, so it was silently left behind as
+  // an orphan by every E2E create. Scoped to EXACTLY this reservation's id,
+  // and only reached after every gate above passed AND the reservation row
+  // itself was actually deleted — never a sweep of other/orphaned rows.
+  await prisma.guestManagementCredential.deleteMany({ where: { reservationId } });
+  const remainingCredentials = await prisma.guestManagementCredential.count({ where: { reservationId } });
+  if (remainingCredentials !== 0) {
+    throw new UnsafeE2ECleanupError(`expected no guest-management credential to remain for deleted reservation ${reservationId}, found ${remainingCredentials}.`);
   }
 
   if (!contactId) return;

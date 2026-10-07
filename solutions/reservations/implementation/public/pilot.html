@@ -1162,7 +1162,13 @@
     }
   }
 
-  criticalNoteAddButton.addEventListener("click", () => {
+  // R1.5-P7-B — the ONE add-note implementation, shared by the
+  // "Kritieke notitie toevoegen" button and Enter inside the detail input
+  // (below), so the two entry points can never diverge. A repeat call
+  // cannot add twice: Create mode clears the input synchronously before
+  // returning (a second call then finds it empty), and Edit mode goes
+  // through runCriticalNoteMutation's existing re-entry guard.
+  function addCriticalNoteFromInput() {
     const noteType = criticalNoteTypeSelect.value;
     const detail = criticalNoteDetailInput.value.trim();
     if (!detail) {
@@ -1177,7 +1183,7 @@
           clearMessage(criticalNoteMessage);
           await refreshEditingCriticalNotes();
         }
-      });
+      }).then(() => criticalNoteDetailInput.focus());
     } else {
       // Create-mode local queue — no network call, never gated by the
       // shared in-flight guard, stays synchronous.
@@ -1189,8 +1195,41 @@
       criticalNoteDetailInput.value = "";
       clearMessage(criticalNoteMessage);
       renderCriticalNotes();
+      criticalNoteDetailInput.focus();
     }
+  }
+
+  criticalNoteAddButton.addEventListener("click", addCriticalNoteFromInput);
+
+  // R1.5-P7-B — Enter inside the detail input previously fell through to
+  // the browser's implicit form submission, creating/saving the
+  // reservation WITHOUT the typed note. It now always means "add this
+  // note", never "submit the reservation". Held-key repeats and IME
+  // composition commits are ignored so one Enter adds at most one note.
+  criticalNoteDetailInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (event.repeat || event.isComposing) return;
+    addCriticalNoteFromInput();
   });
+
+  // R1.5-P7-B — text typed into the detail input but never added is not
+  // part of any request (only pendingCriticalNotes / an already-persisted
+  // add are), so submitting with it present would silently drop it. The
+  // create/edit submit handler refuses to proceed while this is true.
+  const UNADDED_CRITICAL_NOTE_MESSAGE = "Allergie/kritieke notitie is nog niet toegevoegd. Klik op Toevoegen of maak het veld leeg.";
+  function hasUnaddedCriticalNoteText(value) {
+    return typeof value === "string" && value.trim().length > 0;
+  }
+
+  // R1.5-P7-B — clears the unsent detail text and returns the type to its
+  // markup default, so a draft can never carry over to a different
+  // reservation (create -> edit, edit -> another edit, or after a create).
+  function resetCriticalNoteDraft() {
+    criticalNoteDetailInput.value = "";
+    const defaultIndex = [...criticalNoteTypeSelect.options].findIndex((option) => option.defaultSelected);
+    criticalNoteTypeSelect.selectedIndex = defaultIndex >= 0 ? defaultIndex : 0;
+  }
 
   // Rather than a growing pile of small inline editors for every
   // correctable field (name, phone, date/time, aantal, bron), "Bewerken"
@@ -1251,6 +1290,11 @@
     // for an instant), then refreshes from the detail route, the one read
     // that also exposes Resolved notes.
     editingCriticalNotes = [];
+    // R1.5-P7-B — a draft typed for a DIFFERENT reservation (or for a
+    // not-yet-created one) must never be one click away from being added
+    // to this one.
+    pendingCriticalNotes = [];
+    resetCriticalNoteDraft();
     clearMessage(criticalNoteMessage);
     renderCriticalNotes();
     refreshEditingCriticalNotes();
@@ -1283,6 +1327,7 @@
     editingReservationId = null;
     editingCriticalNotes = [];
     pendingCriticalNotes = [];
+    resetCriticalNoteDraft();
     clearMessage(criticalNoteMessage);
     renderCriticalNotes();
     createForm.reset();
@@ -1310,6 +1355,15 @@
   createForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     clearMessage(createMessage);
+
+    // R1.5-P7-B — checked FIRST, before any other validation or request:
+    // blocked here means no reservation, contact, or critical-note request
+    // is sent at all, and the typed text stays in place for correction.
+    if (hasUnaddedCriticalNoteText(criticalNoteDetailInput.value)) {
+      showMessage(createMessage, UNADDED_CRITICAL_NOTE_MESSAGE, "error");
+      criticalNoteDetailInput.focus();
+      return;
+    }
 
     if (!dateInput.value || !timeSelect.value) {
       showMessage(createMessage, "Kies een datum en tijd.", "error");
@@ -1458,6 +1512,7 @@
       document.getElementById("preferred-area").value = "";
       document.getElementById("notes").value = "";
       pendingCriticalNotes = [];
+      resetCriticalNoteDraft();
       renderCriticalNotes();
       clearContactMatchHint();
       await loadList();
