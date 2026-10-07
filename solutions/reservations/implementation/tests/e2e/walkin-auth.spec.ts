@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import fs from "node:fs";
 import { deleteE2EReservationAndContact } from "./support/e2eCleanup.js";
+import { classifyWalkInMessage } from "./support/walkInOutcome.js";
 
 /**
  * R1.5-P5 — P5-A: Walk-in 401/403 error-handling coverage (H1).
@@ -91,27 +92,43 @@ test.describe("R1.5-P5 — P5-A: Walk-in 401/403 error handling", () => {
       await page.fill("#walkin-name", uniqueName);
       await page.fill("#walkin-party-size", "2");
       await page.selectOption("#walkin-area", "Sushi");
+      // R1.5-P7-C1 — wait for the real response (no fixed sleep), then for the UI to render its outcome.
+      const walkInResponse = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/availability/reservations/walk-in");
       await page.click("#walkin-submit");
-      await page.waitForTimeout(400);
+      const response = await walkInResponse;
+      await expect(page.locator("#walkin-message")).not.toBeEmpty();
 
-      const messageText = await page.locator("#walkin-message").innerText();
+      // textContent (exactly what showMessage() set), not innerText, so CSS white-space never changes the compared text.
+      const messageText = (await page.locator("#walkin-message").textContent()) ?? "";
+      const messageClass = (await page.locator("#walkin-message").getAttribute("class")) ?? "";
+      const outcome = classifyWalkInMessage(messageText, messageClass);
       // Walk-in has no date/time field at all — the server always uses
       // the REAL current instant (api/app.ts's own doc comment: "the
       // server alone establishes reservationDate/source/commandNow").
-      // Outside every ServicePeriod's real booking window (e.g. a test
-      // run at 22:17 on a weekday, well past the 17:00-21:00 dinner
-      // window), the real, unchanged, correct server behavior is to
-      // reject it — this is CAP-D02.01's own authoritative enforcement,
-      // not something this test should route around by picking a
-      // different time (there is no time field to pick). Skip rather
-      // than fail in that case; this assertion is only meaningful when
-      // actually run during real service hours.
-      if (messageText.includes("Buiten de reserveringstijden")) {
+      // Two real, unchanged, correct server rejections are environment
+      // prerequisites, not defects, and are the ONLY skips:
+      //  - outside every ServicePeriod's real booking window (CAP-D02.01;
+      //    e.g. a run at 22:17 on a weekday) — 422 servicePeriod;
+      //  - R1.5-P7-C1: inside the window but no Opened ServiceSession for
+      //    it (R1.6-P2C-1; the dev environment has none) — 409
+      //    SESSION_NOT_OPEN. Nothing is written in either case.
+      // Each skip is cross-checked against the actual HTTP status, so a
+      // different error can never masquerade as an environment skip.
+      if (outcome === "SKIP_OUTSIDE_BOOKING_WINDOW") {
+        expect(response.status()).toBe(422);
         test.skip(true, `Real clock is currently outside every ServicePeriod's booking window — Walk-in correctly rejected (${messageText}). Re-run during real service hours to exercise the success path.`);
         return;
       }
+      if (outcome === "SKIP_NO_OPENED_SESSION") {
+        expect(response.status()).toBe(409);
+        expect((await response.json()).type).toBe("SESSION_NOT_OPEN");
+        test.skip(true, `No Opened ServiceSession in dev — Walk-in correctly rejected (${messageText}). Open the current service session to exercise the success path.`);
+        return;
+      }
 
-      expect(messageText).toMatch(/geregistreerd/);
+      // Exact success only: "Walk-in niet geregistreerd: …" can never pass here.
+      expect(outcome, `unexpected walk-in result (HTTP ${response.status()}): ${messageText} [${messageClass}]`).toBe("SUCCESS");
+      expect(response.status()).toBe(201);
       const created = await prisma.reservation.findFirst({ where: { contactName: uniqueName } });
       expect(created).not.toBeNull();
       reservationId = created!.id;

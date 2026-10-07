@@ -27,7 +27,7 @@ import { AvailabilityOrchestrator } from "../application/availability/Availabili
 import { SeatingOrchestrator, ResourceSelector } from "../application/floor/SeatingOrchestrator.js";
 import { SeatingAvailabilityService } from "../application/floor/SeatingAvailabilityService.js";
 import { ResourceBlockService } from "../application/floor/ResourceBlockService.js";
-import { getFloorView } from "../application/floor/FloorReadModel.js";
+import { getFloorView, getActiveSeatingByReservationIds, ReservationSeating, UNASSIGNED_SEATING } from "../application/floor/FloorReadModel.js";
 import { FloorRepository } from "../domain/repositories/FloorRepository.js";
 import { isCapacityPoolId, CAPACITY_POOLS } from "../domain/availability/CapacityPool.js";
 import { isTerminal } from "../domain/value-objects/ReservationStatus.js";
@@ -869,9 +869,14 @@ export function createApp(deps: AppDependencies): Express {
     // other floor-feature gate in this file — a deployment/test harness
     // that omits it sees every row as having no active assignment, which
     // is exactly the pre-P5 behavior.
-    let assignmentStatusByReservationId: ReadonlyMap<string, "Assigned" | "Seated"> = new Map();
+    // R1.5-P7-C — extended from status-only to the authoritative seating
+    // itself (status + the actually assigned table/seat labels), still one
+    // batched read for the whole day; seatingAssignmentStatus is derived
+    // from the same result, so the two can never disagree.
+    let seatingByReservationId: ReadonlyMap<string, ReservationSeating> = new Map();
     if (deps.floor && aggregates.length > 0) {
-      assignmentStatusByReservationId = await deps.floor.floorRepository.findActiveAssignmentStatusesByReservationIds(
+      seatingByReservationId = await getActiveSeatingByReservationIds(
+        deps.floor.prisma,
         aggregates.map((a) => a.getId().toString())
       );
     }
@@ -881,7 +886,7 @@ export function createApp(deps: AppDependencies): Express {
         serializeReservation(
           a,
           criticalNotesByReservationId.get(a.getId().toString()) ?? [],
-          assignmentStatusByReservationId.get(a.getId().toString()) ?? "Unassigned"
+          seatingByReservationId.get(a.getId().toString()) ?? UNASSIGNED_SEATING
         )
       ),
     });
@@ -1792,7 +1797,13 @@ export function createApp(deps: AppDependencies): Express {
     }
     // R1.3-I3 — CAP-D05.02. Detail exposes Active AND Resolved notes.
     const notes = await deps.repository.findCriticalNotesByReservationId(aggregate.getId().toString());
-    res.status(200).json(serializeReservation(aggregate, notes.map(serializeCriticalNote)));
+    // R1.5-P7-C — the same authoritative seating read as the daily list, so
+    // the detail view never reports a defaulted "Unassigned" for a
+    // reservation that is actually Assigned/Seated.
+    const seating = deps.floor
+      ? (await getActiveSeatingByReservationIds(deps.floor.prisma, [aggregate.getId().toString()])).get(aggregate.getId().toString())
+      : undefined;
+    res.status(200).json(serializeReservation(aggregate, notes.map(serializeCriticalNote), seating ?? UNASSIGNED_SEATING));
   });
 
   // P1-B4-A — CAP-D03.03/CAP-D04.01 read-only discovery: "which physical
@@ -2492,7 +2503,8 @@ export function createApp(deps: AppDependencies): Express {
           contactEmailSnapshot?: string;
           source?: { category: string; externalReference?: string; importedBy?: string };
           servicePeriodId?: string;
-          tableAssignment?: string;
+          /** R1.5-P7-C — never accepted here; any presence is rejected above. */
+          tableAssignment?: unknown;
           notes?: string;
           arrivedAt?: string | null;
         };
@@ -2527,6 +2539,28 @@ export function createApp(deps: AppDependencies): Express {
             {
               ruleId: "CAP-D01.01-R07",
               message: "contactId cannot be changed through reservation modification; correct the reservation's phone/email via contactPhoneSnapshot/contactEmailSnapshot instead.",
+            },
+          ],
+        });
+        return;
+      }
+
+      // R1.5-P7-C — P0-3. Reservation.tableAssignment is a legacy free-text
+      // note that no seating, capacity, overlap or floor rule reads; the
+      // operational table is the SeatingAssignment created through the
+      // seating routes (/reservations/:id/seating*), which enforce
+      // seatability and locking. Accepting it here let Reception record a
+      // "table" that the real floor model knew nothing about. Rejected on
+      // mere presence (even an unchanged value), before any parsing, so
+      // nothing in the request partially applies. The stored column and
+      // its historical values are untouched.
+      if (body.changes && typeof body.changes === "object" && Object.prototype.hasOwnProperty.call(body.changes, "tableAssignment")) {
+        res.status(422).json({
+          code: "TABLE_ASSIGNMENT_NOT_MODIFIABLE",
+          violations: [
+            {
+              ruleId: "CAP-D01.01-R48",
+              message: "tableAssignment is a legacy free-text field and cannot be modified; assign, move or release a table through the seating workflow instead.",
             },
           ],
         });
@@ -2575,7 +2609,7 @@ export function createApp(deps: AppDependencies): Express {
           contactEmailSnapshot: contactEmailSnapshot.present ? contactEmailSnapshot.value : undefined,
           source: body.changes?.source as never,
           servicePeriodId: body.changes?.servicePeriodId,
-          tableAssignment: body.changes?.tableAssignment,
+          // R1.5-P7-C — tableAssignment is never forwarded (rejected above).
           notes: body.changes?.notes,
           preferredArea: preferredArea.present ? preferredArea.value : undefined,
           // P0 retirement (EC-002 reservations audit) — added so `PATCH
@@ -2813,7 +2847,9 @@ function serializeReservation(aggregate: {
 criticalNotes: ReadonlyArray<ReturnType<typeof serializeCriticalNote>> = [],
 // R1.5-P5 — P5-B: additive, optional (defaults to "Unassigned" so every
 // existing caller/test that doesn't pass it keeps today's exact output).
-seatingAssignmentStatus: "Unassigned" | "Assigned" | "Seated" = "Unassigned"
+// R1.5-P7-C — now the authoritative seating itself; seatingAssignmentStatus
+// below is derived from it (same values as before).
+seating: ReservationSeating = UNASSIGNED_SEATING
 ) {
   return {
     id: aggregate.getId().toString(),
@@ -2828,10 +2864,14 @@ seatingAssignmentStatus: "Unassigned" | "Assigned" | "Seated" = "Unassigned"
     sourceCategory: aggregate.getSource().category,
     preferredArea: aggregate.getPreferredArea(),
     notes: aggregate.getNotes(),
+    // Legacy, non-authoritative free-text note (CAP-D01.01-R48); still
+    // returned for compatibility, never the operational table — see `seating`.
     tableAssignment: aggregate.getTableAssignment(),
     arrivedAt: aggregate.getArrivedAt()?.toISOString(),
     criticalNotes,
-    seatingAssignmentStatus,
+    seatingAssignmentStatus: seating.status,
+    // R1.5-P7-C — authoritative current seating (active SeatingAssignment).
+    seating: { status: seating.status, resources: seating.resources.map((r) => ({ kind: r.kind, label: r.label, tableLabel: r.tableLabel })) },
   };
 }
 

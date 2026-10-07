@@ -278,7 +278,6 @@
   .notes-cell { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .preference-select { width: auto; padding: 0.2rem 0.4rem; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border); }
   .preference-select-Sushi { background: var(--sushi-bg); color: var(--sushi-text); border-color: transparent; }
-  .table-input { width: 5rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
   .notes-input { width: 100%; min-width: 9rem; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
   .list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
   .list-item:last-child { border-bottom: none; }
@@ -1558,12 +1557,10 @@
   // exists on this form at all, and none is ever added to the request
   // body — the server alone establishes reservationDate/source/commandNow
   // (api/app.ts's POST /availability/reservations/walk-in). No table/
-  // resource selector is offered here: the "Tafel" column in Dagoverzicht
-  // below is a free-text note on the Reservation itself
-  // (tableAssignment), not the real SeatingAssignment/floor model — this
-  // pilot has no existing, safe selector for that to reuse, and inventing
-  // one is out of scope for this increment (see the P1-B3 report's "next
-  // operational gap").
+  // resource selector is offered here; a CREATED_UNSEATED walk-in is seated
+  // through the shared seating picker. (R1.5-P7-C — the Dagoverzicht "Tafel"
+  // column now shows the real SeatingAssignment, read-only; the legacy
+  // free-text tableAssignment is no longer shown or edited.)
   const walkinForm = document.getElementById("walkin-form");
   const walkinSubmit = document.getElementById("walkin-submit");
   const walkinMessage = document.getElementById("walkin-message");
@@ -1573,6 +1570,8 @@
   // (AvailabilityOrchestrator.createImmediateWalkIn's own doc comment) —
   // so this reuses creationErrorMessage as-is; only the capacity phrasing
   // is walk-in-specific, per the required staff-facing wording.
+  const WALKIN_SESSION_NOT_OPEN_MESSAGE = "Walk-in kan niet worden geregistreerd: er is geen geopende dienst.";
+
   function walkInErrorMessage(data) {
     if (data.availability) return "Geen capaciteit beschikbaar voor deze walk-in.";
     return creationErrorMessage(data);
@@ -1631,6 +1630,16 @@
       }
       if (res.status === 403) {
         showMessage(walkinMessage, "Je hebt geen rechten om een walk-in te registreren.", "error");
+        return;
+      }
+
+      // R1.5-P7-C1 — a walk-in requires an Opened ServiceSession (server-
+      // enforced, R1.6-P2C-1; nothing is written when it is missing). The
+      // 409 {type: "SESSION_NOT_OPEN"} body carries none of the fields the
+      // generic mapping below recognises, so it used to surface as
+      // "Onbekende fout." — now it names the actual operational problem.
+      if (res.status === 409 && data.type === "SESSION_NOT_OPEN") {
+        showMessage(walkinMessage, WALKIN_SESSION_NOT_OPEN_MESSAGE, "error");
         return;
       }
 
@@ -2012,7 +2021,7 @@
       // P0 retirement (EC-002 reservations audit) — repointed from the
       // now-retired PATCH /reservations/:id. Used here for preferredArea
       // (capacity-relevant — correctly goes through full capacity
-      // checking), tableAssignment/arrivedAt/notes (not capacity-relevant
+      // checking), arrivedAt/notes (not capacity-relevant
       // — AvailabilityOrchestrator.modifyWithCapacity() routes those to
       // its lightweight modifyWithoutCapacityChange() path automatically).
       const res = await fetch(`/availability/reservations/${reservationId}`, {
@@ -2291,6 +2300,23 @@
     showMessage(listMessage, "Bevestiging opnieuw ingepland voor verzending.", "ok");
   }
 
+  // R1.5-P7-C — presentation of the authoritative seating (GET /reservations
+  // `seating`): table labels for Sushi tables, "Grill <label> · <seats>" for
+  // Teppanyaki seats grouped per grill. Pure — no DOM, no fetch.
+  function describeSeating(seating) {
+    if (!seating || seating.status === "Unassigned" || !Array.isArray(seating.resources) || seating.resources.length === 0) {
+      return { text: "Niet toegewezen", stateLabel: "" };
+    }
+    const tables = seating.resources.filter((res) => res.kind === "Table").map((res) => res.label);
+    const seatsByGrill = new Map();
+    for (const res of seating.resources.filter((x) => x.kind === "Seat")) {
+      if (!seatsByGrill.has(res.tableLabel)) seatsByGrill.set(res.tableLabel, []);
+      seatsByGrill.get(res.tableLabel).push(res.label);
+    }
+    const parts = [...tables, ...[...seatsByGrill].map(([grill, seats]) => `Grill ${grill} · ${seats.join(", ")}`)];
+    return { text: parts.join(" + "), stateLabel: seating.status === "Seated" ? "Gezeten" : "Toegewezen" };
+  }
+
   function renderList() {
     listBody.innerHTML = "";
 
@@ -2359,16 +2385,23 @@
 
         const tableCell = document.createElement("td");
         tableCell.dataset.label = "Tafel";
-        if (r.preferredArea === "Teppanyaki" || r.preferredArea === "Sushi") {
-          const input = document.createElement("input");
-          input.type = "text";
-          input.className = "table-input";
-          input.placeholder = r.preferredArea === "Teppanyaki" ? "bijv. C1" : "tafel";
-          input.value = r.tableAssignment || "";
-          input.addEventListener("change", () => saveReservationField(r.id, { tableAssignment: input.value.trim() }, input, "tafel"));
-          tableCell.appendChild(input);
-        } else {
-          tableCell.textContent = "—";
+        // R1.5-P7-C — P0-3. Read-only, from the authoritative active
+        // SeatingAssignment (r.seating). The old editable free-text input
+        // wrote the legacy Reservation.tableAssignment, which no floor or
+        // seating rule knows about; tables are assigned/moved/seated only
+        // through the seating workflow (Tafel toewijzen / Nu plaatsen /
+        // Verplaatsen) in the actions column.
+        const seatingView = describeSeating(r.seating);
+        const seatingText = document.createElement("span");
+        seatingText.className = "seating-resources";
+        seatingText.textContent = seatingView.text;
+        tableCell.appendChild(seatingText);
+        if (seatingView.stateLabel) {
+          const seatingState = document.createElement("span");
+          seatingState.className = "status seating-state seating-state-" + r.seating.status;
+          seatingState.textContent = seatingView.stateLabel;
+          tableCell.appendChild(document.createElement("br"));
+          tableCell.appendChild(seatingState);
         }
 
         // Time is the primary thing staff scan for during service: has

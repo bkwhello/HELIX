@@ -738,28 +738,60 @@ describe("POST /reservations/:id/complete", () => {
   });
 });
 
-describe("PATCH /availability/reservations/:id — manual table assignment (CAP-D01.01-R48)", () => {
-  it("sets and later changes the table assignment, reflected in GET", async () => {
-    const created = await create(sharedAgent, { commandId: "http-cmd-table", preferredArea: "Teppanyaki" });
+/**
+ * R1.5-P7-C — P0-3 (supersedes the former "manual table assignment" tests,
+ * which asserted that this route wrote the legacy free-text
+ * Reservation.tableAssignment). That field is read by no seating, capacity,
+ * overlap or floor rule; the operational table is the SeatingAssignment
+ * created via /reservations/:id/seating*. The generic modify route now
+ * rejects the key's mere presence (422 TABLE_ASSIGNMENT_NOT_MODIFIABLE,
+ * CAP-D01.01-R48) before any parsing, so nothing in such a request applies.
+ * The stored column and historical values are untouched and still read.
+ */
+describe("PATCH /availability/reservations/:id — legacy tableAssignment is never writable (R1.5-P7-C)", () => {
+  async function persistedState(reservationId: string) {
+    const reservation = await prisma.reservation.findUniqueOrThrow({ where: { id: reservationId } });
+    const events = await prisma.reservationEvent.findMany({ where: { reservationId }, orderBy: { id: "asc" } });
+    const commitments = await prisma.capacityCommitment.findMany({ where: { reservationId }, orderBy: { commitmentId: "asc" } });
+    const seating = await prisma.seatingAssignment.count({ where: { reservationId } });
+    return JSON.stringify({ reservation, events, commitments, seating });
+  }
+
+  async function expectRejectedWithoutMutation(reservationId: string, changes: Record<string, unknown>, commandId: string) {
+    const before = await persistedState(reservationId);
+    const res = await patchReq(sharedAgent, `/availability/reservations/${reservationId}`).send({ commandId, changes });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("TABLE_ASSIGNMENT_NOT_MODIFIABLE");
+    expect(res.body.violations).toEqual([expect.objectContaining({ ruleId: "CAP-D01.01-R48" })]);
+    // Reservation row (version, tableAssignment, ...), events (no
+    // ReservationModified), capacity commitments and seating: identical.
+    expect(await persistedState(reservationId)).toBe(before);
+    expect(await prisma.appliedCommand.count({ where: { commandId } })).toBe(0);
+  }
+
+  it("H — tableAssignment = 'Tafel 99' is rejected with 422 and nothing changes", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7c-h", preferredArea: "Teppanyaki" });
     expect(created.status).toBe(201);
+    await expectRejectedWithoutMutation(created.body.reservationId, { tableAssignment: "Tafel 99" }, "http-cmd-p7c-h-1");
+  });
 
-    const setTable = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
-      commandId: "http-cmd-table-1",
-      changes: { tableAssignment: "C1" },
-    });
-    expect(setTable.status).toBe(204);
+  it("I — even re-sending the reservation's EXISTING legacy value is rejected (presence, not value, is refused)", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7c-i" });
+    // A historical legacy value, as older rows may carry (set directly — no route can write it any more).
+    await prisma.reservation.update({ where: { id: created.body.reservationId }, data: { tableAssignment: "C1" } });
+    await expectRejectedWithoutMutation(created.body.reservationId, { tableAssignment: "C1" }, "http-cmd-p7c-i-1");
+    // The historical value itself is preserved and still readable.
+    const get = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
+    expect(get.body.tableAssignment).toBe("C1");
+  });
 
-    const afterSet = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
-    expect(afterSet.body.tableAssignment).toBe("C1");
-
-    const changeTable = await patchReq(sharedAgent, `/availability/reservations/${created.body.reservationId}`).send({
-      commandId: "http-cmd-table-2",
-      changes: { tableAssignment: "D3" },
-    });
-    expect(changeTable.status).toBe(204);
-
-    const afterChange = await sharedAgent.get(`/reservations/${created.body.reservationId}`);
-    expect(afterChange.body.tableAssignment).toBe("D3");
+  it("J — a valid ordinary change combined with tableAssignment rejects the WHOLE request before mutation", async () => {
+    const created = await create(sharedAgent, { commandId: "http-cmd-p7c-j" });
+    await expectRejectedWithoutMutation(
+      created.body.reservationId,
+      { notes: "mag niet doorkomen", partySize: 4, tableAssignment: "D3" },
+      "http-cmd-p7c-j-1"
+    );
   });
 });
 
