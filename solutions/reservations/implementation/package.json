@@ -23,7 +23,14 @@
     "verify-integrity": "tsx ops/integrity/verifyIntegrity.ts",
     "service-snapshot": "tsx ops/snapshot/createServiceSnapshot.ts",
     "recovery-drill": "tsx ops/recoveryDrill.ts",
-    "process-communications": "tsx ops/communications/processOutbox.ts"
+    "process-communications": "tsx ops/communications/processOutbox.ts",
+    "ux:start": "tsx --env-file=.env.ux api/server.ts",
+    "ux:provision": "tsx --env-file=.env.ux ops/ux/provisionUxDatabase.ts",
+    "ux:seed": "tsx --env-file=.env.ux ops/ux/seedUxSaturday.ts",
+    "ux:verify": "tsx --env-file=.env.ux ops/ux/verifyUxDataset.ts",
+    "ux:teardown": "tsx --env-file=.env.ux ops/ux/teardownUx.ts",
+    "ux:set-password": "tsx --env-file=.env.ux ops/ux/setUxReceptionPassword.ts",
+    "test:e2e:ux": "playwright test --config playwright.ux.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

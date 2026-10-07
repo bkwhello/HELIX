@@ -12,6 +12,6 @@ export default defineConfig({
     // (playwright.config.ts), a real browser, not vitest's. Without this
     // exclude, vitest's own default glob would also try to collect those
     // files and fail on @playwright/test's incompatible test()/expect().
-    exclude: [...configDefaults.exclude, "tests/e2e/**"],
+    exclude: [...configDefaults.exclude, "tests/e2e/**", "tests/e2e-ux/**"],
   },
 });
