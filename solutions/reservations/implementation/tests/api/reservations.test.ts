@@ -1399,10 +1399,13 @@ describe("GET /teppanyaki-occupancy", () => {
     const orangeRes = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
     expect(orangeRes.status).toBe(200);
     expect(orangeRes.body.capacity).toBe(40);
+    // R1.5-P8-A — additive explicit fields; one concurrent booking: peak = covers.
     expect(orangeRes.body.days).toContainEqual({
       date: dateKey,
       servicePeriodId: "dinner",
       bookedSeats: 28,
+      peakConcurrentSeats: 28,
+      bookedCovers: 28,
       capacity: 40,
       percentage: 70,
       level: "orange",
@@ -1434,6 +1437,49 @@ describe("GET /teppanyaki-occupancy", () => {
     const dateKey = FUTURE_DATE.toISOString().slice(0, 10);
     const res = await sharedAgent.get(`/teppanyaki-occupancy?from=${dateKey}&days=1`);
     expect(res.body.days).toHaveLength(0);
+  });
+
+  // R1.5-P8-A — explicit peak-concurrency semantics (was: summed day covers, cancelled
+  // included, against 40 concurrent seats). FUTURE_DATE's day is a Saturday in CEST
+  // (UTC+2): 12:00/14:30/17:00/18:00/19:30 Amsterdam = 10:00/12:30/15:00/16:00/17:30 UTC.
+  const at = (utcTime: string) => `${FUTURE_DATE.toISOString().slice(0, 10)}T${utcTime}:00.000Z`;
+  async function occupancyRow() {
+    const res = await sharedAgent.get(`/teppanyaki-occupancy?from=${FUTURE_DATE.toISOString().slice(0, 10)}&days=1`);
+    expect(res.status).toBe(200);
+    return res.body.days[0];
+  }
+  async function createTeppanyakiAt(commandId: string, partySize: number, utcTime: string) {
+    const res = await create(sharedAgent, { commandId, servicePeriodId: "dinner", reservationDate: at(utcTime), partySize, preferredArea: "Teppanyaki" });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    return res.body.reservationId as string;
+  }
+
+  it("cancelled reservations do not inflate occupancy", async () => {
+    await createTeppanyakiAt("occ-cxl-keep", 28, "15:00");
+    const cancelled = await createTeppanyakiAt("occ-cxl-gone", 10, "15:00");
+    expect((await occupancyRow()).peakConcurrentSeats).toBe(38);
+    const cancel = await post(sharedAgent, `/availability/reservations/${cancelled}/cancel`).send({ commandId: "occ-cxl-cancel" });
+    expect(cancel.status).toBe(204);
+    expect(await occupancyRow()).toMatchObject({ bookedSeats: 28, peakConcurrentSeats: 28, bookedCovers: 28, percentage: 70, level: "orange" });
+  });
+
+  it("sequential (non-overlapping) reservations do not count simultaneously", async () => {
+    await createTeppanyakiAt("occ-seq-1", 30, "15:00"); // 17:00–19:30 local
+    await createTeppanyakiAt("occ-seq-2", 30, "17:30"); // 19:30–22:00 local — starts exactly when the first ends
+    expect(await occupancyRow()).toMatchObject({ peakConcurrentSeats: 30, bookedCovers: 60, percentage: 75, level: "orange" });
+  });
+
+  it("concurrent (overlapping) reservations do count together", async () => {
+    await createTeppanyakiAt("occ-ovl-1", 20, "15:00"); // 17:00–19:30
+    await createTeppanyakiAt("occ-ovl-2", 15, "16:00"); // 18:00–20:30 overlaps 18:00–19:30
+    expect(await occupancyRow()).toMatchObject({ peakConcurrentSeats: 35, bookedCovers: 35, percentage: 88, level: "orange" });
+  });
+
+  it("several waves in one day can never push occupancy beyond the authoritative 40-seat capacity", async () => {
+    for (const [i, t] of ["10:00", "12:30", "15:00", "17:30"].entries()) await createTeppanyakiAt(`occ-wave-${i}`, 30, t); // 4 sequential waves
+    const row = await occupancyRow();
+    expect(row).toMatchObject({ peakConcurrentSeats: 30, bookedCovers: 120, capacity: 40, percentage: 75 }); // the old logic reported 300%
+    expect(row.peakConcurrentSeats).toBeLessThanOrEqual(row.capacity);
   });
 });
 

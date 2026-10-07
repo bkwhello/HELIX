@@ -8,6 +8,85 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { CriticalNoteStatus, CriticalNoteType } from "../../domain/value-objects/ReservationCriticalNote.js";
+import type { FloorRepository } from "../../domain/repositories/FloorRepository.js";
+
+/**
+ * R1.5-P8-A — the most recent RELEASED SeatingAssignment of each reservation
+ * (reason + time), in one batched query. Source of truth for "No-show":
+ * SeatingOrchestrator.releaseNoShow() releases the active assignment with
+ * releaseReason = "NoShow" (Reservation.status itself is deliberately never
+ * changed by a no-show). A reservation counts as a no-show only when it has
+ * NO active assignment and its latest release is NoShow — see isNoShow().
+ */
+export interface SeatingReleaseSummary {
+  readonly reason: string | null;
+  readonly releasedAt: Date | null;
+}
+
+export async function getLatestSeatingReleaseByReservationIds(
+  prisma: PrismaClient,
+  reservationIds: readonly string[]
+): Promise<ReadonlyMap<string, SeatingReleaseSummary>> {
+  if (reservationIds.length === 0) return new Map();
+  const released = await prisma.seatingAssignment.findMany({
+    where: { reservationId: { in: [...reservationIds] }, status: "Released" },
+    select: { reservationId: true, releaseReason: true, releasedAt: true, assignedAt: true },
+    orderBy: [{ releasedAt: "desc" }, { assignedAt: "desc" }],
+  });
+  const latest = new Map<string, SeatingReleaseSummary>();
+  for (const row of released) if (!latest.has(row.reservationId)) latest.set(row.reservationId, { reason: row.releaseReason, releasedAt: row.releasedAt });
+  return latest;
+}
+
+/** No active seating AND the latest release was a No-show. A later re-assignment (active again) is never a no-show. */
+export function isNoShow(seating: ReservationSeating, latestRelease: SeatingReleaseSummary | undefined): boolean {
+  return seating.status === "Unassigned" && latestRelease?.reason === "NoShow";
+}
+
+/**
+ * R1.5-P8-A — authoritative Teppanyaki grill occupancy at ONE instant `at`
+ * (concurrent occupancy, never a day total). A seat is occupied when an
+ * active (Assigned or Seated) SeatingAssignmentResource claims it with
+ * startTime <= at < endTime — the exact overlap predicate the seating
+ * subsystem enforces (FloorRepository.findOverlappingResourceClaims, queried
+ * for the one-millisecond range [at, at+1ms)). A whole-table claim on a grill
+ * occupies the whole grill. A ResourceBlock covering `at` makes the grill
+ * unavailable (blocked, 0 free). Released/cancelled seating never counts.
+ */
+export interface GrillOccupancy {
+  readonly tableId: string;
+  readonly label: string;
+  readonly occupiedSeats: number;
+  readonly capacity: number;
+  readonly freeSeats: number;
+  readonly full: boolean;
+  readonly blocked: boolean;
+}
+
+export async function getTeppanyakiGrillOccupancyAt(prisma: PrismaClient, floorRepository: FloorRepository, at: Date): Promise<readonly GrillOccupancy[]> {
+  const grills = await prisma.table.findMany({
+    where: { areaId: "Teppanyaki", supportsSharedSeating: true, status: "Active" },
+    include: { seats: { where: { status: "Active" }, select: { id: true } } },
+  });
+  if (grills.length === 0) return [];
+  const rangeStart = at;
+  const rangeEnd = new Date(at.getTime() + 1);
+  const claimed = await floorRepository.findOverlappingResourceClaims({
+    tableIds: grills.map((g) => g.id),
+    seatIds: grills.flatMap((g) => g.seats.map((s) => s.id)),
+    rangeStart,
+    rangeEnd,
+  });
+  const result: GrillOccupancy[] = [];
+  for (const grill of grills) {
+    const blocked = (await floorRepository.findOverlappingResourceBlocks({ tableId: grill.id, rangeStart, rangeEnd })).length > 0;
+    const capacity = grill.nominalCapacity;
+    const occupiedSeats = claimed.tableIds.has(grill.id) ? capacity : Math.min(capacity, grill.seats.filter((s) => claimed.seatIds.has(s.id)).length);
+    const freeSeats = blocked ? 0 : Math.max(0, capacity - occupiedSeats);
+    result.push({ tableId: grill.id, label: grill.operationalLabel, occupiedSeats, capacity, freeSeats, full: !blocked && freeSeats === 0, blocked });
+  }
+  return result.sort((a, b) => a.label.localeCompare(b.label, "nl", { numeric: true }));
+}
 
 /**
  * R1.5-P7-C — the authoritative CURRENT seating of a reservation, for the

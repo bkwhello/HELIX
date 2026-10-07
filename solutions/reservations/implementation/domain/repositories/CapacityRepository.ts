@@ -32,6 +32,18 @@ export interface CapacityRepository {
     readonly tx?: TransactionContext;
   }): Promise<readonly CommitmentInterval[]>;
 
+  /**
+   * R1.5-P8-A — read-only: the Committed commitments (released/cancelled ones
+   * excluded) of the given reservations in one pool, each with its
+   * reservationId, in one query. Used for peak-concurrency reporting
+   * (GET /teppanyaki-occupancy) over exactly the same capacity truth the
+   * availability check enforces — never a second capacity model.
+   */
+  findCommittedByReservationIds(input: {
+    readonly capacityPoolId: string;
+    readonly reservationIds: readonly string[];
+  }): Promise<readonly (CommitmentInterval & { readonly reservationId: string })[]>;
+
   findById(commitmentId: string, tx?: TransactionContext): Promise<CapacityCommitment | null>;
 
   findByCommandId(commandId: string, tx?: TransactionContext): Promise<CapacityCommitment | null>;

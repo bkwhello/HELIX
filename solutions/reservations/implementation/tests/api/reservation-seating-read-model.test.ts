@@ -28,6 +28,8 @@ import { ServicePeriodService } from "../../application/availability/ServicePeri
 import { PrismaServicePeriodOverrideStore } from "../../infrastructure/persistence/PrismaServicePeriodOverrideStore.js";
 import { CSRF_HEADER_NAME } from "../../api/authMiddleware.js";
 import { ActorRole } from "../../domain/value-objects/Actor.js";
+import { UX_SATURDAY_PLAN, amsterdamLocalToUtc } from "../../ops/ux/uxSaturdayPlan.js";
+import { CAPACITY_POOLS } from "../../domain/availability/CapacityPool.js";
 
 /**
  * R1.5-P7-C — P0-3 read model. GET /reservations (daily list) and
@@ -287,7 +289,8 @@ describe("R1.5-P7-C — authoritative seating in GET /reservations and GET /rese
     const queriesForEight = countSeatingQueries();
 
     expect(queriesForOne).toBeGreaterThan(0);
-    expect(queriesForOne).toBeLessThanOrEqual(4); // assignments, their resources, seats, tables
+    // assignments, their resources, seats, tables + (R1.5-P8-A) one batched latest-release lookup for the no-show signal
+    expect(queriesForOne).toBeLessThanOrEqual(5);
     expect(queriesForEight).toBe(queriesForOne);
   });
 });
@@ -327,5 +330,225 @@ describe("R1.5-P7-C — FloorReadModel.hasAllergyNote follows ACTIVE Allergy cri
   it("U — free-text notes with allergy-like words do NOT set the authoritative allergy state", async () => {
     const id = await createReservation({ notes: "notenallergie! gluten allergie, geen schaaldieren" });
     expect((await floorRow(id)).hasAllergyNote).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// R1.5-P8-A — no-show signal (N1–N6) and Teppanyaki occupancy at time T (T1–T10)
+// ─────────────────────────────────────────────────────────────────────────
+let p8Counter = 0;
+async function createP8Reservation(opts: { at: Date; area: "Sushi" | "Teppanyaki"; partySize: number; status?: string; name?: string }): Promise<string> {
+  p8Counter += 1;
+  const id = `p8a-res-${p8Counter}`;
+  await prisma.reservation.create({
+    data: {
+      id,
+      servicePeriodId: "dinner",
+      contactId: "contact-1",
+      contactName: opts.name ?? `P8-A Guest ${p8Counter}`,
+      status: opts.status ?? "Confirmed",
+      reservationDate: opts.at,
+      partySize: opts.partySize,
+      sourceCategory: "Telephone",
+      preferredArea: opts.area,
+      createdBy: "staff-owner-p7c",
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+    },
+  });
+  return id;
+}
+
+async function createP8Assignment(
+  reservationId: string,
+  status: "Assigned" | "Seated" | "Released",
+  resources: readonly ({ tableId: string } | { seatId: string })[],
+  start: Date,
+  end: Date,
+  releaseReason?: "NoShow" | "StaffReassigned" | "GuestCancelled" | "Completed",
+  releasedAt?: Date
+): Promise<void> {
+  p8Counter += 1;
+  await prisma.seatingAssignment.create({
+    data: {
+      reservationId,
+      status,
+      startTime: start,
+      endTime: end,
+      assignedBy: "staff-owner-p7c",
+      commandId: `p8a-assign-${p8Counter}`,
+      seatedAt: status === "Seated" ? NOW : null,
+      releaseReason: status === "Released" ? (releaseReason ?? "StaffReassigned") : null,
+      releasedAt: status === "Released" ? (releasedAt ?? NOW) : null,
+      resources: {
+        create: resources.map((r) => ({ tableId: "tableId" in r ? r.tableId : null, seatId: "seatId" in r ? r.seatId : null, status, startTime: start, endTime: end })),
+      },
+    },
+  });
+}
+
+const minutesLater = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
+
+describe("R1.5-P8-A — authoritative No-show signal in GET /reservations (N1–N6)", () => {
+  const sushiEnd = minutesLater(RESERVATION_TIME, CAPACITY_POOLS.Sushi.durationMinutes);
+
+  it("N1 — an ordinary expected reservation carries no No-show signal", async () => {
+    const id = await createReservation();
+    const row = await listRow(id);
+    expect(row.noShow).toBe(false);
+    expect(row.lastSeatingRelease).toBeNull();
+  });
+
+  it("N2 — a reservation released as NoShow is exposed as noShow (list AND detail), with reason and time", async () => {
+    const id = await createReservation();
+    await createP8Assignment(id, "Released", [{ tableId: "sushi-table-5" }], RESERVATION_TIME, sushiEnd, "NoShow", NOW);
+    const row = await listRow(id);
+    expect(row.noShow).toBe(true);
+    expect(row.lastSeatingRelease).toEqual({ reason: "NoShow", releasedAt: NOW.toISOString() });
+    expect(row.status).toBe("Confirmed"); // Reservation.status is never changed by a no-show
+    const detail = await sharedAgent.get(`/reservations/${id}`);
+    expect(detail.body.noShow).toBe(true);
+  });
+
+  it("N3 — other release reasons are never classified as NoShow", async () => {
+    for (const reason of ["StaffReassigned", "GuestCancelled", "Completed"] as const) {
+      const id = await createReservation();
+      await createP8Assignment(id, "Released", [{ tableId: "sushi-table-6" }], RESERVATION_TIME, sushiEnd, reason);
+      const row = await listRow(id);
+      expect(row.noShow, reason).toBe(false);
+      expect(row.lastSeatingRelease.reason).toBe(reason);
+    }
+  });
+
+  it("N4 — a Cancelled reservation stays distinguishable from a No-show", async () => {
+    const id = await createP8Reservation({ at: RESERVATION_TIME, area: "Sushi", partySize: 2, status: "Cancelled" });
+    await createP8Assignment(id, "Released", [{ tableId: "sushi-table-7" }], RESERVATION_TIME, sushiEnd, "GuestCancelled");
+    const row = await listRow(id);
+    expect(row.status).toBe("Cancelled");
+    expect(row.noShow).toBe(false);
+  });
+
+  it("N5 — historical Released seating never makes an ACTIVE reservation a No-show (incl. a no-show that was re-seated)", async () => {
+    const reseated = await createReservation();
+    await createP8Assignment(reseated, "Released", [{ tableId: "sushi-table-8" }], RESERVATION_TIME, sushiEnd, "NoShow", new Date(NOW.getTime() - 60_000));
+    await createP8Assignment(reseated, "Assigned", [{ tableId: "sushi-table-9" }], RESERVATION_TIME, sushiEnd);
+    const moved = await createReservation();
+    await createP8Assignment(moved, "Released", [{ tableId: "sushi-table-10" }], RESERVATION_TIME, sushiEnd, "StaffReassigned");
+    await createP8Assignment(moved, "Seated", [{ tableId: "sushi-table-11" }], RESERVATION_TIME, sushiEnd);
+    expect((await listRow(reseated)).noShow).toBe(false);
+    expect((await listRow(moved)).noShow).toBe(false);
+    // An unrelated reservation is unaffected by someone else's no-show.
+    const unrelated = await createReservation();
+    expect((await listRow(unrelated)).noShow).toBe(false);
+  });
+
+  it("N6 — no N+1: the release lookup is one batched query for 1 and for 8 reservations", async () => {
+    // The release lookup is the only seating query ordered by released_at (status values are bound parameters, not SQL text).
+    const releaseQueries = () => executedQueries.filter((q) => /"seating_assignments"/.test(q) && /"released_at" DESC/.test(q)).length;
+    const first = await createReservation();
+    await createP8Assignment(first, "Released", [{ tableId: "sushi-table-12" }], RESERVATION_TIME, sushiEnd, "NoShow");
+    executedQueries.length = 0;
+    await listRow(first);
+    const forOne = releaseQueries();
+    for (let i = 0; i < 7; i++) {
+      const id = await createReservation();
+      await createP8Assignment(id, "Released", [{ tableId: `sushi-bar-${17 + (i % 4)}` }], RESERVATION_TIME, sushiEnd, i % 2 === 0 ? "NoShow" : "StaffReassigned");
+    }
+    executedQueries.length = 0;
+    const res = await sharedAgent.get(`/reservations?date=${DAY}`);
+    expect(res.body.reservations).toHaveLength(8);
+    expect(releaseQueries()).toBe(forOne);
+    expect(forOne).toBe(1);
+  });
+});
+
+describe("R1.5-P8-A — authoritative Teppanyaki occupancy at time T: GET /floor/teppanyaki-occupancy (T1–T10)", () => {
+  // The UX busy-Saturday Teppanyaki seating, reproduced 1:1 from the UX fixture plan
+  // (ops/ux/uxSaturdayPlan.ts) on 2026-10-10, including its move and no-show history.
+  const DATE = "2026-10-10";
+  const AT_1945 = amsterdamLocalToUtc(DATE, "19:45");
+  const durationMs = CAPACITY_POOLS.Teppanyaki.durationMinutes * 60_000;
+  const seats = (ids: readonly string[]) => ids.map((seatId) => ({ seatId }));
+
+  async function seedUxTeppanyaki(): Promise<void> {
+    for (const r of UX_SATURDAY_PLAN.filter((x) => x.area === "Teppanyaki")) {
+      const start = amsterdamLocalToUtc(DATE, r.time);
+      const end = new Date(start.getTime() + durationMs);
+      const id = await createP8Reservation({ at: start, area: "Teppanyaki", partySize: r.partySize, status: r.status, name: r.ref });
+      const s = r.seating;
+      if (!s) continue;
+      if (s.mode === "noShow") await createP8Assignment(id, "Released", seats(s.resources), start, end, "NoShow");
+      else {
+        if (s.moveFrom) await createP8Assignment(id, "Released", seats(s.moveFrom), start, end, "StaffReassigned");
+        await createP8Assignment(id, s.mode === "seat" ? "Seated" : "Assigned", seats(s.resources), start, end);
+      }
+    }
+  }
+
+  type Grill = { occupiedSeats: number; capacity: number; freeSeats: number; full: boolean; blocked: boolean };
+  async function occupancyAt(at: Date): Promise<Record<string, Grill>> {
+    const res = await sharedAgent.get(`/floor/teppanyaki-occupancy?at=${encodeURIComponent(at.toISOString())}`);
+    expect(res.status).toBe(200);
+    expect(res.body.at).toBe(at.toISOString());
+    return Object.fromEntries((res.body.grills as (Grill & { label: string })[]).map((g) => [g.label, g]));
+  }
+
+  it("T1–T4 — UX Saturday 19:45: C 5/10, D 8/10, E 10/10 FULL, F 2/10", async () => {
+    await seedUxTeppanyaki();
+    const g = await occupancyAt(AT_1945);
+    expect(g["C"]).toMatchObject({ occupiedSeats: 5, capacity: 10, freeSeats: 5, full: false, blocked: false });
+    expect(g["D"]).toMatchObject({ occupiedSeats: 8, capacity: 10, freeSeats: 2, full: false });
+    expect(g["E"]).toMatchObject({ occupiedSeats: 10, capacity: 10, freeSeats: 0, full: true });
+    expect(g["F"]).toMatchObject({ occupiedSeats: 2, capacity: 10, freeSeats: 8, full: false });
+  });
+
+  it("T5 — a cancelled reservation (released seating) never counts", async () => {
+    await seedUxTeppanyaki();
+    const start = amsterdamLocalToUtc(DATE, "19:30");
+    const cancelled = await createP8Reservation({ at: start, area: "Teppanyaki", partySize: 2, status: "Cancelled" });
+    await createP8Assignment(cancelled, "Released", [{ seatId: "teppanyaki-f-seat-07" }, { seatId: "teppanyaki-f-seat-08" }], start, new Date(start.getTime() + durationMs), "GuestCancelled");
+    expect((await occupancyAt(AT_1945))["F"]!.occupiedSeats).toBe(2);
+  });
+
+  it("T6 — earlier (ended) and later (not yet started) seatings do not count simultaneously", async () => {
+    await seedUxTeppanyaki();
+    const g1945 = await occupancyAt(AT_1945);
+    expect(g1945["C"]!.occupiedSeats).toBe(5); // the 17:00 wave (C-01..10, until 19:30) has ended
+    expect(g1945["F"]!.occupiedSeats).toBe(2); // UX-SAT-012 (F-01..04) only starts at 20:00
+    expect((await occupancyAt(amsterdamLocalToUtc(DATE, "17:15")))["C"]).toMatchObject({ occupiedSeats: 10, full: true });
+    expect((await occupancyAt(amsterdamLocalToUtc(DATE, "20:15")))["F"]!.occupiedSeats).toBe(6); // 017 F-05..06 + 012 F-01..04
+    // Boundary: a seating ending exactly at T no longer occupies at T (end-exclusive, like the seating overlap rule).
+    expect((await occupancyAt(amsterdamLocalToUtc(DATE, "19:30")))["C"]!.occupiedSeats).toBe(0);
+  });
+
+  it("T7 + T10 — concurrent active seatings of several reservations on one grill aggregate (E = 3 + 2 + 5)", async () => {
+    await seedUxTeppanyaki();
+    expect((await occupancyAt(AT_1945))["E"]).toMatchObject({ occupiedSeats: 10, full: true });
+    expect((await occupancyAt(amsterdamLocalToUtc(DATE, "19:05")))["E"]!.occupiedSeats).toBe(5); // 006 + 007 only (008 starts 19:15)
+  });
+
+  it("T8 — released resources (moved-from seats, no-show seats) never count as current occupancy", async () => {
+    await seedUxTeppanyaki();
+    const g = await occupancyAt(AT_1945);
+    expect(g["C"]!.occupiedSeats).toBe(5); // not 10: UX-SAT-010 moved away from C-06..10
+    expect(g["F"]!.occupiedSeats).toBe(2); // not 4: UX-SAT-016 F-09..10 released as NoShow
+  });
+
+  it("T9 — capacity/free/full are internally consistent; a blocked grill has no free seats", async () => {
+    await seedUxTeppanyaki();
+    await prisma.resourceBlock.create({ data: { tableId: "teppanyaki-f", startTime: amsterdamLocalToUtc(DATE, "19:00"), endTime: amsterdamLocalToUtc(DATE, "21:00"), reason: "P8-A test", createdBy: "staff-owner-p7c" } });
+    const g = await occupancyAt(AT_1945);
+    for (const grill of Object.values(g)) {
+      expect(grill.occupiedSeats).toBeGreaterThanOrEqual(0);
+      expect(grill.occupiedSeats).toBeLessThanOrEqual(grill.capacity);
+      if (!grill.blocked) expect(grill.freeSeats).toBe(grill.capacity - grill.occupiedSeats);
+      expect(grill.full).toBe(!grill.blocked && grill.freeSeats === 0);
+    }
+    expect(g["F"]).toMatchObject({ blocked: true, freeSeats: 0, full: false, occupiedSeats: 2 });
+  });
+
+  it("rejects an invalid `at`", async () => {
+    expect((await sharedAgent.get("/floor/teppanyaki-occupancy?at=not-a-date")).status).toBe(400);
   });
 });

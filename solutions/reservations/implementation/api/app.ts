@@ -27,9 +27,10 @@ import { AvailabilityOrchestrator } from "../application/availability/Availabili
 import { SeatingOrchestrator, ResourceSelector } from "../application/floor/SeatingOrchestrator.js";
 import { SeatingAvailabilityService } from "../application/floor/SeatingAvailabilityService.js";
 import { ResourceBlockService } from "../application/floor/ResourceBlockService.js";
-import { getFloorView, getActiveSeatingByReservationIds, ReservationSeating, UNASSIGNED_SEATING } from "../application/floor/FloorReadModel.js";
+import { getFloorView, getActiveSeatingByReservationIds, getLatestSeatingReleaseByReservationIds, getTeppanyakiGrillOccupancyAt, isNoShow, ReservationSeating, SeatingReleaseSummary, UNASSIGNED_SEATING } from "../application/floor/FloorReadModel.js";
+import { evaluateSimultaneousOccupancy } from "../domain/availability/AvailabilityEvaluator.js";
 import { FloorRepository } from "../domain/repositories/FloorRepository.js";
-import { isCapacityPoolId, CAPACITY_POOLS } from "../domain/availability/CapacityPool.js";
+import { isCapacityPoolId, CAPACITY_POOLS, BOOKING_GRID_MINUTES } from "../domain/availability/CapacityPool.js";
 import { isTerminal } from "../domain/value-objects/ReservationStatus.js";
 import { StaffUserRepository } from "../domain/repositories/StaffUserRepository.js";
 import { SessionRepository } from "../domain/repositories/SessionRepository.js";
@@ -470,10 +471,28 @@ export function createApp(deps: AppDependencies): Express {
   // itself; it only reflects what the server already decided for this
   // role, so there is no new authorization surface and no possibility
   // of client-side role spoofing affecting an actual decision.
-  function staffUiPermissions(role: ActorRole): { canCompleteReservation: boolean; canViewSecurityEvents: boolean } {
+  // UI visibility hints only — every route keeps its own requirePermission()
+  // as the real boundary. R1.5-P8-A adds the management capabilities the
+  // Reception/Beheer split needs, each read straight from the EXISTING
+  // permission matrix (no new authority):
+  //   canManageCapacitySettings — Permission.CapacitySettingsManage, the one
+  //     permission behind service sessions (create/open/close/cancel), the
+  //     service catalog, closing days and floorplans/versions;
+  //   canManageResourceBlocks   — Permission.ResourceBlock (Tafel blokkeren);
+  //   canManageStaff            — Permission.UsersManage (POST /staff-users).
+  function staffUiPermissions(role: ActorRole): {
+    canCompleteReservation: boolean;
+    canViewSecurityEvents: boolean;
+    canManageCapacitySettings: boolean;
+    canManageResourceBlocks: boolean;
+    canManageStaff: boolean;
+  } {
     return {
       canCompleteReservation: hasPermission(role, Permission.ReservationComplete),
       canViewSecurityEvents: hasPermission(role, Permission.AuditView),
+      canManageCapacitySettings: hasPermission(role, Permission.CapacitySettingsManage),
+      canManageResourceBlocks: hasPermission(role, Permission.ResourceBlock),
+      canManageStaff: hasPermission(role, Permission.UsersManage),
     };
   }
 
@@ -874,11 +893,13 @@ export function createApp(deps: AppDependencies): Express {
     // batched read for the whole day; seatingAssignmentStatus is derived
     // from the same result, so the two can never disagree.
     let seatingByReservationId: ReadonlyMap<string, ReservationSeating> = new Map();
+    // R1.5-P8-A — latest seating release per reservation (one more batched
+    // query), so a No-show is distinguishable from an expected/late guest.
+    let releaseByReservationId: ReadonlyMap<string, SeatingReleaseSummary> = new Map();
     if (deps.floor && aggregates.length > 0) {
-      seatingByReservationId = await getActiveSeatingByReservationIds(
-        deps.floor.prisma,
-        aggregates.map((a) => a.getId().toString())
-      );
+      const ids = aggregates.map((a) => a.getId().toString());
+      seatingByReservationId = await getActiveSeatingByReservationIds(deps.floor.prisma, ids);
+      releaseByReservationId = await getLatestSeatingReleaseByReservationIds(deps.floor.prisma, ids);
     }
     res.status(200).json({
       date: date.toISOString().slice(0, 10),
@@ -886,7 +907,8 @@ export function createApp(deps: AppDependencies): Express {
         serializeReservation(
           a,
           criticalNotesByReservationId.get(a.getId().toString()) ?? [],
-          seatingByReservationId.get(a.getId().toString()) ?? UNASSIGNED_SEATING
+          seatingByReservationId.get(a.getId().toString()) ?? UNASSIGNED_SEATING,
+          releaseByReservationId.get(a.getId().toString())
         )
       ),
     });
@@ -937,6 +959,27 @@ export function createApp(deps: AppDependencies): Express {
 
       const rows = await getFloorView(floorPrisma, { rangeStart, rangeEnd, areaId, now: deps.clock.now() });
       res.status(200).json({ rows });
+    });
+
+    // R1.5-P8-A — authoritative Teppanyaki grill occupancy at ONE instant
+    // (`at`, ISO date-time; defaults to now): concurrent seat occupancy per
+    // shared grill from the active seating claims, never a day total. Pure
+    // read, same SeatingView gate as GET /floor. See
+    // FloorReadModel.getTeppanyakiGrillOccupancyAt for the exact semantics.
+    const floorRepositoryForReads = deps.floor.floorRepository;
+    app.get("/floor/teppanyaki-occupancy", requireStaffSession, requirePermission(Permission.SeatingView), async (req: Request, res: Response) => {
+      const atParam = req.query["at"];
+      if (atParam !== undefined && (typeof atParam !== "string" || atParam.length === 0)) {
+        res.status(400).json({ message: "at must be an ISO date-time (e.g. 2026-10-10T17:45:00Z)." });
+        return;
+      }
+      const at = typeof atParam === "string" ? new Date(atParam) : deps.clock.now();
+      if (Number.isNaN(at.getTime())) {
+        res.status(400).json({ message: "at must be an ISO date-time (e.g. 2026-10-10T17:45:00Z)." });
+        return;
+      }
+      const grills = await getTeppanyakiGrillOccupancyAt(floorPrisma, floorRepositoryForReads, at);
+      res.status(200).json({ at: at.toISOString(), grills });
     });
   }
 
@@ -1803,7 +1846,10 @@ export function createApp(deps: AppDependencies): Express {
     const seating = deps.floor
       ? (await getActiveSeatingByReservationIds(deps.floor.prisma, [aggregate.getId().toString()])).get(aggregate.getId().toString())
       : undefined;
-    res.status(200).json(serializeReservation(aggregate, notes.map(serializeCriticalNote), seating ?? UNASSIGNED_SEATING));
+    const latestRelease = deps.floor
+      ? (await getLatestSeatingReleaseByReservationIds(deps.floor.prisma, [aggregate.getId().toString()])).get(aggregate.getId().toString())
+      : undefined;
+    res.status(200).json(serializeReservation(aggregate, notes.map(serializeCriticalNote), seating ?? UNASSIGNED_SEATING, latestRelease));
   });
 
   // P1-B4-A — CAP-D03.03/CAP-D04.01 read-only discovery: "which physical
@@ -2720,12 +2766,31 @@ export function createApp(deps: AppDependencies): Express {
   });
 
   // Teppanyaki occupancy dashboard: for each of the next `days` calendar
-  // days (default 14), the fraction of the 40-seat Teppanyaki capacity
-  // already booked, per Service Period (lunch and dinner reuse the same
-  // physical seats, so they are tracked separately, never summed
-  // together). 40 is hardcoded pending a real Capacity Management
-  // capability — there is nowhere else this number could come from yet.
-  const TEPPANYAKI_CAPACITY = 40;
+  // days (default 14), per Service Period (lunch and dinner reuse the same
+  // physical seats, so they are tracked separately, never summed together).
+  //
+  // R1.5-P8-A — semantics corrected and made explicit. `percentage`/`level`
+  // are the PEAK CONCURRENT committed Teppanyaki seats within that service
+  // period, as a fraction of the 40-seat pool — computed by the same
+  // AvailabilityEvaluator.evaluateSimultaneousOccupancy over the same
+  // Committed CapacityCommitment intervals the availability check enforces
+  // (cancelled reservations hold no Committed commitment, so they never
+  // count). Previously it summed EVERY party size of the day (cancelled
+  // ones included) against 40 concurrent seats, so several sequential
+  // waves read as e.g. 153% although no instant exceeded 37/40.
+  //   bookedSeats         = peakConcurrentSeats (kept for compatibility)
+  //   peakConcurrentSeats = max simultaneous committed seats
+  //   bookedCovers        = total covers of the non-cancelled reservations
+  // The only consumer is the pilot's "Teppanyaki bezetting" panel, which
+  // renders percentage/level only.
+  const TEPPANYAKI_CAPACITY = CAPACITY_POOLS.Teppanyaki.maximumCapacity;
+  const peakConcurrentSeats = (candidates: readonly { commitmentId: string; startTime: Date; endTime: Date; partySize: number }[]): number => {
+    if (candidates.length === 0) return 0;
+    const windowStart = new Date(Math.min(...candidates.map((c) => c.startTime.getTime())));
+    const windowEndMs = Math.max(...candidates.map((c) => c.endTime.getTime()));
+    const spanMinutes = Math.max(BOOKING_GRID_MINUTES, Math.ceil((windowEndMs - windowStart.getTime()) / 60_000 / BOOKING_GRID_MINUTES) * BOOKING_GRID_MINUTES);
+    return evaluateSimultaneousOccupancy({ requestedStart: windowStart, requestedDurationMinutes: spanMinutes, candidates }).maxExistingOccupancy;
+  };
   app.get("/teppanyaki-occupancy", requireStaffSession, async (req: Request, res: Response) => {
     const fromParam = req.query["from"];
     const from = typeof fromParam === "string" && fromParam.length > 0 ? new Date(fromParam) : deps.clock.now();
@@ -2740,23 +2805,49 @@ export function createApp(deps: AppDependencies): Express {
       return;
     }
 
-    const rows: { date: string; servicePeriodId: string; bookedSeats: number; capacity: number; percentage: number; level: "green" | "orange" | "red" }[] = [];
+    const rows: {
+      date: string;
+      servicePeriodId: string;
+      bookedSeats: number;
+      peakConcurrentSeats: number;
+      bookedCovers: number;
+      capacity: number;
+      percentage: number;
+      level: "green" | "orange" | "red";
+    }[] = [];
     for (let i = 0; i < days; i += 1) {
       const date = new Date(from);
       date.setDate(date.getDate() + i);
-      const aggregates = await deps.repository.findByDate(date);
+      const aggregates = (await deps.repository.findByDate(date)).filter((a) => a.getPreferredArea() === "Teppanyaki" && a.getStatus() !== "Cancelled");
+      if (aggregates.length === 0) continue;
 
-      const byServicePeriod = new Map<string, number>();
+      // The authoritative capacity intervals; without a wired capacity
+      // repository (some test harnesses), the identical interval rule the
+      // commitments are created with (start + pool duration).
+      const commitments = deps.capacity
+        ? await deps.capacity.capacityRepository.findCommittedByReservationIds({ capacityPoolId: "Teppanyaki", reservationIds: aggregates.map((a) => a.getId().toString()) })
+        : aggregates.map((a) => ({
+            commitmentId: a.getId().toString(),
+            reservationId: a.getId().toString(),
+            startTime: a.getReservationDateTime(),
+            endTime: new Date(a.getReservationDateTime().getTime() + CAPACITY_POOLS.Teppanyaki.durationMinutes * 60_000),
+            partySize: a.getPartySize(),
+          }));
+
+      const byServicePeriod = new Map<string, { covers: number; reservationIds: Set<string> }>();
       for (const aggregate of aggregates) {
-        if (aggregate.getPreferredArea() !== "Teppanyaki") continue;
         const key = aggregate.getServicePeriodId();
-        byServicePeriod.set(key, (byServicePeriod.get(key) ?? 0) + aggregate.getPartySize());
+        const group = byServicePeriod.get(key) ?? { covers: 0, reservationIds: new Set<string>() };
+        group.covers += aggregate.getPartySize();
+        group.reservationIds.add(aggregate.getId().toString());
+        byServicePeriod.set(key, group);
       }
 
-      for (const [servicePeriodId, bookedSeats] of byServicePeriod) {
-        const percentage = Math.round((bookedSeats / TEPPANYAKI_CAPACITY) * 100);
+      for (const [servicePeriodId, group] of byServicePeriod) {
+        const peak = peakConcurrentSeats(commitments.filter((c) => group.reservationIds.has(c.reservationId)));
+        const percentage = Math.round((peak / TEPPANYAKI_CAPACITY) * 100);
         const level = percentage >= 90 ? "red" : percentage >= 70 ? "orange" : "green";
-        rows.push({ date: date.toISOString().slice(0, 10), servicePeriodId, bookedSeats, capacity: TEPPANYAKI_CAPACITY, percentage, level });
+        rows.push({ date: date.toISOString().slice(0, 10), servicePeriodId, bookedSeats: peak, peakConcurrentSeats: peak, bookedCovers: group.covers, capacity: TEPPANYAKI_CAPACITY, percentage, level });
       }
     }
 
@@ -2849,7 +2940,9 @@ criticalNotes: ReadonlyArray<ReturnType<typeof serializeCriticalNote>> = [],
 // existing caller/test that doesn't pass it keeps today's exact output).
 // R1.5-P7-C — now the authoritative seating itself; seatingAssignmentStatus
 // below is derived from it (same values as before).
-seating: ReservationSeating = UNASSIGNED_SEATING
+seating: ReservationSeating = UNASSIGNED_SEATING,
+// R1.5-P8-A — the reservation's latest released seating, if any (additive).
+latestRelease?: SeatingReleaseSummary
 ) {
   return {
     id: aggregate.getId().toString(),
@@ -2872,6 +2965,11 @@ seating: ReservationSeating = UNASSIGNED_SEATING
     seatingAssignmentStatus: seating.status,
     // R1.5-P7-C — authoritative current seating (active SeatingAssignment).
     seating: { status: seating.status, resources: seating.resources.map((r) => ({ kind: r.kind, label: r.label, tableLabel: r.tableLabel })) },
+    // R1.5-P8-A — authoritative No-show signal: no active seating AND the
+    // latest release was "NoShow" (Reservation.status is never changed by a
+    // no-show). Reception must never classify such a reservation as late.
+    noShow: isNoShow(seating, latestRelease),
+    lastSeatingRelease: latestRelease ? { reason: latestRelease.reason, releasedAt: latestRelease.releasedAt?.toISOString() ?? null } : null,
   };
 }
 

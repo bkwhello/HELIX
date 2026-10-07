@@ -70,6 +70,19 @@ export class PrismaCapacityRepository implements CapacityRepository {
     }));
   }
 
+  async findCommittedByReservationIds(input: {
+    readonly capacityPoolId: string;
+    readonly reservationIds: readonly string[];
+  }): Promise<readonly (CommitmentInterval & { readonly reservationId: string })[]> {
+    if (input.reservationIds.length === 0) return [];
+    const rows = await this.prisma.capacityCommitment.findMany({
+      where: { capacityPoolId: input.capacityPoolId, status: "Committed", reservationId: { in: [...input.reservationIds] } },
+    });
+    return rows
+      .filter((row): row is typeof row & { reservationId: string } => row.reservationId !== null)
+      .map((row) => ({ commitmentId: row.commitmentId, reservationId: row.reservationId, startTime: row.startTime, endTime: row.endTime, partySize: row.partySize }));
+  }
+
   async findById(commitmentId: string, tx?: TransactionContext): Promise<CapacityCommitment | null> {
     const client = tx ? asPrismaTx(tx) : this.prisma;
     const row = await client.capacityCommitment.findUnique({ where: { commitmentId } });
